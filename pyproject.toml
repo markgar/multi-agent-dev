@@ -1,0 +1,21 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "multi-agent-dev"
+version = "1.0.0"
+description = "Multi-agent autonomous development orchestrator using GitHub Copilot CLI"
+readme = "README.md"
+requires-python = ">=3.10"
+license = {text = "MIT"}
+dependencies = [
+    "typer[all]",
+    "rich",
+]
+
+[project.scripts]
+agentic-dev = "agent.cli:app"
+
+[tool.setuptools.packages.find]
+where = ["src"]

@@ -1,0 +1,27 @@
+# Agent project directories (each project is its own repo)
+*/builder/
+*/reviewer/
+*/tester/
+
+# Agent logs (kept at project root, outside cloned repos)
+*/logs/
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+*.egg
+build/
+dist/
+.eggs/
+*.whl
+pip-wheel-metadata/
+
+# IDE
+.vscode/
+.idea/
+
+# macOS
+.DS_Store
