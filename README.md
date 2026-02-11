@@ -164,7 +164,7 @@ Planner ──TASKS.md──→ Builder ──git push──→ Reviewer ──R
 ### Rules
 
 - The **Planner** runs on demand via `plan`. It reads `SPEC.md`, the codebase, `TASKS.md`, `BUGS.md`, and `REVIEWS.md`, then creates or updates the task list. It never writes code.
-- The **Builder** checks `BUGS.md` first, then `REVIEWS.md`, then works through tasks. Bugs and review items get fixed before new tasks start.
+- The **Builder** checks `BUGS.md` first (all bugs are fixed regardless of the task target), then `REVIEWS.md`, then works through tasks. It adapts how many tasks it takes on per cycle based on complexity and milestone boundaries.
 - The **Reviewer** only commits when it finds meaningful quality issues. It skips minor style nitpicks.
 - The **Tester** only commits when it finds bugs or writes new tests. If everything passes, it does nothing.
 - Neither the Reviewer nor Tester duplicate items already in their respective files.
@@ -213,6 +213,12 @@ The GitHub Copilot CLI `--yolo` flag auto-approves every action without asking f
 agentic-dev go --name "my-project" --language dotnet --description "description of what to build"
 ```
 
+Or use a requirements file:
+
+```bash
+agentic-dev go --name "my-project" --language python --spec-file requirements.md
+```
+
 ### Resuming a Previous Project
 
 ```bash
@@ -221,41 +227,41 @@ agentic-dev resume --name "my-project"
 
 ### Running Agents Individually
 
-Each agent can be run separately:
+After `go` has created a project, you can run individual agents if needed:
 
 ```bash
-agentic-dev bootstrap --name "my-project" --language python --description "what to build"
-
 cd my-project/builder
 agentic-dev plan
-
-cd ../reviewer
-agentic-dev reviewoncommit
-
-cd ../tester
-agentic-dev testoncommit
-
-cd ../builder
 agentic-dev build
 agentic-dev build --numtasks 3
 agentic-dev build --loop
 agentic-dev build --numtasks 5 --loop
+
+cd ../reviewer
+agentic-dev commitwatch
+
+cd ../tester
+agentic-dev testloop
 ```
+
+> **Note:** Always use `go` for new projects — it runs bootstrap, plan, and launches all agents automatically. Do not run `bootstrap` directly.
 
 ### Commands Reference
 
 | Command | What it does | Where |
 |---|---|---|
 | `go --name N --language L --description D` | Does everything: bootstrap, plan, launch agents, build | Once, from parent dir |
-| `bootstrap --name N --language L --description D` | Creates project, spec, git repo, GitHub remote, clones | Once, from parent dir |
-| `plan` | Creates or updates TASKS.md from SPEC.md | builder/, on demand |
-| `build` | Fixes bugs + reviews, then does up to 5 tasks | builder/, repeatedly |
-| `build --numtasks 3` | Same, but up to 3 tasks per session | builder/ |
-| `build --loop` | Loops through all remaining tasks automatically | builder/, once |
-| `reviewoncommit` | Watches for commits, reviews code quality | reviewer/, once |
-| `testoncommit` | Watches for commits, runs tests, files bugs | tester/, once |
-| `status` | Shows spec, tasks, reviews, and bugs at a glance | Any clone, anytime |
+| `go --name N --language L --spec-file F` | Same, but reads requirements from a markdown file | Once, from parent dir |
 | `resume --name N` | Re-plans, relaunches watchers, resumes building | Once, from parent dir |
+| `plan` | Creates or updates TASKS.md from SPEC.md | builder/, on demand |
+| `build` | Fixes bugs + reviews, then does tasks (targets ~5, adapts to complexity) | builder/, repeatedly |
+| `build --numtasks 3` | Same, but targets ~3 tasks per cycle | builder/ |
+| `build --loop` | Loops through all remaining tasks automatically | builder/, once |
+| `commitwatch` | Polls for commits, reviews each one for quality | reviewer/, once |
+| `testloop` | Runs tests every 5 minutes, files bugs | tester/, once |
+| `reviewoncommit` | Legacy: watches for commits, reviews code quality | reviewer/, once |
+| `testoncommit` | Legacy: watches for commits, runs tests, files bugs | tester/, once |
+| `status` | Shows spec, tasks, reviews, and bugs at a glance | Any clone, anytime |
 
 ---
 

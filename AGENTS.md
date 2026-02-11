@@ -6,7 +6,7 @@ Each agent is a `copilot --yolo` call with a specific prompt. Here's exactly wha
 
 ## Bootstrap
 
-Runs once when you call `bootstrap "name" "description"`.
+Runs once internally when you call `go`. Do not run `bootstrap` directly — it is deprecated and will error.
 
 > Create a directory called builder. cd into it. Initialize a git repo. Create an appropriate .gitignore for the project. Create a README.md that describes the project: `{description}`. A file called REQUIREMENTS.md already exists in this directory — it contains the original project requirements exactly as provided by the user. Do NOT modify or overwrite REQUIREMENTS.md. Use it as the primary input when writing SPEC.md. Create a SPEC.md that defines the desired end state of the project. SPEC.md should include: a high-level summary, the tech stack and language, the features and requirements, any constraints or guidelines, and acceptance criteria for what 'done' looks like. Be specific and thorough in SPEC.md — it is the source of truth that all future planning is based on. Every feature and requirement in REQUIREMENTS.md must be addressed in SPEC.md. Do NOT create a TASKS.md — task planning happens later. Commit with message 'Initial commit: project spec'. Run 'gh repo create `{user/name}` --public --source .' and push.
 
