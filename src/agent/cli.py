@@ -279,10 +279,10 @@ def _bootstrap(
 
 @app.command()
 def build(
-    numtasks: Annotated[int, typer.Option(help="Max items (bugs+reviews+tasks) per cycle")] = 5,
+    numtasks: Annotated[int, typer.Option(help="Target number of tasks per cycle (builder adapts based on complexity)")] = 5,
     loop: Annotated[bool, typer.Option(help="Run continuously until all work is done")] = False,
 ):
-    """Fix bugs, address reviews, then do tasks. Optionally loop until done."""
+    """Fix bugs, address reviews, then do tasks. The builder adapts how many tasks it takes on based on complexity and milestones."""
     if not os.path.exists("TASKS.md"):
         log("builder", "No TASKS.md found. Run 'plan' first to generate tasks.", style="yellow")
         write_builder_done()
@@ -300,7 +300,7 @@ def build(
             plan()
 
         log("builder", "")
-        log("builder", f"[Builder] Starting work (up to {numtasks} items)...", style="green")
+        log("builder", f"[Builder] Starting work (targeting ~{numtasks} tasks, adapting to complexity)...", style="green")
         log("builder", "")
 
         prompt = BUILDER_PROMPT.format(numtasks=numtasks)
@@ -635,7 +635,7 @@ def go(
     name: Annotated[str, typer.Option(help="Project name")],
     description: Annotated[str, typer.Option(help="What the project should do")] = None,
     language: Annotated[str, typer.Option(help="Language/stack: dotnet, python, node")] = "node",
-    numtasks: Annotated[int, typer.Option(help="Max items per build cycle")] = 5,
+    numtasks: Annotated[int, typer.Option(help="Target tasks per build cycle (builder adapts based on complexity)")] = 5,
     spec_file: Annotated[str, typer.Option(help="Path to a markdown file containing the project requirements")] = None,
 ):
     """One command to rule them all: bootstrap, plan, and launch all agents."""
@@ -680,7 +680,7 @@ def go(
 @app.command()
 def resume(
     name: Annotated[str, typer.Option(help="Project name (existing project directory)")],
-    numtasks: Annotated[int, typer.Option(help="Max items per build cycle")] = 5,
+    numtasks: Annotated[int, typer.Option(help="Target tasks per build cycle (builder adapts based on complexity)")] = 5,
 ):
     """Pick up where you left off: re-plan, launch watchers, resume building."""
     start_dir = os.getcwd()
