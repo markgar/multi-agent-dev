@@ -108,13 +108,60 @@ def plan():
     log("planner", "======================================", style="bold magenta")
 
 
-@app.command()
+@app.command(hidden=True, deprecated=True)
 def bootstrap(
     name: Annotated[str, typer.Option(help="Project name (used for directory and GitHub repo)")],
-    description: Annotated[str, typer.Option(help="What the project should do")],
-    language: Annotated[str, typer.Option(help="Language/stack: dotnet, python, node")],
+    description: Annotated[str, typer.Option(help="What the project should do")] = None,
+    language: Annotated[str, typer.Option(help="Language/stack: dotnet, python, node")] = "node",
+    spec_file: Annotated[str, typer.Option(help="Path to a markdown file containing the project requirements")] = None,
 ):
-    """Create a new project: scaffold, git repo, GitHub remote, clone reviewer/tester copies."""
+    """Deprecated: use 'go' instead. Bootstrap only scaffolds — it does NOT launch the planner, builder, or watchers."""
+    console.print()
+    console.print("======================================", style="bold red")
+    console.print(" ERROR: Don't use 'bootstrap' directly!", style="bold red")
+    console.print("======================================", style="bold red")
+    console.print()
+    console.print("'bootstrap' only scaffolds the repo — it does NOT launch the", style="yellow")
+    console.print("planner, builder, commit watcher, or tester.", style="yellow")
+    console.print()
+    console.print("Use 'go' instead, which does everything end-to-end:", style="green")
+    console.print()
+    console.print("  agentic-dev go --name <project> --spec-file <file>", style="bold cyan")
+    console.print("  agentic-dev go --name <project> --description \"...\"", style="bold cyan")
+    console.print()
+    console.print("To resume an existing project:", style="green")
+    console.print()
+    console.print("  agentic-dev resume --name <project>", style="bold cyan")
+    console.print()
+    raise typer.Exit(1)
+
+
+def _bootstrap(
+    name: str,
+    description: str = None,
+    language: str = "node",
+    spec_file: str = None,
+):
+    """Internal: scaffold a new project — git repo, GitHub remote, clone reviewer/tester copies."""
+    # Resolve description from --spec-file or --description
+    if spec_file and description:
+        console.print("ERROR: Provide --description or --spec-file, not both.", style="bold red")
+        raise typer.Exit(1)
+    if spec_file:
+        spec_path = os.path.expanduser(spec_file)
+        if not os.path.isfile(spec_path):
+            console.print(f"ERROR: Spec file not found: {spec_path}", style="bold red")
+            raise typer.Exit(1)
+        with open(spec_path, "r", encoding="utf-8") as f:
+            description = f.read().strip()
+        if not description:
+            console.print("ERROR: Spec file is empty.", style="bold red")
+            raise typer.Exit(1)
+        console.print(f"Using requirements from: {spec_path}", style="cyan")
+    if not description:
+        console.print("ERROR: Provide either --description or --spec-file.", style="bold red")
+        raise typer.Exit(1)
+
     if language not in VALID_LANGUAGES:
         console.print(
             f"ERROR: Invalid language '{language}'. Choose from: {', '.join(VALID_LANGUAGES)}",
@@ -194,6 +241,18 @@ def bootstrap(
     parent_dir = os.path.join(os.getcwd(), name)
     os.makedirs(parent_dir, exist_ok=True)
     os.chdir(parent_dir)
+
+    # Save the original requirements so agents can reference them
+    builder_dir = os.path.join(os.getcwd(), "builder")
+    os.makedirs(builder_dir, exist_ok=True)
+    req_path = os.path.join(builder_dir, "REQUIREMENTS.md")
+    with open(req_path, "w", encoding="utf-8") as f:
+        f.write("# Original Requirements\n\n")
+        f.write("> This document contains the original project requirements as provided by the user.\n")
+        f.write("> It must not be modified. All agents should reference this as the ultimate source of truth.\n\n")
+        f.write(description)
+        f.write("\n")
+    console.print("✓ Saved original requirements to REQUIREMENTS.md", style="green")
 
     prompt = BOOTSTRAP_PROMPT.format(description=description, gh_user=gh_user, name=name)
     exit_code = run_copilot("bootstrap", prompt)
@@ -574,14 +633,15 @@ def _spawn_agent_in_terminal(working_dir: str, command: str) -> None:
 @app.command()
 def go(
     name: Annotated[str, typer.Option(help="Project name")],
-    description: Annotated[str, typer.Option(help="What the project should do")],
-    language: Annotated[str, typer.Option(help="Language/stack: dotnet, python, node")],
+    description: Annotated[str, typer.Option(help="What the project should do")] = None,
+    language: Annotated[str, typer.Option(help="Language/stack: dotnet, python, node")] = "node",
     numtasks: Annotated[int, typer.Option(help="Max items per build cycle")] = 5,
+    spec_file: Annotated[str, typer.Option(help="Path to a markdown file containing the project requirements")] = None,
 ):
     """One command to rule them all: bootstrap, plan, and launch all agents."""
     start_dir = os.getcwd()
 
-    bootstrap(name=name, description=description, language=language)
+    _bootstrap(name=name, description=description, language=language, spec_file=spec_file)
     if not os.path.exists(os.path.join(os.getcwd(), "builder")):
         log("orchestrator", "ERROR: Bootstrap did not create the expected directory structure.", style="bold red")
         os.chdir(start_dir)
