@@ -14,19 +14,23 @@ from agent.prompts import (
     BOOTSTRAP_PROMPT,
     BUILDER_PROMPT,
     PLANNER_PROMPT,
+    REVIEWER_COMMIT_PROMPT,
     REVIEWER_PROMPT,
     TESTER_PROMPT,
 )
 from agent.utils import (
     check_command,
+    clear_builder_done,
     console,
     has_unchecked_items,
+    is_builder_done,
     is_macos,
     is_windows,
     log,
     pushd,
     run_cmd,
     run_copilot,
+    write_builder_done,
 )
 
 app = typer.Typer(
@@ -222,6 +226,7 @@ def build(
     """Fix bugs, address reviews, then do tasks. Optionally loop until done."""
     if not os.path.exists("TASKS.md"):
         log("builder", "No TASKS.md found. Run 'plan' first to generate tasks.", style="yellow")
+        write_builder_done()
         return
 
     cycle_count = 0
@@ -247,6 +252,7 @@ def build(
             log("builder", "======================================", style="bold red")
             log("builder", " Builder failed! Check errors above", style="bold red")
             log("builder", "======================================", style="bold red")
+            write_builder_done()
             return
 
         log("builder", "")
@@ -255,6 +261,7 @@ def build(
         log("builder", "======================================", style="bold cyan")
 
         if not loop:
+            write_builder_done()
             break
 
         run_cmd(["git", "pull", "--rebase", "-q"], quiet=True)
@@ -274,6 +281,7 @@ def build(
                 log("builder", " - Reviews: Done", style="bold green")
                 log("builder", " - Tasks: Done", style="bold green")
                 log("builder", "======================================", style="bold green")
+                write_builder_done()
                 break
             else:
                 log("builder", "")
@@ -352,6 +360,176 @@ def testoncommit():
     _watch_loop("tester", TESTER_PROMPT, "Test run")
 
 
+@app.command()
+def commitwatch(
+    reviewer_dir: Annotated[
+        str, typer.Option(help="Path to the reviewer git clone")
+    ] = "",
+):
+    """Watch for new commits and spawn a per-commit code reviewer.
+
+    Runs from the reviewer clone directory. For each new commit detected,
+    invokes a reviewer agent scoped to exactly that commit's diff.
+    Shuts down automatically when the builder finishes.
+    """
+    from datetime import datetime
+
+    if reviewer_dir:
+        os.chdir(reviewer_dir)
+
+    log("commit-watcher", "======================================", style="bold yellow")
+    log("commit-watcher", " Commit watcher started", style="bold yellow")
+    log("commit-watcher", " Spawns a reviewer per commit", style="bold yellow")
+    log("commit-watcher", " Press Ctrl+C to stop", style="bold yellow")
+    log("commit-watcher", "======================================", style="bold yellow")
+    log("commit-watcher", "")
+
+    last_sha = ""
+
+    while True:
+        # Check if the builder has finished
+        if is_builder_done():
+            now = datetime.now().strftime("%H:%M:%S")
+            log("commit-watcher", "")
+            log("commit-watcher", f"[{now}] Builder finished. Shutting down.", style="bold green")
+            break
+
+        # Pull latest
+        pull_result = run_cmd(["git", "pull", "-q"], capture=True)
+        if pull_result.returncode != 0:
+            now = datetime.now().strftime("%H:%M:%S")
+            log("commit-watcher", f"[{now}] WARNING: git pull failed", style="red")
+            if pull_result.stderr:
+                log("commit-watcher", pull_result.stderr.strip(), style="red")
+
+        # Get current HEAD
+        head_result = run_cmd(["git", "rev-parse", "HEAD"], capture=True)
+        current_head = head_result.stdout.strip() if head_result.returncode == 0 else ""
+
+        if current_head and current_head != last_sha and last_sha != "":
+            # Enumerate every new commit since our last checkpoint
+            log_result = run_cmd(
+                ["git", "log", f"{last_sha}..{current_head}", "--format=%H", "--reverse"],
+                capture=True,
+            )
+            new_commits = [
+                sha.strip()
+                for sha in log_result.stdout.strip().split("\n")
+                if sha.strip()
+            ]
+
+            now = datetime.now().strftime("%H:%M:%S")
+            log("commit-watcher", "")
+            log(
+                "commit-watcher",
+                f"[{now}] {len(new_commits)} new commit(s) detected",
+                style="yellow",
+            )
+
+            # Review each commit individually
+            prev = last_sha
+            for commit_sha in new_commits:
+                now = datetime.now().strftime("%H:%M:%S")
+                short = commit_sha[:8]
+                log("commit-watcher", f"[{now}] Reviewing commit {short}...", style="cyan")
+
+                prompt = REVIEWER_COMMIT_PROMPT.format(
+                    prev_sha=prev, commit_sha=commit_sha
+                )
+                exit_code = run_copilot("reviewer", prompt)
+
+                if exit_code != 0:
+                    now = datetime.now().strftime("%H:%M:%S")
+                    log(
+                        "commit-watcher",
+                        f"[{now}] WARNING: Review of {short} exited with errors",
+                        style="red",
+                    )
+
+                prev = commit_sha
+
+                # Check again between commits in case builder finished
+                if is_builder_done():
+                    now = datetime.now().strftime("%H:%M:%S")
+                    log("commit-watcher", f"[{now}] Builder finished. Stopping.", style="bold green")
+                    return
+
+            now = datetime.now().strftime("%H:%M:%S")
+            log("commit-watcher", f"[{now}] All commits reviewed. Watching...", style="yellow")
+
+        last_sha = current_head if current_head else last_sha
+        time.sleep(10)
+
+
+@app.command()
+def testloop(
+    interval: Annotated[
+        int, typer.Option(help="Minutes between test runs")
+    ] = 5,
+    tester_dir: Annotated[
+        str, typer.Option(help="Path to the tester git clone")
+    ] = "",
+):
+    """Run tests on a timer against the full repo.
+
+    Pulls latest, builds, runs all tests every N minutes.
+    Shuts down automatically when the builder finishes.
+    """
+    from datetime import datetime
+
+    if tester_dir:
+        os.chdir(tester_dir)
+
+    log("tester", "======================================", style="bold yellow")
+    log("tester", f" Tester running every {interval} minutes", style="bold yellow")
+    log("tester", " Press Ctrl+C to stop", style="bold yellow")
+    log("tester", "======================================", style="bold yellow")
+    log("tester", "")
+
+    interval_seconds = interval * 60
+
+    while True:
+        # Check if the builder has finished
+        builder_done = is_builder_done()
+
+        now = datetime.now().strftime("%H:%M:%S")
+        if builder_done:
+            log("tester", f"[{now}] Builder finished. Running final test pass...", style="bold green")
+        else:
+            log("tester", f"[{now}] Starting test run...", style="cyan")
+
+        # Pull and test
+        run_cmd(["git", "pull", "--rebase", "-q"], quiet=True)
+        exit_code = run_copilot("tester", TESTER_PROMPT)
+
+        now = datetime.now().strftime("%H:%M:%S")
+        if exit_code != 0:
+            log("tester", f"[{now}] WARNING: Test run exited with errors", style="red")
+        else:
+            log("tester", f"[{now}] Test run complete.", style="yellow")
+
+        if builder_done:
+            log("tester", "")
+            log("tester", f"[{now}] Builder finished. Shutting down.", style="bold green")
+            break
+
+        log("tester", f"[{now}] Next run in {interval} minutes. Watching...", style="yellow")
+        log("tester", "")
+
+        # Sleep in small increments so we can detect builder shutdown sooner
+        for _ in range(interval_seconds // 10):
+            time.sleep(10)
+            if is_builder_done():
+                # Builder finished while we were waiting — do one more run
+                now = datetime.now().strftime("%H:%M:%S")
+                log("tester", f"[{now}] Builder finished. Running final test pass...", style="bold green")
+                run_cmd(["git", "pull", "--rebase", "-q"], quiet=True)
+                run_copilot("tester", TESTER_PROMPT)
+                now = datetime.now().strftime("%H:%M:%S")
+                log("tester", f"[{now}] Final test pass complete. Shutting down.", style="bold green")
+                return
+
+
 def _spawn_agent_in_terminal(working_dir: str, command: str) -> None:
     """Launch an agent command in a new terminal window."""
     if is_macos():
@@ -412,6 +590,10 @@ def go(
     parent_dir = os.getcwd()
 
     os.chdir(os.path.join(parent_dir, "builder"))
+
+    # Clear any stale builder-done sentinel from previous runs
+    clear_builder_done()
+
     log("orchestrator", "")
     log("orchestrator", "======================================", style="bold magenta")
     log("orchestrator", " Running planner...", style="bold magenta")
@@ -419,11 +601,11 @@ def go(
     plan()
 
     log("orchestrator", "")
-    log("orchestrator", "Launching reviewer agent...", style="yellow")
-    _spawn_agent_in_terminal(os.path.join(parent_dir, "reviewer"), "reviewoncommit")
+    log("orchestrator", "Launching commit watcher (per-commit reviewer)...", style="yellow")
+    _spawn_agent_in_terminal(os.path.join(parent_dir, "reviewer"), "commitwatch")
 
-    log("orchestrator", "Launching tester agent...", style="yellow")
-    _spawn_agent_in_terminal(os.path.join(parent_dir, "tester"), "testoncommit")
+    log("orchestrator", "Launching tester (5-minute timer)...", style="yellow")
+    _spawn_agent_in_terminal(os.path.join(parent_dir, "tester"), "testloop")
 
     log("orchestrator", "")
     log("orchestrator", "======================================", style="bold green")
@@ -454,6 +636,10 @@ def resume(
 
     os.chdir(os.path.join(parent_dir, "builder"))
     run_cmd(["git", "pull", "--rebase"], quiet=True)
+
+    # Clear any stale builder-done sentinel from previous runs
+    clear_builder_done()
+
     log("orchestrator", "")
     log("orchestrator", "======================================", style="bold magenta")
     log("orchestrator", " Re-evaluating plan...", style="bold magenta")
@@ -468,11 +654,11 @@ def resume(
         run_cmd(["git", "pull", "--rebase"], quiet=True)
 
     log("orchestrator", "")
-    log("orchestrator", "Launching reviewer agent...", style="yellow")
-    _spawn_agent_in_terminal(reviewer_dir, "reviewoncommit")
+    log("orchestrator", "Launching commit watcher (per-commit reviewer)...", style="yellow")
+    _spawn_agent_in_terminal(reviewer_dir, "commitwatch")
 
-    log("orchestrator", "Launching tester agent...", style="yellow")
-    _spawn_agent_in_terminal(tester_dir, "testoncommit")
+    log("orchestrator", "Launching tester (5-minute timer)...", style="yellow")
+    _spawn_agent_in_terminal(tester_dir, "testloop")
 
     log("orchestrator", "")
     log("orchestrator", "======================================", style="bold green")

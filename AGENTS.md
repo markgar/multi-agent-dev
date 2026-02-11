@@ -29,34 +29,58 @@ Runs on demand via `plan`. Call it before the first `build`, or whenever you nee
 
 ## Builder
 
-Runs via `build`. Does up to `-count` tasks (default 3) in a single session.
+Runs via `build`. Does up to `-count` tasks (default 5) in a single session. Writes `logs/builder.done` when it exits so other agents know to shut down.
 
 > Before starting, review README.md, SPEC.md, and TASKS.md to understand the project's purpose and plan. Only build, fix, or keep code that serves that purpose. Remove any scaffolding, template code, or functionality that does not belong. Now look at BUGS.md first. If there are any unfixed bugs, fix them one at a time — fix a bug, mark it fixed in BUGS.md, commit with a meaningful message, run git pull --rebase, and push. Repeat for each unfixed bug. Then look at REVIEWS.md. If there are any unchecked review items, address them one at a time — fix the issue, mark it done in REVIEWS.md, commit with a meaningful message, run git pull --rebase, and push. Once all bugs and review items are fixed (or if there are none), move to TASKS.md. Do up to `{count}` unchecked tasks, one at a time. For each task: do the task, commit with a meaningful message, mark it complete in TASKS.md, commit that too, run git pull --rebase, and push. Then move to the next unchecked task. Stop after `{count}` tasks or when there are no more unchecked tasks, whichever comes first.
 
 **Reads:** README.md, SPEC.md, TASKS.md, BUGS.md, REVIEWS.md  
 **Writes code:** Yes  
-**Commits:** After each bug fix, review fix, and task
+**Commits:** After each bug fix, review fix, and task  
+**Shutdown signal:** Writes `logs/builder.done` on exit
 
 ---
 
-## Reviewer
+## Commit Watcher
 
-Runs continuously via `reviewoncommit`, triggered by new commits.
+Runs continuously via `commitwatch`, launched automatically by `go` and `resume`. Polls for new commits and spawns a scoped reviewer for each one.
 
-> You are a code reviewer. You must NOT add features or change functionality. Your only job is to review recent changes for quality issues. Read SPEC.md and TASKS.md to understand the project goals and what was planned. Run `git diff HEAD~3 --stat` to see which files changed recently, then read the full diffs with `git diff HEAD~3`. Review the changed code for: code duplication, unclear naming, overly complex logic, missing error handling, security issues (hardcoded secrets, injection risks, missing input validation), violations of the project's conventions or tech stack, and dead or unreachable code. Do NOT flag minor style preferences or nitpicks. Only flag issues that meaningfully affect correctness, security, maintainability, or readability. If you find issues, write each one to REVIEWS.md as a checkbox list item with the file, a brief description of the problem, and a suggested fix. Do not duplicate items already in REVIEWS.md. If there are no meaningful issues, do nothing. If you wrote to REVIEWS.md, commit with message 'Code review findings', run git pull --rebase, and push.
+For each new commit detected, the watcher enumerates all commits since the last checkpoint (`git log {last_sha}..HEAD --format=%H --reverse`) and reviews them one at a time using a commit-scoped prompt:
 
-**Reads:** SPEC.md, TASKS.md, recent diffs, REVIEWS.md  
-**Writes code:** No  
-**Commits:** When it finds issues
+> You are a code reviewer. You must NOT add features or change functionality. Your only job is to review the changes in a single commit for quality issues. Read SPEC.md and TASKS.md to understand the project goals. Run `git diff {prev_sha} {commit_sha}` to see exactly what changed. Review ONLY the code in this diff. Look for: code duplication, unclear naming, overly complex logic, missing error handling, security issues, violations of conventions, and dead code. Only flag issues that meaningfully affect correctness, security, maintainability, or readability. Write findings to REVIEWS.md with the commit SHA. Commit with message 'Code review: {sha}', run git pull --rebase, and push.
+
+**Trigger:** Polls every 10 seconds for new commits  
+**Scope:** Exactly one commit's diff per review  
+**Runs from:** `reviewer/` clone  
+**Shutdown:** Checks for `logs/builder.done` each cycle; exits when builder is done  
+**Writes code:** No
 
 ---
 
 ## Tester
 
-Runs continuously via `testoncommit`, triggered by new commits.
+Runs on a 5-minute timer via `testloop`, launched automatically by `go` and `resume`. Tests the full repo at HEAD on each cycle.
 
-> Read SPEC.md and TASKS.md to understand the project. Look at the latest git commit to see what changed. Build the project. Run all existing tests. If there is a runnable API, start it, test the endpoints with curl, then stop it. Now evaluate test coverage, but ONLY for the code that changed in the latest commit. Do NOT audit the entire codebase for test gaps. If the changed code has major gaps — like no tests at all for a new feature, or completely missing error handling tests — write a few focused tests to cover those gaps. Do not write tests for minor edge cases or for code that already has reasonable coverage. If existing tests already cover the changes well, do not add more. Write at most 5 new tests per run. Run the new tests. For any test that fails — whether existing or new — write each failure to BUGS.md as a checkbox list item with a clear description of what is broken and how to reproduce it. Do not duplicate bugs that are already in BUGS.md. Commit all new tests and any BUGS.md changes, run git pull --rebase, and push. If everything passes and no new tests are needed, do nothing.
+> Read SPEC.md and TASKS.md to understand the project. Pull the latest code. Build the project. Run all existing tests. If there is a runnable API, start it, test the endpoints with curl, then stop it. Evaluate test coverage across the codebase. If there are major gaps — like no tests at all for a feature, or completely missing error handling tests — write a few focused tests to cover the most important gaps. Write at most 5 new tests per run. For any test that fails, write each failure to BUGS.md. Commit new tests and BUGS.md changes, run git pull --rebase, and push. If everything passes and no new tests are needed, do nothing.
 
-**Reads:** SPEC.md, TASKS.md, codebase, BUGS.md  
+**Trigger:** Every 5 minutes (configurable via `--interval`)  
+**Scope:** Full repo at HEAD  
+**Runs from:** `tester/` clone  
+**Shutdown:** Checks for `logs/builder.done`; runs one final test pass, then exits  
 **Writes code:** Tests only  
 **Commits:** When it writes new tests or finds bugs
+
+---
+
+## Legacy Commands
+
+The original `reviewoncommit` and `testoncommit` commands still exist for manual/standalone use. They use the old `_watch_loop` polling mechanism and are not launched by `go` or `resume`.
+
+---
+
+## Shutdown Protocol
+
+All agents auto-shutdown when the builder finishes:
+
+1. **Primary signal:** Builder writes `logs/builder.done` on exit (success, failure, or no-work).
+2. **Crash fallback:** If `logs/builder.log` hasn't been modified in 10+ minutes, agents assume the builder crashed and shut down.
+3. **Startup cleanup:** `go` and `resume` clear any stale `builder.done` sentinel before launching agents.

@@ -27,7 +27,7 @@ def pushd(path: str):
 def resolve_logs_dir() -> str:
     """Find the project root logs directory, creating it if needed."""
     current_dir_name = os.path.basename(os.getcwd())
-    if current_dir_name in ("builder", "reviewer", "tester"):
+    if current_dir_name in ("builder", "reviewer", "tester", "watcher"):
         project_root = os.path.dirname(os.getcwd())
     else:
         project_root = os.getcwd()
@@ -141,3 +141,62 @@ def has_unchecked_items(filepath: str) -> int:
     with open(filepath, "r", encoding="utf-8") as f:
         content = f.read()
     return len(re.findall(r"\[ \]", content))
+
+
+# ============================================
+# Builder sentinel helpers
+# ============================================
+
+_BUILDER_DONE_FILE = "builder.done"
+_BUILDER_LOG_FILE = "builder.log"
+_STALE_LOG_TIMEOUT_MINUTES = 10
+
+
+def write_builder_done() -> None:
+    """Write a sentinel file indicating the builder has finished."""
+    try:
+        logs_dir = resolve_logs_dir()
+        sentinel = os.path.join(logs_dir, _BUILDER_DONE_FILE)
+        with open(sentinel, "w", encoding="utf-8") as f:
+            f.write(datetime.now().strftime("%Y-%m-%d %H:%M:%S") + "\n")
+    except Exception:
+        pass
+
+
+def clear_builder_done() -> None:
+    """Remove the builder-done sentinel so agents don't exit prematurely."""
+    try:
+        logs_dir = resolve_logs_dir()
+        sentinel = os.path.join(logs_dir, _BUILDER_DONE_FILE)
+        if os.path.exists(sentinel):
+            os.remove(sentinel)
+    except Exception:
+        pass
+
+
+def is_builder_done() -> bool:
+    """Check if the builder has finished.
+
+    Returns True if:
+      1. The sentinel file logs/builder.done exists, OR
+      2. logs/builder.log exists but hasn't been modified in 10+ minutes (crash fallback).
+    """
+    try:
+        logs_dir = resolve_logs_dir()
+
+        # Primary: sentinel file
+        sentinel = os.path.join(logs_dir, _BUILDER_DONE_FILE)
+        if os.path.exists(sentinel):
+            return True
+
+        # Fallback: stale log file (builder probably crashed)
+        builder_log = os.path.join(logs_dir, _BUILDER_LOG_FILE)
+        if os.path.exists(builder_log):
+            mtime = os.path.getmtime(builder_log)
+            age_minutes = (datetime.now().timestamp() - mtime) / 60
+            if age_minutes >= _STALE_LOG_TIMEOUT_MINUTES:
+                return True
+
+    except Exception:
+        pass
+    return False
