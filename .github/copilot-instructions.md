@@ -29,7 +29,7 @@ This software is entirely written by GitHub Copilot. The code is structured to b
 
 - `src/agent/cli.py` — App definition, top-level orchestration commands: `go`, `resume`, `plan`, `status`.
 - `src/agent/bootstrap.py` — Project scaffolding: repo creation, cloning reviewer/tester copies.
-- `src/agent/builder.py` — Build loop: milestone completion, retry logic, reviewer drain window.
+- `src/agent/builder.py` — Build loop: milestone completion, retry logic.
 - `src/agent/watcher.py` — Commit watcher: per-commit reviews, milestone-level reviews.
 - `src/agent/tester.py` — Test loop: milestone-triggered testing, final test pass.
 - `src/agent/terminal.py` — Terminal spawning helper for launching agents in new windows.

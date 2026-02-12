@@ -65,6 +65,10 @@ DELETE /books/:id      # Delete a book
 - Price: required, must be a positive number
 - Genre: optional string
 
+## Tech Stack
+
+- Use .NET 10 (dotnet 10) with C#
+
 ## Constraints
 
 - No external database server — use in-memory storage, SQLite, or equivalent

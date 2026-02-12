@@ -22,6 +22,10 @@ calc abc + 1      # Output: Error: Invalid number: abc
 calc 10 % 5       # Output: Error: Unknown operator: %
 ```
 
+## Tech Stack
+
+- Use Python
+
 ## Constraints
 
 - Single file implementation is fine

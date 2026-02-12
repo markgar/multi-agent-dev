@@ -12,10 +12,11 @@ from agent.milestone import (
     get_current_milestone_progress,
     get_last_milestone_end_sha,
     get_tasks_per_milestone,
+    parse_milestones_from_text,
     record_milestone_boundary,
 )
 from agent.prompts import BUILDER_PROMPT, PLANNER_SPLIT_PROMPT
-from agent.sentinel import load_reviewer_checkpoint, write_builder_done
+from agent.sentinel import write_builder_done
 from agent.utils import has_unchecked_items, log, run_cmd, run_copilot
 
 
@@ -97,9 +98,6 @@ def build(
             return
 
         milestones_after, head_after, newly_completed = _record_completed_milestones(milestones_before)
-
-        if newly_completed and loop:
-            _wait_for_reviewer_drain(head_after)
 
         log("builder", "")
         log("builder", "======================================", style="bold cyan")
@@ -212,7 +210,12 @@ def _detect_milestone_progress(state: BuildState, loop: bool) -> bool:
 
 
 def _record_completed_milestones(milestones_before: set) -> tuple[set, str, set]:
-    """Pull latest, snapshot milestones, record boundaries for newly completed ones."""
+    """Pull latest, snapshot milestones, record boundaries for newly completed ones.
+
+    When the builder completes multiple milestones in a single session (ignoring
+    the stop-after-one instruction), we try to reconstruct per-milestone boundaries
+    by scanning the git log for the commit that checked off each milestone's last task.
+    """
     run_cmd(["git", "pull", "--rebase", "-q"], quiet=True)
 
     milestones_after = {
@@ -222,37 +225,101 @@ def _record_completed_milestones(milestones_before: set) -> tuple[set, str, set]
     head_after = head_after_result.stdout.strip() if head_after_result.returncode == 0 else ""
 
     newly_completed = milestones_after - milestones_before
-    if newly_completed:
-        start_sha = get_last_milestone_end_sha()
-        for ms_name in newly_completed:
-            record_milestone_boundary(ms_name, start_sha, head_after)
+    if not newly_completed:
+        return milestones_after, head_after, newly_completed
+
+    if len(newly_completed) > 1:
+        log(
+            "builder",
+            f"WARNING: Builder completed {len(newly_completed)} milestones in one session "
+            f"(expected 1). Milestones: {', '.join(newly_completed)}",
+            style="bold yellow",
+        )
+
+    start_sha = get_last_milestone_end_sha()
+
+    # When only one milestone completed, use the simple path
+    if len(newly_completed) == 1:
+        ms_name = next(iter(newly_completed))
+        record_milestone_boundary(ms_name, start_sha, head_after)
+        log(
+            "builder",
+            f"Recorded milestone boundary: {ms_name} ({start_sha[:8]}..{head_after[:8]})",
+            style="cyan",
+        )
+    else:
+        # Multiple milestones — try to find per-milestone end commits by scanning
+        # git log for TASKS.md changes and mapping them to milestone completions.
+        ordered_boundaries = _find_per_milestone_boundaries(
+            newly_completed, start_sha, head_after
+        )
+        for ms_name, ms_start, ms_end in ordered_boundaries:
+            record_milestone_boundary(ms_name, ms_start, ms_end)
             log(
                 "builder",
-                f"Recorded milestone boundary: {ms_name} ({start_sha[:8]}..{head_after[:8]})",
+                f"Recorded milestone boundary: {ms_name} ({ms_start[:8]}..{ms_end[:8]})",
                 style="cyan",
             )
 
     return milestones_after, head_after, newly_completed
 
 
-def _wait_for_reviewer_drain(head_after: str) -> None:
-    """Wait up to 2 minutes for the reviewer to catch up to our latest commit."""
-    reviewer_checkpoint = load_reviewer_checkpoint()
-    if not reviewer_checkpoint or reviewer_checkpoint == head_after:
-        return
+def _find_per_milestone_boundaries(
+    milestone_names: set, start_sha: str, end_sha: str,
+) -> list[tuple[str, str, str]]:
+    """Scan git log to assign per-milestone SHA ranges when multiple completed at once.
 
-    log("builder", "")
-    log("builder", "Waiting for reviewer to catch up (up to 2 minutes)...", style="yellow")
+    Walks through each commit between start_sha and end_sha, checks the TASKS.md
+    at that commit for milestone completion, and records the first commit where
+    each milestone became fully checked.
 
-    drain_deadline = time.time() + 120
-    while time.time() < drain_deadline:
-        time.sleep(10)
-        reviewer_checkpoint = load_reviewer_checkpoint()
-        if reviewer_checkpoint == head_after:
-            log("builder", "Reviewer caught up.", style="green")
+    Returns [(name, start_sha, end_sha), ...] in completion order.
+    Falls back to giving all milestones the same range if scanning fails.
+    """
+    # Get ordered commits from start to end
+    result = run_cmd(
+        ["git", "log", "--format=%H", "--reverse", f"{start_sha}..{end_sha}"],
+        capture=True,
+    )
+    if result.returncode != 0 or not result.stdout.strip():
+        # Fallback: all milestones get the same range
+        return [(name, start_sha, end_sha) for name in milestone_names]
+
+    commits = [c.strip() for c in result.stdout.strip().split("\n") if c.strip()]
+    if not commits:
+        return [(name, start_sha, end_sha) for name in milestone_names]
+
+    remaining = set(milestone_names)
+    boundaries = []
+    current_start = start_sha
+
+    for commit_sha in commits:
+        if not remaining:
             break
-    else:
-        log("builder", "Drain window expired. Proceeding.", style="yellow")
+
+        # Check TASKS.md at this commit to see which milestones are complete
+        show_result = run_cmd(
+            ["git", "show", f"{commit_sha}:TASKS.md"],
+            capture=True,
+        )
+        if show_result.returncode != 0:
+            continue
+
+        completed_at_commit = set()
+        for ms in parse_milestones_from_text(show_result.stdout):
+            if ms["name"] in remaining and ms["done"] == ms["total"]:
+                completed_at_commit.add(ms["name"])
+
+        for ms_name in completed_at_commit:
+            boundaries.append((ms_name, current_start, commit_sha))
+            current_start = commit_sha
+            remaining.discard(ms_name)
+
+    # Any milestones we couldn't find get the full range
+    for ms_name in remaining:
+        boundaries.append((ms_name, start_sha, end_sha))
+
+    return boundaries
 
 
 def classify_remaining_work(bugs: int, reviews: int, tasks: int, no_work_count: int) -> str:
