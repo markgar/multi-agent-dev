@@ -65,62 +65,62 @@ Broke `cli.py` into separate modules, each owning one concern.
 
 ---
 
-## 4. Break down `build()` into smaller functions
+## 4. ~~Break down `build()` into smaller functions~~ ✅ Done
 
 **File:** `src/agent/builder.py`
 
 `build()` is ~180 lines (lines 70–245) with a `while True` loop that mixes 6 concerns: stuck-milestone detection, re-planning, running the builder, milestone boundary recording, reviewer drain, and remaining-work checks. Max nesting depth is 4 levels. Six mutable local variables are shared across the loop body. Four separate `write_builder_done()` exit paths must be preserved.
 
-### 4a. Add a `BuildState` dataclass
+### 4a. ~~Add a `BuildState` dataclass~~ ✅ Done
 
-- [ ] Add `@dataclass class BuildState` at module level (after imports) with fields: `cycle_count: int`, `no_work_count: int`, `last_milestone_name: str | None`, `milestone_retry_count: int`, `last_milestone_done_count: int`
-- [ ] Replace the 6 scattered local variables in `build()` with a single `state = BuildState(...)` instance
+- [x] Add `@dataclass class BuildState` at module level (after imports) with fields: `cycle_count: int`, `no_work_count: int`, `last_milestone_name: str | None`, `milestone_retry_count: int`, `last_milestone_done_count: int`
+- [x] Replace the 6 scattered local variables in `build()` with a single `state = BuildState(...)` instance
 
-### 4b. Extract `_detect_milestone_progress(state, loop) → bool`
+### 4b. ~~Extract `_detect_milestone_progress(state, loop) → bool`~~ ✅ Done
 
-- [ ] Move the "same milestone vs new milestone" branching (current lines 91–131) into `_detect_milestone_progress()`
-- [ ] Include the lazy `from agent.cli import plan` import inside this function (avoids circular import)
-- [ ] Return `False` when milestone is stuck beyond `_MAX_MILESTONE_RETRIES` (caller writes sentinel and returns)
-- [ ] Mutate `state` fields for retry tracking and milestone name updates
-- [ ] Target: ~35 lines
+- [x] Move the "same milestone vs new milestone" branching into `_detect_milestone_progress()`
+- [x] Include the lazy `from agent.cli import plan` import inside this function (avoids circular import)
+- [x] Return `False` when milestone is stuck beyond `_MAX_MILESTONE_RETRIES` (caller writes sentinel and returns)
+- [x] Mutate `state` fields for retry tracking and milestone name updates
+- [x] Target: ~35 lines
 
-### 4c. Extract `_record_completed_milestones(milestones_before) → tuple[set, str, set]`
+### 4c. ~~Extract `_record_completed_milestones(milestones_before) → tuple[set, str, set]`~~ ✅ Done
 
-- [ ] Move `git pull --rebase`, post-build milestone snapshot, `newly_completed` set diff, and `record_milestone_boundary()` calls (current lines 148–166) into this function
-- [ ] Return `(milestones_after, head_after, newly_completed)`
-- [ ] Keep the git pull inside this function to preserve the ordering guarantee (pull before snapshot)
-- [ ] Target: ~25 lines
+- [x] Move `git pull --rebase`, post-build milestone snapshot, `newly_completed` set diff, and `record_milestone_boundary()` calls into this function
+- [x] Return `(milestones_after, head_after, newly_completed)`
+- [x] Keep the git pull inside this function to preserve the ordering guarantee (pull before snapshot)
+- [x] Target: ~25 lines
 
-### 4d. Extract `_wait_for_reviewer_drain(head_after)`
+### 4d. ~~Extract `_wait_for_reviewer_drain(head_after)`~~ ✅ Done
 
-- [ ] Move the 2-minute reviewer polling loop (current lines 169–193) into this function
-- [ ] Preserve the `while/else` pattern exactly (the `else` clause fires when drain expires without reviewer catching up)
-- [ ] Pure side-effect function (logging + sleep)
-- [ ] Target: ~20 lines
+- [x] Move the 2-minute reviewer polling loop into this function
+- [x] Preserve the `while/else` pattern exactly (the `else` clause fires when drain expires without reviewer catching up)
+- [x] Pure side-effect function (logging + sleep)
+- [x] Target: ~20 lines
 
-### 4e. Extract `_check_remaining_work(state) → str`
+### 4e. ~~Extract `_check_remaining_work(state) → str`~~ ✅ Done
 
-- [ ] Move the `has_unchecked_items()` checks and no-work/idle logic (current lines 207–245) into this function
-- [ ] Return signal string: `"done"` (all work complete), `"idle"` (no work found, keep waiting), or `"continue"` (more work, loop)
-- [ ] Mutate `state.no_work_count`; handle the 3-check threshold and 60s wait internally
-- [ ] Target: ~30 lines
+- [x] Move the `has_unchecked_items()` checks and no-work/idle logic into this function
+- [x] Return signal string: `"done"` (all work complete), `"idle"` (no work found, keep waiting), or `"continue"` (more work, loop)
+- [x] Mutate `state.no_work_count`; handle the 3-check threshold and 60s wait internally
+- [x] Target: ~30 lines
 
-### 4f. Rewrite `build()` as a compact orchestration loop
+### 4f. ~~Rewrite `build()` as a compact orchestration loop~~ ✅ Done
 
-- [ ] Reduce `build()` to ~50 lines: guard, `BuildState` init, and a `while True` that calls the 4 helpers in sequence
-- [ ] Preserve all 4 `write_builder_done()` exit paths: (1) no TASKS.md, (2) stuck milestone, (3) builder failure, (4) all-done / single-run exit
+- [x] Reduce `build()` to ~50 lines: guard, `BuildState` init, and a `while True` that calls the 4 helpers in sequence
+- [x] Preserve all 4 `write_builder_done()` exit paths: (1) no TASKS.md, (2) stuck milestone, (3) builder failure, (4) all-done / single-run exit
 
-### 4g. Clean up unused imports
+### 4g. ~~Clean up unused imports~~ ✅ Done
 
-- [ ] Remove `git_push_with_retry` and `is_builder_done` from the import list — they are imported but never used in this file
+- [x] Remove `git_push_with_retry` and `is_builder_done` from the import list — they are imported but never used in this file
 
 ### Verification
 
-- [ ] `python -c "from agent.builder import build, check_milestone_sizes"` succeeds
-- [ ] `python -c "from agent.cli import app"` succeeds (no circular imports)
-- [ ] `python -m agent build --help` shows correct CLI registration
-- [ ] Grep confirms 4 `write_builder_done()` calls are preserved
-- [ ] Run existing tests if any (`pytest`)
+- [x] `python -c "from agent.builder import build, check_milestone_sizes"` succeeds
+- [x] `python -c "from agent.cli import app"` succeeds (no circular imports)
+- [x] `python -m agent build --help` shows correct CLI registration
+- [x] Grep confirms `write_builder_done()` calls are preserved (5 calls across 4 exit paths)
+- [x] Run existing tests if any (`pytest`) — 0 collected, no failures
 
 **Why:** Violates "small, single-purpose functions." The current function is hard to follow and hard for Copilot to modify safely.
 
