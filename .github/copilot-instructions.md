@@ -38,6 +38,7 @@ This software is entirely written by GitHub Copilot. The code is structured to b
 - `src/agent/sentinel.py` — Builder-done sentinel and reviewer checkpoint persistence.
 - `src/agent/milestone.py` — Milestone parsing, boundary tracking, and per-agent milestone checkpoints.
 - `src/agent/config.py` — Language/stack configurations and prerequisites.
+- `src/agent/legacy_watchers.py` — Deprecated `reviewoncommit` and `testoncommit` commands (not used by `go`/`resume`).
 
 ## Architecture
 
