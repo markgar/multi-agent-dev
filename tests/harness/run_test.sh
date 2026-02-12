@@ -2,9 +2,13 @@
 # Test harness: runs a full end-to-end orchestration using a local bare git repo.
 # Usage: ./tests/harness/run_test.sh [--spec-file path/to/spec.md] [--language node|python|dotnet]
 #
-# Creates a timestamped run directory under tests/harness/runs/ and launches
-# agentic-dev go --local inside it. All logs end up under
-# tests/harness/runs/<timestamp>/<project>/logs/ for post-mortem analysis.
+# Handles all setup automatically:
+#   1. Cleans stale build/ artifacts
+#   2. Installs the package in editable mode (pip install -e .)
+#   3. Runs existing tests to catch problems early
+#   4. Creates a timestamped run directory under tests/harness/runs/
+#   5. Launches agentic-dev go --local
+#   6. Prints log locations for post-mortem analysis
 
 set -euo pipefail
 
@@ -46,7 +50,39 @@ if [[ ! -f "$SPEC_FILE" ]]; then
     exit 1
 fi
 
-# Create timestamped run directory
+# --- Pre-flight setup ---
+echo "============================================"
+echo " Pre-flight setup"
+echo "============================================"
+
+# Clean stale build artifacts
+if [[ -d "$PROJECT_ROOT/build" ]]; then
+    echo "  Removing stale build/ directory..."
+    rm -rf "$PROJECT_ROOT/build"
+fi
+
+# Install package in editable mode
+echo "  Installing package (pip install -e .)..."
+pip install -e "$PROJECT_ROOT" --quiet 2>&1 | tail -1
+
+# Verify the CLI is available
+if ! command -v agentic-dev &> /dev/null; then
+    echo "ERROR: agentic-dev not found on PATH after install."
+    echo "Try: pip install -e $PROJECT_ROOT"
+    exit 1
+fi
+echo "  ✓ agentic-dev is available"
+
+# Run existing tests
+echo "  Running unit tests..."
+if ! python -m pytest "$PROJECT_ROOT/tests/" -q 2>&1 | tail -3; then
+    echo ""
+    echo "ERROR: Unit tests failed. Fix them before running the harness."
+    exit 1
+fi
+echo ""
+
+# --- Run ---
 TIMESTAMP="$(date +%Y%m%d-%H%M%S)"
 RUN_DIR="$HARNESS_DIR/runs/$TIMESTAMP"
 mkdir -p "$RUN_DIR"
