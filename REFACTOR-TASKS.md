@@ -126,51 +126,51 @@ Broke `cli.py` into separate modules, each owning one concern.
 
 ---
 
-## 5. Break down `commitwatch()` into smaller functions
+## 5. ~~Break down `commitwatch()` into smaller functions~~ ✅ Done
 
 **File:** `src/agent/watcher.py`
 
 `commitwatch()` is 123 lines (lines 91–267) with max nesting depth of 4 levels. It mixes 3 concerns: checkpoint initialization, per-commit reviewing, and milestone reviewing. Only 1 mutable local (`last_sha`) persists across loop iterations — no dataclass needed (unlike task 4). Two exit paths: (1) `break` when builder done at top of loop, (2) `return` when builder finishes mid-commit-review. Legacy `_watch_loop`, `reviewoncommit`, `testoncommit` are unrelated and stay untouched.
 
-### 5a. Extract `_initialize_watcher_checkpoint() → str`
+### 5a. ~~Extract `_initialize_watcher_checkpoint() → str`~~ ✅ Done
 
-- [ ] Move lines 109–122 into a standalone function
-- [ ] Handle both "restored from disk" and "first run, seed from HEAD" paths
-- [ ] Return the initial `last_sha` string
-- [ ] Target: ~15 lines
+- [x] Move lines 109–122 into a standalone function
+- [x] Handle both "restored from disk" and "first run, seed from HEAD" paths
+- [x] Return the initial `last_sha` string
+- [x] Target: ~15 lines
 
-### 5b. Extract `_review_new_commits(last_sha, current_head) → bool`
+### 5b. ~~Extract `_review_new_commits(last_sha, current_head) → bool`~~ ✅ Done
 
-- [ ] Move lines 142–220 (the `if current_head != last_sha` block) into a standalone function
-- [ ] Parameters: `last_sha` (range start), `current_head` (range end)
-- [ ] Return `True` if builder finished mid-review (caller should `return`), `False` otherwise
-- [ ] Contains commit enumeration, skip logic (merge/reviewer-only), per-commit reviewer invocation, `git_push_with_retry()`, and checkpoint saves
-- [ ] Keep `prev` variable local to this function
-- [ ] Mid-loop `is_builder_done()` → `return True` (caller exits)
-- [ ] Target: ~55 lines
+- [x] Move lines 142–220 (the `if current_head != last_sha` block) into a standalone function
+- [x] Parameters: `last_sha` (range start), `current_head` (range end)
+- [x] Return `True` if builder finished mid-review (caller should `return`), `False` otherwise
+- [x] Contains commit enumeration, skip logic (merge/reviewer-only), per-commit reviewer invocation, `git_push_with_retry()`, and checkpoint saves
+- [x] Keep `prev` variable local to this function
+- [x] Mid-loop `is_builder_done()` → `return True` (caller exits)
+- [x] Target: ~55 lines
 
-### 5c. Extract `_check_milestone_reviews() → None`
+### 5c. ~~Extract `_check_milestone_reviews() → None`~~ ✅ Done
 
-- [ ] Move lines 224–265 into a standalone function
-- [ ] Pure side-effect: load boundaries, run reviewer for unreviewed milestones, save checkpoints
-- [ ] No return value — no shutdown signal originates here
-- [ ] Target: ~25 lines
+- [x] Move lines 224–265 into a standalone function
+- [x] Pure side-effect: load boundaries, run reviewer for unreviewed milestones, save checkpoints
+- [x] No return value — no shutdown signal originates here
+- [x] Target: ~25 lines
 
-### 5d. Rewrite `commitwatch()` as compact orchestration loop
+### 5d. ~~Rewrite `commitwatch()` as compact orchestration loop~~ ✅ Done
 
-- [ ] Reduce `commitwatch()` to ~40 lines: guard, chdir, banner, checkpoint init, then `while True` calling helpers in sequence
-- [ ] Preserve both exit paths: (1) `break` at top of loop when builder done, (2) `return` when `_review_new_commits()` returns `True`
-- [ ] `last_sha = current_head` update stays in main loop (runs regardless of whether new commits existed)
-- [ ] Git pull + failure logging (6 lines) stays inline — too small to justify extraction
+- [x] Reduce `commitwatch()` to ~40 lines: guard, chdir, banner, checkpoint init, then `while True` calling helpers in sequence
+- [x] Preserve both exit paths: (1) `break` at top of loop when builder done, (2) `return` when `_review_new_commits()` returns `True`
+- [x] `last_sha = current_head` update stays in main loop (runs regardless of whether new commits existed)
+- [x] Git pull + failure logging (6 lines) stays inline — too small to justify extraction
 
 ### Verification
 
-- [ ] `python -c "from agent.watcher import commitwatch"` succeeds
-- [ ] `python -c "from agent.cli import app"` succeeds (no circular imports)
-- [ ] `python -m agent commitwatch --help` shows correct CLI registration
-- [ ] Grep confirms both `is_builder_done()` exit paths preserved (1 `break` + 1 `return`)
-- [ ] Legacy `_watch_loop`, `reviewoncommit`, `testoncommit` unchanged
-- [ ] `pytest` — no failures
+- [x] `python -c "from agent.watcher import commitwatch"` succeeds
+- [x] `python -c "from agent.cli import app"` succeeds (no circular imports)
+- [x] `python -m agent commitwatch --help` shows correct CLI registration
+- [x] Grep confirms both `is_builder_done()` exit paths preserved (1 `break` + 1 `return`)
+- [x] Legacy `_watch_loop`, `reviewoncommit`, `testoncommit` unchanged
+- [x] `pytest` — no failures
 
 **Why:** Same rationale as task 4.
 
