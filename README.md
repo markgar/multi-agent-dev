@@ -176,7 +176,7 @@ Planner ──TASKS.md──→ Builder ──git push──→ Reviewer ──R
 - The **Planner** runs on demand via `plan`. It reads `SPEC.md`, the codebase, `TASKS.md`, `BUGS.md`, and `REVIEWS.md`, then creates or updates the task list. It never writes code.
 - The **Builder** checks `BUGS.md` first (all bugs are fixed before any tasks), then `REVIEWS.md`, then completes the current milestone. One milestone per cycle, then the planner re-evaluates.
 - The **Reviewer** reviews each commit individually, plus a cross-cutting review when a milestone completes. It skips minor style nitpicks.
-- The **Tester** runs scoped tests when a milestone completes, focusing on changed files. Runs a final full test pass when the builder finishes.
+- The **Tester** runs scoped tests when a milestone completes, focusing on changed files. Exits when the builder finishes.
 - Neither the Reviewer nor Tester duplicate items already in their respective files.
 - All agents run `git pull --rebase` before pushing to avoid merge conflicts.
 - `SPEC.md` is the source of truth. Edit it anytime to steer the project — run `plan` to adapt the task list.

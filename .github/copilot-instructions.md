@@ -31,12 +31,12 @@ This software is entirely written by GitHub Copilot. The code is structured to b
 - `src/agent/bootstrap.py` — Project scaffolding: repo creation, cloning reviewer/tester copies.
 - `src/agent/builder.py` — Build loop: milestone completion, retry logic.
 - `src/agent/watcher.py` — Commit watcher: per-commit reviews, milestone-level reviews.
-- `src/agent/tester.py` — Test loop: milestone-triggered testing, final test pass.
+- `src/agent/tester.py` — Test loop: milestone-triggered testing.
 - `src/agent/terminal.py` — Terminal spawning helper for launching agents in new windows.
 - `src/agent/prompts.py` — All LLM prompt templates. Constants only, no logic.
 - `src/agent/utils.py` — Core helpers: logging, command execution, platform detection.
 - `src/agent/git_helpers.py` — Git operations: push with retry, commit classification.
-- `src/agent/sentinel.py` — Builder-done sentinel and reviewer checkpoint persistence.
+- `src/agent/sentinel.py` — Builder-done sentinel, agent-idle detection, and reviewer checkpoint persistence.
 - `src/agent/milestone.py` — Milestone parsing, boundary tracking, and per-agent milestone checkpoints.
 - `src/agent/config.py` — Language/stack configurations and prerequisites.
 - `src/agent/legacy_watchers.py` — Deprecated `reviewoncommit` and `testoncommit` commands (not used by `go`/`resume`).

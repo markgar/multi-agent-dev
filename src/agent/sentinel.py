@@ -9,6 +9,9 @@ _BUILDER_DONE_FILE = "builder.done"
 _BUILDER_LOG_FILE = "builder.log"
 _STALE_LOG_TIMEOUT_MINUTES = 10
 _REVIEWER_CHECKPOINT_FILE = "reviewer.checkpoint"
+_REVIEWER_LOG_FILE = "reviewer.log"
+_TESTER_LOG_FILE = "tester.log"
+_AGENT_IDLE_SECONDS = 30
 
 
 def write_builder_done() -> None:
@@ -96,3 +99,42 @@ def load_reviewer_checkpoint() -> str:
     except Exception:
         pass
     return ""
+
+
+def check_agent_idle(log_exists: bool, log_age_seconds: float, idle_threshold: float) -> bool:
+    """Determine if an agent is idle based on its log age.
+
+    Pure function: returns True if the log exists and hasn't been modified
+    within idle_threshold seconds, or if the log doesn't exist (agent never started).
+    """
+    if not log_exists:
+        return True
+    return log_age_seconds >= idle_threshold
+
+
+def are_agents_idle() -> bool:
+    """Check if both the reviewer and tester are idle.
+
+    Returns True when both agent logs haven't been modified within
+    the idle threshold (30 seconds), meaning they're just sleeping
+    in their poll loops with nothing to do.
+    """
+    try:
+        logs_dir = resolve_logs_dir()
+        now = datetime.now().timestamp()
+
+        reviewer_log = os.path.join(logs_dir, _REVIEWER_LOG_FILE)
+        reviewer_exists = os.path.exists(reviewer_log)
+        reviewer_age = (now - os.path.getmtime(reviewer_log)) if reviewer_exists else 0.0
+
+        tester_log = os.path.join(logs_dir, _TESTER_LOG_FILE)
+        tester_exists = os.path.exists(tester_log)
+        tester_age = (now - os.path.getmtime(tester_log)) if tester_exists else 0.0
+
+        return (
+            check_agent_idle(reviewer_exists, reviewer_age, _AGENT_IDLE_SECONDS)
+            and check_agent_idle(tester_exists, tester_age, _AGENT_IDLE_SECONDS)
+        )
+    except Exception:
+        pass
+    return False

@@ -13,7 +13,7 @@ from agent.milestone import (
     load_reviewed_milestones,
     save_milestone_checkpoint,
 )
-from agent.prompts import TESTER_MILESTONE_PROMPT, TESTER_PROMPT
+from agent.prompts import TESTER_MILESTONE_PROMPT
 from agent.sentinel import is_builder_done
 from agent.utils import log, run_cmd, run_copilot
 
@@ -99,14 +99,8 @@ def testloop(
                 )
 
         if builder_done:
-            # Final full test pass
             now = datetime.now().strftime("%H:%M:%S")
-            log("tester", f"[{now}] Builder finished. Running final full test pass...", style="bold green")
-            run_cmd(["git", "pull", "--rebase", "-q"], quiet=True)
-            run_copilot("tester", TESTER_PROMPT)
-            git_push_with_retry("tester")
-            now = datetime.now().strftime("%H:%M:%S")
-            log("tester", f"[{now}] Final test pass complete. Shutting down.", style="bold green")
+            log("tester", f"[{now}] Builder finished. Shutting down.", style="bold green")
             break
 
         time.sleep(interval)

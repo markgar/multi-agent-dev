@@ -16,7 +16,7 @@ from agent.milestone import (
     record_milestone_boundary,
 )
 from agent.prompts import BUILDER_PROMPT, PLANNER_SPLIT_PROMPT
-from agent.sentinel import write_builder_done
+from agent.sentinel import are_agents_idle, write_builder_done
 from agent.utils import has_unchecked_items, log, run_cmd, run_copilot
 
 
@@ -112,8 +112,6 @@ def build(
         if signal == "done":
             write_builder_done()
             break
-        elif signal == "idle":
-            continue
         # signal == "continue" → loop back
 
 
@@ -122,7 +120,6 @@ class BuildState:
     """Mutable state shared across build-loop iterations."""
 
     cycle_count: int = 0
-    no_work_count: int = 0
     last_milestone_name: str | None = None
     milestone_retry_count: int = 0
     last_milestone_done_count: int = -1
@@ -322,55 +319,76 @@ def _find_per_milestone_boundaries(
     return boundaries
 
 
-def classify_remaining_work(bugs: int, reviews: int, tasks: int, no_work_count: int) -> str:
-    """Decide the next action based on remaining work counts.
+def classify_remaining_work(bugs: int, reviews: int, tasks: int, agents_idle: bool) -> str:
+    """Decide the next action based on remaining work counts and agent status.
 
-    Pure function: returns 'done', 'idle', or 'continue'.
-    - 'done' when no work remains and no_work_count >= 3
-    - 'idle' when no work remains but hasn't been confirmed 3 times yet
+    Pure function: returns 'done', 'waiting', or 'continue'.
+    - 'done' when no work remains and agents are idle
+    - 'waiting' when no work remains but agents are still active
     - 'continue' when there is remaining work
     """
     if not bugs and not reviews and not tasks:
-        if no_work_count >= 3:
+        if agents_idle:
             return "done"
-        return "idle"
+        return "waiting"
     return "continue"
 
 
+_AGENT_WAIT_INTERVAL = 15
+_AGENT_WAIT_MAX_CYCLES = 40  # 15s * 40 = 10 minutes max wait
+
+
 def _check_remaining_work(state: BuildState) -> str:
-    """Check for remaining bugs, reviews, and tasks. Return 'done', 'idle', or 'continue'."""
-    remaining_bugs = has_unchecked_items("BUGS.md")
-    remaining_reviews = has_unchecked_items("REVIEWS.md")
-    remaining_tasks = has_unchecked_items("TASKS.md")
+    """Wait for agents to finish, then check work lists. Return 'done' or 'continue'."""
+    wait_cycle = 0
 
-    state.no_work_count = 0 if (remaining_bugs or remaining_reviews or remaining_tasks) else state.no_work_count + 1
+    while wait_cycle < _AGENT_WAIT_MAX_CYCLES:
+        # Pull latest so we see any new BUGS.md / REVIEWS.md changes
+        run_cmd(["git", "pull", "--rebase", "-q"], quiet=True)
 
-    signal = classify_remaining_work(remaining_bugs, remaining_reviews, remaining_tasks, state.no_work_count)
+        remaining_bugs = has_unchecked_items("BUGS.md")
+        remaining_reviews = has_unchecked_items("REVIEWS.md")
+        remaining_tasks = has_unchecked_items("TASKS.md")
+        agents_idle = are_agents_idle()
 
-    if signal == "done":
-        log("builder", "")
-        log("builder", "======================================", style="bold green")
-        log("builder", " All work complete!", style="bold green")
-        log("builder", " - Bugs: Done", style="bold green")
-        log("builder", " - Reviews: Done", style="bold green")
-        log("builder", " - Tasks: Done", style="bold green")
-        log("builder", "======================================", style="bold green")
-    elif signal == "idle":
-        log("builder", "")
-        log("builder", f"No work found (check {state.no_work_count}/3)", style="yellow")
-        log("builder", "Waiting 1 minute in case reviewer/tester are working...", style="yellow")
-        log("builder", "(Ctrl+C to stop)", style="dim")
-        time.sleep(60)
-    else:
-        log("builder", "")
-        log("builder", "Work remaining:", style="cyan")
-        if remaining_bugs:
-            log("builder", f" - Bugs: {remaining_bugs} unchecked", style="yellow")
-        if remaining_reviews:
-            log("builder", f" - Reviews: {remaining_reviews} unchecked", style="yellow")
-        if remaining_tasks:
-            log("builder", f" - Tasks: {remaining_tasks} unchecked", style="yellow")
-        log("builder", " Starting next milestone in 5 seconds... (Ctrl+C to stop)", style="cyan")
-        time.sleep(5)
+        signal = classify_remaining_work(
+            remaining_bugs, remaining_reviews, remaining_tasks, agents_idle
+        )
 
-    return signal
+        if signal == "continue":
+            log("builder", "")
+            log("builder", "Work remaining:", style="cyan")
+            if remaining_bugs:
+                log("builder", f" - Bugs: {remaining_bugs} unchecked", style="yellow")
+            if remaining_reviews:
+                log("builder", f" - Reviews: {remaining_reviews} unchecked", style="yellow")
+            if remaining_tasks:
+                log("builder", f" - Tasks: {remaining_tasks} unchecked", style="yellow")
+            log("builder", " Starting next build cycle in 5 seconds...", style="cyan")
+            time.sleep(5)
+            return "continue"
+
+        if signal == "done":
+            log("builder", "")
+            log("builder", "======================================", style="bold green")
+            log("builder", " All work complete!", style="bold green")
+            log("builder", " - Bugs: Done", style="bold green")
+            log("builder", " - Reviews: Done", style="bold green")
+            log("builder", " - Tasks: Done", style="bold green")
+            log("builder", " - Reviewer: Idle", style="bold green")
+            log("builder", " - Tester: Idle", style="bold green")
+            log("builder", "======================================", style="bold green")
+            return "done"
+
+        # signal == "waiting" — agents still active
+        wait_cycle += 1
+        if wait_cycle == 1:
+            log("builder", "")
+            log("builder", "Waiting for reviewer/tester to finish...", style="yellow")
+            log("builder", "(Ctrl+C to stop)", style="dim")
+        time.sleep(_AGENT_WAIT_INTERVAL)
+
+    # Timed out waiting for agents
+    log("builder", "")
+    log("builder", "Timed out waiting for agents. Exiting.", style="bold yellow")
+    return "done"

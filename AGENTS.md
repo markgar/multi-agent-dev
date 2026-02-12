@@ -53,7 +53,7 @@ The generated file includes:
 
 ## Builder
 
-Runs via `build`. Completes one milestone per cycle. Between milestones the planner re-evaluates the task list. Writes `logs/builder.done` when it exits so other agents know to shut down.
+Runs via `build`. Completes one milestone per cycle. Between milestones the planner re-evaluates the task list. After all milestones are done, waits for the reviewer and tester to go idle and verifies that all checklists are clean before writing `logs/builder.done` to signal shutdown.
 
 > Before starting, review README.md, SPEC.md, and TASKS.md to understand the project's purpose and plan. Read .github/copilot-instructions.md if it exists — follow its coding guidelines and conventions in all code you write. Only build, fix, or keep code that serves that purpose. Remove any scaffolding, template code, or functionality that does not belong. When completing a task that changes the project structure, key files, architecture, or conventions, update .github/copilot-instructions.md to reflect the change. Now look at BUGS.md first. Fix ALL unfixed bugs — bugs are never deferred. Fix them one at a time — fix a bug, mark it fixed in BUGS.md, commit with a meaningful message, run git pull --rebase, and push. Then look at REVIEWS.md. Address unchecked review items one at a time — fix the issue, mark it done in REVIEWS.md, commit, pull --rebase, and push. Once all bugs and review items are fixed (or if there are none), move to TASKS.md. TASKS.md is organized into milestones (sections headed with `## Milestone: <name>`). Find the first milestone that has unchecked tasks — this is your current milestone. Complete every task in this milestone, then stop. Do not start the next milestone. Do tasks one at a time. For each task: write the code AND mark it complete in TASKS.md, then commit both together in a single commit with a meaningful message. Do not make separate commits for the code and the checkbox update. After each commit, run git pull --rebase and push. When every task in the current milestone is checked, you are done for this session.
 
@@ -61,7 +61,7 @@ Runs via `build`. Completes one milestone per cycle. Between milestones the plan
 **Writes code:** Yes  
 **Updates:** .github/copilot-instructions.md (when project structure changes)  
 **Commits:** After each bug fix, review fix, and task  
-**Shutdown signal:** Writes `logs/builder.done` on exit
+**Shutdown signal:** Waits for agents to idle, then writes `logs/builder.done`
 
 ---
 
@@ -105,13 +105,13 @@ For each newly completed milestone:
 
 > Read SPEC.md and TASKS.md to understand the project. A milestone — '{milestone_name}' — has just been completed. Pull the latest code with `git pull --rebase`. Run `git diff {milestone_start_sha} {milestone_end_sha} --name-only` to see which files changed in this milestone. Focus your testing on those files and the features they implement. Build the project. Run all existing tests. If there is a runnable API, start it, test the endpoints related to the changed files with curl, then stop it. Evaluate test coverage for the changed files and their related functionality. If there are major gaps — like no tests at all for a feature, or completely missing error handling tests — write focused tests to cover the most important gaps. Prioritize integration tests over unit tests. Each test should verify a distinct user-facing behavior. Do not test internal implementation details, getters/setters, or trivially obvious code. Write at most 10 new tests per run. For any test that fails, write each failure to BUGS.md. Only append new lines — never edit, reorder, or remove existing lines in BUGS.md. Commit new tests and BUGS.md changes, run git pull --rebase, and push. If the push fails, run git pull --rebase and push again (retry up to 3 times). If everything passes and no new tests are needed, do nothing.
 
-When the builder finishes, the tester runs one final full test pass using the general tester prompt (not milestone-scoped) before shutting down.
+When the builder finishes, the tester sees `logs/builder.done` and exits.
 
 **Trigger:** Polls `logs/milestones.log` every 10 seconds (configurable via `--interval`)  
-**Scope:** Changed files per milestone; full repo for final pass  
+**Scope:** Changed files per milestone  
 **Checkpoint:** `logs/tester.milestone` (set of milestones already tested)  
 **Runs from:** `tester/` clone  
-**Shutdown:** Checks for `logs/builder.done`; runs one final test pass, then exits  
+**Shutdown:** Checks for `logs/builder.done`; exits when builder is done  
 **Writes code:** Tests only  
 **Commits:** When it writes new tests or finds bugs
 
@@ -125,8 +125,13 @@ The original `reviewoncommit` and `testoncommit` commands still exist for manual
 
 ## Shutdown Protocol
 
-All agents auto-shutdown when the builder finishes:
+The builder waits for all agents to finish before exiting:
 
-1. **Primary signal:** Builder writes `logs/builder.done` on exit (success, failure, or no-work).
-2. **Crash fallback:** If `logs/builder.log` hasn't been modified in 10+ minutes, agents assume the builder crashed and shut down.
-3. **Startup cleanup:** `go` and `resume` clear any stale `builder.done` sentinel before launching agents.
+1. **Builder completes all milestones:** After the last milestone, the builder enters a wait loop.
+2. **Wait for agents to go idle:** The builder monitors `logs/reviewer.log` and `logs/tester.log` modification times. When both logs haven't changed in 30+ seconds, agents are considered idle.
+3. **Check work lists:** The builder pulls latest and checks `BUGS.md`, `REVIEWS.md`, and `TASKS.md` for unchecked items.
+4. **Fix or exit:** If new work was filed (bugs from tester, reviews from reviewer), the builder fixes it and loops back to step 2. If checklists are clean and agents are idle, the builder writes `logs/builder.done` and exits.
+5. **Agents shut down:** The reviewer and tester see `logs/builder.done` on their next poll cycle and exit.
+6. **Crash fallback:** If `logs/builder.log` hasn't been modified in 10+ minutes, agents assume the builder crashed and shut down.
+7. **Startup cleanup:** `go` and `resume` clear any stale `builder.done` sentinel before launching agents.
+8. **Timeout safety:** If agents don't go idle within 10 minutes, the builder writes `builder.done` and exits anyway.

@@ -1,23 +1,42 @@
 """Tests for build loop decision logic and stuck detection."""
 
 from agent.builder import classify_remaining_work, update_milestone_retry_state
+from agent.sentinel import check_agent_idle
 
 
-def test_all_work_done_after_three_confirmations():
-    assert classify_remaining_work(bugs=0, reviews=0, tasks=0, no_work_count=3) == "done"
-    assert classify_remaining_work(bugs=0, reviews=0, tasks=0, no_work_count=5) == "done"
+def test_all_work_done_when_agents_idle():
+    assert classify_remaining_work(bugs=0, reviews=0, tasks=0, agents_idle=True) == "done"
 
 
-def test_no_work_but_not_yet_confirmed_returns_idle():
-    assert classify_remaining_work(bugs=0, reviews=0, tasks=0, no_work_count=1) == "idle"
-    assert classify_remaining_work(bugs=0, reviews=0, tasks=0, no_work_count=2) == "idle"
+def test_no_work_but_agents_active_returns_waiting():
+    assert classify_remaining_work(bugs=0, reviews=0, tasks=0, agents_idle=False) == "waiting"
 
 
 def test_any_remaining_work_returns_continue():
-    assert classify_remaining_work(bugs=1, reviews=0, tasks=0, no_work_count=0) == "continue"
-    assert classify_remaining_work(bugs=0, reviews=3, tasks=0, no_work_count=0) == "continue"
-    assert classify_remaining_work(bugs=0, reviews=0, tasks=5, no_work_count=0) == "continue"
-    assert classify_remaining_work(bugs=2, reviews=1, tasks=3, no_work_count=0) == "continue"
+    assert classify_remaining_work(bugs=1, reviews=0, tasks=0, agents_idle=False) == "continue"
+    assert classify_remaining_work(bugs=0, reviews=3, tasks=0, agents_idle=False) == "continue"
+    assert classify_remaining_work(bugs=0, reviews=0, tasks=5, agents_idle=False) == "continue"
+    assert classify_remaining_work(bugs=2, reviews=1, tasks=3, agents_idle=False) == "continue"
+
+
+def test_remaining_work_returns_continue_even_when_agents_idle():
+    assert classify_remaining_work(bugs=1, reviews=0, tasks=0, agents_idle=True) == "continue"
+
+
+def test_agent_idle_when_log_old_enough():
+    assert check_agent_idle(log_exists=True, log_age_seconds=60.0, idle_threshold=30.0) is True
+
+
+def test_agent_not_idle_when_log_recently_modified():
+    assert check_agent_idle(log_exists=True, log_age_seconds=10.0, idle_threshold=30.0) is False
+
+
+def test_agent_idle_when_log_does_not_exist():
+    assert check_agent_idle(log_exists=False, log_age_seconds=0.0, idle_threshold=30.0) is True
+
+
+def test_agent_idle_at_exact_threshold():
+    assert check_agent_idle(log_exists=True, log_age_seconds=30.0, idle_threshold=30.0) is True
 
 
 def test_stuck_milestone_detected_after_max_retries():
