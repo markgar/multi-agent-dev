@@ -76,6 +76,14 @@ def build(
         state.cycle_count += 1
 
         if not _detect_milestone_progress(state, loop):
+            if loop:
+                # All milestones done — wait for agents to finish and check work lists
+                signal = _check_remaining_work(state)
+                if signal == "done":
+                    write_builder_done()
+                    return
+                # signal == "continue" → new work found, loop back
+                continue
             write_builder_done()
             return
 
