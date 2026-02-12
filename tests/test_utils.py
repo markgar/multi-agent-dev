@@ -2,7 +2,7 @@
 
 from agent.sentinel import check_builder_done_status
 from agent.utils import count_unchecked_items, find_project_root
-from agent.git_helpers import is_reviewer_only_files
+from agent.git_helpers import is_reviewer_only_files, is_coordination_only_files
 from agent.terminal import build_agent_script
 from agent.watcher import find_unreviewed_milestones
 from agent.tester import find_untested_milestones
@@ -82,6 +82,32 @@ def test_commit_touching_code_is_not_skipped():
 
 def test_empty_file_list_is_not_skipped():
     assert is_reviewer_only_files([]) is False
+
+
+# --- coordination-only commit filtering ---
+
+def test_tasks_only_commit_is_skipped():
+    assert is_coordination_only_files(["TASKS.md"]) is True
+
+
+def test_reviews_only_is_coordination_only():
+    assert is_coordination_only_files(["REVIEWS.md"]) is True
+
+
+def test_bugs_only_commit_is_skipped():
+    assert is_coordination_only_files(["BUGS.md"]) is True
+
+
+def test_mixed_coordination_files_are_skipped():
+    assert is_coordination_only_files(["TASKS.md", "REVIEWS.md"]) is True
+
+
+def test_coordination_with_code_is_not_skipped():
+    assert is_coordination_only_files(["TASKS.md", "src/app.js"]) is False
+
+
+def test_empty_list_is_not_coordination_only():
+    assert is_coordination_only_files([]) is False
 
 
 # --- agent script generation ---

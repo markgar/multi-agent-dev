@@ -7,7 +7,12 @@ from typing import Annotated
 
 import typer
 
-from agent.git_helpers import git_push_with_retry, is_merge_commit, is_reviewer_only_commit
+from agent.git_helpers import (
+    git_push_with_retry,
+    is_coordination_only_commit,
+    is_merge_commit,
+    is_reviewer_only_commit,
+)
 from agent.milestone import (
     load_milestone_boundaries,
     load_reviewed_milestones,
@@ -63,6 +68,8 @@ def _should_skip_commit(commit_sha: str) -> str | None:
         return "merge commit"
     if is_reviewer_only_commit(commit_sha):
         return "reviewer commit"
+    if is_coordination_only_commit(commit_sha):
+        return "coordination-only commit"
     return None
 
 

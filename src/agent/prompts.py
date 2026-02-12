@@ -117,8 +117,12 @@ BUILDER_PROMPT = (
     "TASKS.md is organized into milestones (sections headed with '## Milestone: <name>'). "
     "Find the first milestone that has unchecked tasks — this is your current milestone. "
     "Complete every task in this milestone, then stop. Do not start the next milestone. "
-    "Do tasks one at a time. For each task: do the task, commit with a meaningful message, "
-    "mark it complete in TASKS.md, commit that too, run git pull --rebase, and push. "
+    "Do tasks one at a time. For each task: write the code for that task AND mark it "
+    "complete in TASKS.md, then commit BOTH together in a single commit with a meaningful "
+    "message describing the work done. Do NOT batch multiple tasks into one commit, and "
+    "do NOT make separate commits for the code change and the checkbox update — each task "
+    "gets exactly one commit containing both the code and the TASKS.md update. After each "
+    "commit, run git pull --rebase and push. "
     "When every task in the current milestone is checked, you are done for this session."
 )
 
