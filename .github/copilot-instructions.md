@@ -12,10 +12,10 @@ This software is entirely written by GitHub Copilot. The code is structured to b
 - **Colocate related logic.** Keep constants, helpers, and the code that uses them close together (or in the same small file). Avoid scattering related pieces across many modules — Copilot works best when relevant context is nearby.
 - **Consistent patterns.** When multiple functions do similar things, structure them identically. Consistent shape lets Copilot reliably extend the pattern.
 - **No magic.** Avoid decorators that hide behavior, dynamic attribute access, implicit registration, or monkey-patching. Everything should be traceable by reading the code top-to-bottom.
-- **Format strings for prompts.** All LLM prompts live in `prompts.py` as plain format strings. No template engines, no runtime assembly — just `.format()` with named placeholders.
+- **Simple string templates for prompts.** Keep LLM prompts as plain format strings with named placeholders. No template engines, no runtime assembly — just `.format()` or f-strings.
 - **Graceful error handling.** Wrap I/O and subprocess calls in try/except. Never let a transient failure crash the orchestration loop. Log the error and continue.
 - **Minimal dependencies.** Only add a dependency when it provides substantial value. Fewer deps mean less surface area for Copilot to misunderstand.
-- **One concept per file.** Each module (`cli.py`, `prompts.py`, `utils.py`, `config.py`) owns a single concern. Don't mix prompt templates with orchestration logic or config with utility functions.
+- **One concept per file.** Each module owns a single concern. Don't mix unrelated responsibilities in the same file.
 
 ## Project structure
 

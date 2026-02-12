@@ -4,7 +4,7 @@ These tasks bring the codebase into alignment with the guidelines in `.github/co
 
 ---
 
-## 1. Move lazy imports to module level
+## 1. ~~Move lazy imports to module level~~ ✅ Done
 
 **Files:** `src/agent/utils.py`, `src/agent/cli.py`
 
@@ -14,7 +14,7 @@ These tasks bring the codebase into alignment with the guidelines in `.github/co
 
 ---
 
-## 2. Deduplicate milestone parsing in `utils.py`
+## 2. ~~Deduplicate milestone parsing in `utils.py`~~ ✅ Done
 
 **File:** `src/agent/utils.py`
 
@@ -24,22 +24,42 @@ Three functions — `get_completed_milestones()`, `get_current_milestone_progres
 
 ---
 
-## 3. Split `cli.py` into focused modules
+## 3. ~~Split `cli.py` into focused modules~~ ✅ Done
 
-**File:** `src/agent/cli.py` (970 lines → multiple files)
+**File:** `src/agent/cli.py` (964 lines → 205 lines + 4 modules)
 
-Break `cli.py` into separate modules, each owning one concern:
+Broke `cli.py` into separate modules, each owning one concern.
 
-| New file | Responsibility | Functions moved |
-|---|---|---|
-| `src/agent/cli.py` | App definition, `status`, `go`, `resume` (top-level orchestration) | `app`, `status()`, `go()`, `resume()` |
-| `src/agent/bootstrap.py` | Project scaffolding | `_bootstrap()` |
-| `src/agent/builder.py` | Build loop | `build()`, `_check_milestone_sizes()` |
-| `src/agent/watcher.py` | Commit watching and review dispatching | `commitwatch()`, `_watch_loop()`, `reviewoncommit()`, `testoncommit()` |
-| `src/agent/tester.py` | Test loop | `testloop()` |
-| `src/agent/terminal.py` | Terminal spawning helpers | `_spawn_agent_in_terminal()` |
+### 3a. ~~Extract `terminal.py`~~ ✅ Done
 
-Each new module registers its commands on the shared `app` from `cli.py`. Import structure stays flat.
+- [x] Move `_spawn_agent_in_terminal()` into `src/agent/terminal.py` (renamed to `spawn_agent_in_terminal`)
+- [x] Update imports in `cli.py`
+
+### 3b. ~~Extract `bootstrap.py`~~ ✅ Done
+
+- [x] Move `bootstrap()` and `_bootstrap()` into `src/agent/bootstrap.py` (renamed to `run_bootstrap`)
+- [x] Register the command on the shared `app`
+- [x] Update imports in `cli.py`
+
+### 3c. ~~Extract `builder.py`~~ ✅ Done
+
+- [x] Move `build()` and `_check_milestone_sizes()` into `src/agent/builder.py` (renamed to `check_milestone_sizes`)
+- [x] Register the command on the shared `app`
+- [x] Update imports in `cli.py`
+
+### 3d. ~~Extract `watcher.py`~~ ✅ Done
+
+- [x] Move `commitwatch()`, `_watch_loop()`, `reviewoncommit()`, `testoncommit()` into `src/agent/watcher.py`
+- [x] Register commands on the shared `app`
+- [x] Update imports in `cli.py`
+
+### 3e. ~~Extract `tester.py`~~ ✅ Done
+
+- [x] Move `testloop()` into `src/agent/tester.py`
+- [x] Register the command on the shared `app`
+- [x] Update imports in `cli.py`
+
+**Result:** `cli.py` is now 205 lines (`app`, `status`, `plan`, `go`, `resume` + registration).
 
 **Why:** 970 lines in one file violates "one concept per file" and "small functions." Copilot's context window is more effective with smaller files.
 
@@ -47,16 +67,60 @@ Each new module registers its commands on the shared `app` from `cli.py`. Import
 
 ## 4. Break down `build()` into smaller functions
 
-**File:** `src/agent/builder.py` (after task 3)
+**File:** `src/agent/builder.py`
 
-`build()` is ~200 lines with deep nesting. Extract:
-- `_run_single_build_cycle()` — the inner while-loop body
-- `_detect_milestone_progress()` — the retry/re-plan decision logic
-- `_record_completed_milestones()` — the post-build milestone boundary recording
-- `_wait_for_reviewer_drain()` — the 2-minute reviewer drain window
-- `_check_remaining_work()` — the end-of-cycle work-remaining check
+`build()` is ~180 lines (lines 70–245) with a `while True` loop that mixes 6 concerns: stuck-milestone detection, re-planning, running the builder, milestone boundary recording, reviewer drain, and remaining-work checks. Max nesting depth is 4 levels. Six mutable local variables are shared across the loop body. Four separate `write_builder_done()` exit paths must be preserved.
 
-Each function should be under ~40 lines with a clear name.
+### 4a. Add a `BuildState` dataclass
+
+- [ ] Add `@dataclass class BuildState` at module level (after imports) with fields: `cycle_count: int`, `no_work_count: int`, `last_milestone_name: str | None`, `milestone_retry_count: int`, `last_milestone_done_count: int`
+- [ ] Replace the 6 scattered local variables in `build()` with a single `state = BuildState(...)` instance
+
+### 4b. Extract `_detect_milestone_progress(state, loop) → bool`
+
+- [ ] Move the "same milestone vs new milestone" branching (current lines 91–131) into `_detect_milestone_progress()`
+- [ ] Include the lazy `from agent.cli import plan` import inside this function (avoids circular import)
+- [ ] Return `False` when milestone is stuck beyond `_MAX_MILESTONE_RETRIES` (caller writes sentinel and returns)
+- [ ] Mutate `state` fields for retry tracking and milestone name updates
+- [ ] Target: ~35 lines
+
+### 4c. Extract `_record_completed_milestones(milestones_before) → tuple[set, str, set]`
+
+- [ ] Move `git pull --rebase`, post-build milestone snapshot, `newly_completed` set diff, and `record_milestone_boundary()` calls (current lines 148–166) into this function
+- [ ] Return `(milestones_after, head_after, newly_completed)`
+- [ ] Keep the git pull inside this function to preserve the ordering guarantee (pull before snapshot)
+- [ ] Target: ~25 lines
+
+### 4d. Extract `_wait_for_reviewer_drain(head_after)`
+
+- [ ] Move the 2-minute reviewer polling loop (current lines 169–193) into this function
+- [ ] Preserve the `while/else` pattern exactly (the `else` clause fires when drain expires without reviewer catching up)
+- [ ] Pure side-effect function (logging + sleep)
+- [ ] Target: ~20 lines
+
+### 4e. Extract `_check_remaining_work(state) → str`
+
+- [ ] Move the `has_unchecked_items()` checks and no-work/idle logic (current lines 207–245) into this function
+- [ ] Return signal string: `"done"` (all work complete), `"idle"` (no work found, keep waiting), or `"continue"` (more work, loop)
+- [ ] Mutate `state.no_work_count`; handle the 3-check threshold and 60s wait internally
+- [ ] Target: ~30 lines
+
+### 4f. Rewrite `build()` as a compact orchestration loop
+
+- [ ] Reduce `build()` to ~50 lines: guard, `BuildState` init, and a `while True` that calls the 4 helpers in sequence
+- [ ] Preserve all 4 `write_builder_done()` exit paths: (1) no TASKS.md, (2) stuck milestone, (3) builder failure, (4) all-done / single-run exit
+
+### 4g. Clean up unused imports
+
+- [ ] Remove `git_push_with_retry` and `is_builder_done` from the import list — they are imported but never used in this file
+
+### Verification
+
+- [ ] `python -c "from agent.builder import build, check_milestone_sizes"` succeeds
+- [ ] `python -c "from agent.cli import app"` succeeds (no circular imports)
+- [ ] `python -m agent build --help` shows correct CLI registration
+- [ ] Grep confirms 4 `write_builder_done()` calls are preserved
+- [ ] Run existing tests if any (`pytest`)
 
 **Why:** Violates "small, single-purpose functions." The current function is hard to follow and hard for Copilot to modify safely.
 
