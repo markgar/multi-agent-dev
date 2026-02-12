@@ -114,12 +114,28 @@ tests/harness/runs/<timestamp>/
 |---|---|---|
 | `--name` | `test-run` | Project name (directory name) |
 | `--language` | `node` | Language/stack: `node`, `python`, `dotnet` |
-| `--spec-file` | `tests/harness/sample_spec.md` | Path to requirements spec |
+| `--spec-file` | `tests/harness/sample_spec_cli_calculator.md` | Path to requirements spec |
 
 ### Sample spec
 
-A sample spec is included at `tests/harness/sample_spec.md` (CLI calculator). Create your own spec files for different test scenarios.
-- **No mocking unless unavoidable.** The pure functions extracted for testability exist specifically so you don't need mocks. If you find yourself mocking, consider whether you should be testing a different function.
+Sample specs are included in `tests/harness/`:
+- `sample_spec_cli_calculator.md` — simple CLI calculator (single file, no dependencies)
+- `sample_spec_bookstore_api.md` — REST API with CRUD, validation, and tests
+
+Create your own spec files for different test scenarios.
+
+### Running the harness with Copilot monitoring
+
+When a user asks Copilot to help run the test harness, **do not run it in a background terminal**. Instead:
+
+1. **Have the user run it themselves** in a visible terminal so they can watch the builder's Copilot output stream in real-time:
+   ```bash
+   ./tests/harness/run_test.sh
+   ```
+2. **Monitor progress by reading log files** in the latest run directory (`tests/harness/runs/<timestamp>/`). The logs capture everything — full prompts, output, diffs, commands, and costs.
+3. **Check on demand** when the user asks "what's the builder doing?" or "how far along is it?" by reading `logs/builder.log`, `logs/orchestrator.log`, `logs/reviewer.log`, and `logs/tester.log`.
+
+This gives the user visibility into the live Copilot session while Copilot retains full access to progress and results via the persistent logs.
 
 ## Conventions
 

@@ -16,7 +16,7 @@ HARNESS_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_ROOT="$(cd "$HARNESS_DIR/../.." && pwd)"
 
 # Defaults
-SPEC_FILE="$HARNESS_DIR/sample_spec.md"
+SPEC_FILE="$HARNESS_DIR/sample_spec_cli_calculator.md"
 LANGUAGE="node"
 PROJECT_NAME="test-run"
 
