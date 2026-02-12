@@ -48,6 +48,17 @@ This is a multi-agent orchestrator that uses GitHub Copilot CLI (`copilot --yolo
 
 The build loop (Python code in `builder.py`) handles deterministic orchestration — milestone boundary tracking, SHA recording, shutdown signals. The LLM agents handle creative work — writing code, reviewing diffs, writing tests.
 
+## Testing conventions
+
+- **Tests live in `tests/`** mirroring `src/agent/` — e.g. `tests/test_milestone.py` tests `agent.milestone`.
+- **Use pytest.** No unittest classes. Plain functions with descriptive names.
+- **Test the contract, not the implementation.** A test should describe expected behavior in terms a user would understand — not mirror the code's internal branching. If the test would break when you refactor internals without changing behavior, it's too tightly coupled.
+- **Name tests as behavioral expectations.** `test_stuck_milestone_stops_after_three_retries` not `test_update_milestone_retry_state_returns_true`. The test name should read like a requirement.
+- **Use realistic inputs.** Feed a real-looking TASKS.md with multiple milestones, not a minimal one-line synthetic string. Edge cases should be things that could actually happen — corrupted log lines, empty files, milestones with zero tasks.
+- **Prefer regression tests.** When a bug is found, write the test that would have caught it before fixing it. This is the highest-value test you can write.
+- **Don't test I/O wrappers.** Functions that just read a file and call a pure helper don't need their own tests — test the pure helper directly. Functions that just call subprocess don't need unit tests — they're validated by integration/end-to-end runs.
+- **No mocking unless unavoidable.** The pure functions extracted for testability exist specifically so you don't need mocks. If you find yourself mocking, consider whether you should be testing a different function.
+
 ## Conventions
 
 - Agent prompts are append-only format strings in `prompts.py`. Use `.format()` for interpolation.
