@@ -56,6 +56,16 @@ That's it. `go` will:
 
 Three windows will be running. Watch the Builder work through milestones while the Reviewer and Tester react to each commit and milestone completion. Run `agentic-dev status` anytime in the builder directory to check progress.
 
+### Local Mode (no GitHub)
+
+Add `--local` to run entirely offline with a local bare git repo instead of GitHub:
+
+```bash
+agentic-dev go --name "my-project" --language node --description "..." --local
+```
+
+This skips all `gh` CLI calls and creates a bare repo at `remote.git/` inside the project directory. All git operations (push, pull, clone) work identically against it. Useful for testing, offline development, or environments without GitHub access.
+
 ---
 
 ## 👋 Hello World
@@ -179,6 +189,7 @@ Every agent invocation is logged to an append-only file in a `logs/` directory a
 
 ```
 myproject/
+  remote.git/    ← local bare repo (only with --local)
   builder/       ← git clone
   reviewer/      ← git clone
   tester/        ← git clone
@@ -224,6 +235,12 @@ Or use a requirements file:
 agentic-dev go --name "my-project" --language python --spec-file requirements.md
 ```
 
+Or run without GitHub (local bare git repo):
+
+```bash
+agentic-dev go --name "my-project" --language node --description "..." --local
+```
+
 ### Resuming a Previous Project
 
 ```bash
@@ -255,6 +272,7 @@ agentic-dev testloop
 |---|---|---|
 | `go --name N --language L --description D` | Does everything: bootstrap, plan, launch agents, build | Once, from parent dir |
 | `go --name N --language L --spec-file F` | Same, but reads requirements from a markdown file | Once, from parent dir |
+| `go --name N ... --local` | Same, but uses a local bare git repo instead of GitHub | Once, from parent dir |
 | `resume --name N` | Re-plans, relaunches watchers, resumes building | Once, from parent dir |
 | `plan` | Creates or updates TASKS.md from SPEC.md (with milestones) | builder/, on demand |
 | `build` | Fixes bugs + reviews, then completes the current milestone | builder/, repeatedly |

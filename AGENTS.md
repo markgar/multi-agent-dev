@@ -13,6 +13,8 @@ Runs once internally when you call `go`. Do not run `bootstrap` directly — it 
 **Creates:** README.md, SPEC.md, REQUIREMENTS.md, git repo, GitHub remote  
 **Writes code:** No
 
+**Local mode (`--local`):** When `go` is called with `--local`, the bootstrap prompt replaces `gh repo create` with `git remote add origin {remote_path}` pointing to a local bare git repo. No GitHub CLI calls are made. The `--local` flag also skips the `gh` prerequisite checks and clones reviewer/tester copies from the local bare repo instead of GitHub.
+
 **Note:** Before Copilot runs, the CLI pre-creates `builder/REQUIREMENTS.md` containing the original prompt or spec-file content verbatim. This file is committed with the rest of the bootstrap and never modified afterward.
 
 ---
@@ -31,14 +33,33 @@ Runs on demand via `plan`. Call it before the first `build`, or whenever you nee
 
 ---
 
+## Copilot Instructions Generator
+
+Runs once automatically after the first planner run (in both `go` and `resume`). Skipped if `.github/copilot-instructions.md` already exists.
+
+> You are a documentation generator. You must NOT write any application code or modify any source files other than .github/copilot-instructions.md. Read SPEC.md to understand the tech stack, language, and architecture. Read TASKS.md to understand the planned components and milestones. Read REQUIREMENTS.md for the original project intent. Now create the file .github/copilot-instructions.md (create the .github directory if it doesn't exist). Fill in the project-specific sections (Project structure, Key files, Architecture, Conventions) based on SPEC.md and TASKS.md. Keep the coding guidelines and testing conventions sections exactly as provided in the template. Commit with message 'Add copilot instructions', run git pull --rebase, and push.
+
+The generated file includes:
+- **LLM-friendly coding guidelines** — universal rules for flat control flow, small functions, descriptive naming, no magic, etc.
+- **Documentation maintenance rule** — instructs the builder to keep the instructions file updated as the project evolves.
+- **Project-specific sections** — structure, key files, architecture, and conventions inferred from the plan.
+- **Testing conventions** — universal rules for behavioral test naming, realistic inputs, regression tests, no mocking.
+
+**Creates:** `.github/copilot-instructions.md`  
+**Reads:** SPEC.md, TASKS.md, REQUIREMENTS.md  
+**Writes code:** No
+
+---
+
 ## Builder
 
 Runs via `build`. Completes one milestone per cycle. Between milestones the planner re-evaluates the task list. Writes `logs/builder.done` when it exits so other agents know to shut down.
 
-> Before starting, review README.md, SPEC.md, and TASKS.md to understand the project's purpose and plan. Only build, fix, or keep code that serves that purpose. Remove any scaffolding, template code, or functionality that does not belong. Now look at BUGS.md first. Fix ALL unfixed bugs — bugs are never deferred. Fix them one at a time — fix a bug, mark it fixed in BUGS.md, commit with a meaningful message, run git pull --rebase, and push. Then look at REVIEWS.md. Address unchecked review items one at a time — fix the issue, mark it done in REVIEWS.md, commit, pull --rebase, and push. Once all bugs and review items are fixed (or if there are none), move to TASKS.md. TASKS.md is organized into milestones (sections headed with `## Milestone: <name>`). Find the first milestone that has unchecked tasks — this is your current milestone. Complete every task in this milestone, then stop. Do not start the next milestone. Do tasks one at a time, committing and pushing each. When every task in the current milestone is checked, you are done for this session.
+> Before starting, review README.md, SPEC.md, and TASKS.md to understand the project's purpose and plan. Read .github/copilot-instructions.md if it exists — follow its coding guidelines and conventions in all code you write. Only build, fix, or keep code that serves that purpose. Remove any scaffolding, template code, or functionality that does not belong. When completing a task that changes the project structure, key files, architecture, or conventions, update .github/copilot-instructions.md to reflect the change. Now look at BUGS.md first. Fix ALL unfixed bugs — bugs are never deferred. Fix them one at a time — fix a bug, mark it fixed in BUGS.md, commit with a meaningful message, run git pull --rebase, and push. Then look at REVIEWS.md. Address unchecked review items one at a time — fix the issue, mark it done in REVIEWS.md, commit, pull --rebase, and push. Once all bugs and review items are fixed (or if there are none), move to TASKS.md. TASKS.md is organized into milestones (sections headed with `## Milestone: <name>`). Find the first milestone that has unchecked tasks — this is your current milestone. Complete every task in this milestone, then stop. Do not start the next milestone. Do tasks one at a time, committing and pushing each. When every task in the current milestone is checked, you are done for this session.
 
-**Reads:** README.md, SPEC.md, TASKS.md, BUGS.md, REVIEWS.md  
+**Reads:** README.md, SPEC.md, TASKS.md, BUGS.md, REVIEWS.md, .github/copilot-instructions.md  
 **Writes code:** Yes  
+**Updates:** .github/copilot-instructions.md (when project structure changes)  
 **Commits:** After each bug fix, review fix, and task  
 **Shutdown signal:** Writes `logs/builder.done` on exit
 

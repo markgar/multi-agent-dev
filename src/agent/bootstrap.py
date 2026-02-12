@@ -6,7 +6,7 @@ from typing import Annotated
 import typer
 
 from agent.config import LANGUAGE_CONFIGS, VALID_LANGUAGES
-from agent.prompts import BOOTSTRAP_PROMPT
+from agent.prompts import BOOTSTRAP_PROMPT, LOCAL_BOOTSTRAP_PROMPT
 from agent.utils import (
     check_command,
     console,
@@ -169,8 +169,9 @@ def run_bootstrap(
     description: str = None,
     language: str = "node",
     spec_file: str = None,
+    local: bool = False,
 ):
-    """Internal: scaffold a new project — git repo, GitHub remote, clone reviewer/tester copies."""
+    """Internal: scaffold a new project — git repo, GitHub remote (or local bare repo), clone reviewer/tester copies."""
     description = _resolve_description(description, spec_file)
 
     if language not in VALID_LANGUAGES:
@@ -192,14 +193,15 @@ def run_bootstrap(
             console.print("Bootstrap cancelled.", style="yellow")
             return
 
-    gh_user = _check_prerequisites(language)
+    gh_user = _check_prerequisites(language, local=local)
     if not gh_user:
         return
 
     lang_config = LANGUAGE_CONFIGS[language]
+    mode_label = " (local mode)" if local else ""
     console.print()
-    console.print(f"Bootstrapping {name} ({lang_config['label']})...", style="cyan")
+    console.print(f"Bootstrapping {name} ({lang_config['label']}){mode_label}...", style="cyan")
     console.print()
 
-    if not _scaffold_project(name, description, gh_user, language):
+    if not _scaffold_project(name, description, gh_user, language, local=local):
         return

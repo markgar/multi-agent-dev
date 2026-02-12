@@ -6,7 +6,7 @@ from typing import Annotated
 
 import typer
 
-from agent.prompts import PLANNER_PROMPT
+from agent.prompts import COPILOT_INSTRUCTIONS_PROMPT, COPILOT_INSTRUCTIONS_TEMPLATE, PLANNER_PROMPT
 from agent.sentinel import clear_builder_done
 from agent.utils import console, log, pushd, run_cmd, run_copilot
 
@@ -99,6 +99,30 @@ def plan():
     log("planner", "======================================", style="bold magenta")
 
 
+def _generate_copilot_instructions() -> None:
+    """Generate .github/copilot-instructions.md from SPEC.md and TASKS.md."""
+    if os.path.exists(os.path.join(".github", "copilot-instructions.md")):
+        log("orchestrator", "copilot-instructions.md already exists, skipping generation.", style="dim")
+        return
+
+    log("orchestrator", "")
+    log("orchestrator", "[Orchestrator] Generating copilot-instructions.md...", style="magenta")
+
+    template_for_prompt = COPILOT_INSTRUCTIONS_TEMPLATE.replace("{", "{{").replace("}", "}}")
+    template_for_prompt = template_for_prompt.replace("{{project_structure}}", "{project_structure}")
+    template_for_prompt = template_for_prompt.replace("{{key_files}}", "{key_files}")
+    template_for_prompt = template_for_prompt.replace("{{architecture}}", "{architecture}")
+    template_for_prompt = template_for_prompt.replace("{{conventions}}", "{conventions}")
+
+    prompt = COPILOT_INSTRUCTIONS_PROMPT.format(template=template_for_prompt)
+    exit_code = run_copilot("orchestrator", prompt)
+
+    if exit_code == 0:
+        log("orchestrator", "copilot-instructions.md generated.", style="green")
+    else:
+        log("orchestrator", "WARNING: Failed to generate copilot-instructions.md. Continuing.", style="yellow")
+
+
 def _launch_agents_and_build(parent_dir: str, plan_label: str) -> None:
     """Run planner, spawn reviewer/tester in terminals, then build until done."""
     clear_builder_done()
@@ -109,6 +133,7 @@ def _launch_agents_and_build(parent_dir: str, plan_label: str) -> None:
     log("orchestrator", "======================================", style="bold magenta")
     plan()
     check_milestone_sizes()
+    _generate_copilot_instructions()
 
     log("orchestrator", "")
     log("orchestrator", "Launching commit watcher (per-commit reviewer)...", style="yellow")
@@ -131,11 +156,12 @@ def go(
     description: Annotated[str, typer.Option(help="What the project should do")] = None,
     language: Annotated[str, typer.Option(help="Language/stack: dotnet, python, node")] = "node",
     spec_file: Annotated[str, typer.Option(help="Path to a markdown file containing the project requirements")] = None,
+    local: Annotated[bool, typer.Option(help="Use a local bare git repo instead of GitHub")] = False,
 ):
     """One command to rule them all: bootstrap, plan, and launch all agents."""
     start_dir = os.getcwd()
 
-    run_bootstrap(name=name, description=description, language=language, spec_file=spec_file)
+    run_bootstrap(name=name, description=description, language=language, spec_file=spec_file, local=local)
     if not os.path.exists(os.path.join(os.getcwd(), "builder")):
         log("orchestrator", "ERROR: Bootstrap did not create the expected directory structure.", style="bold red")
         os.chdir(start_dir)
