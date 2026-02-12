@@ -170,6 +170,31 @@ REVIEWER_COMMIT_PROMPT = (
     "run git pull --rebase and push again (retry up to 3 times)."
 )
 
+REVIEWER_BATCH_PROMPT = (
+    "You are a code reviewer. You must NOT add features or change functionality. "
+    "Your job is to review the combined changes from {commit_count} commits for "
+    "quality issues. Read SPEC.md and TASKS.md ONLY to understand the project goals — "
+    "do NOT review those files themselves. "
+    "Run `git log --oneline {base_sha}..{head_sha}` to see the commit messages. "
+    "Run `git diff {base_sha} {head_sha}` to get the combined diff. This diff is your "
+    "ONLY input for review — do NOT read entire source files, do NOT review code outside "
+    "the diff, and do NOT look at older changes. Focus exclusively on the added and "
+    "modified lines shown in the diff. Use the surrounding context lines only to "
+    "understand what the changed code does. "
+    "Look for: code duplication, unclear naming, overly complex logic, missing error "
+    "handling, security issues (hardcoded secrets, injection risks, missing input "
+    "validation), violations of the project's conventions or tech stack, and dead or "
+    "unreachable code. Do NOT flag minor style preferences or nitpicks. Only flag issues "
+    "that meaningfully affect correctness, security, maintainability, or readability. "
+    "If you find issues, APPEND each one to REVIEWS.md as a checkbox list item with the "
+    "file, the relevant commit SHA(s), a brief description of the problem, and a "
+    "suggested fix. Only append new lines — never edit, reorder, or remove existing "
+    "lines in REVIEWS.md. Do not duplicate items already in REVIEWS.md. If there are no "
+    "meaningful issues, do nothing. If you wrote to REVIEWS.md, commit with message "
+    "'Code review: {base_sha:.8}..{head_sha:.8}', run git pull --rebase, and push. "
+    "If the push fails, run git pull --rebase and push again (retry up to 3 times)."
+)
+
 REVIEWER_MILESTONE_PROMPT = (
     "You are a code reviewer performing a milestone-level review. You must NOT add "
     "features or change functionality. A milestone — '{milestone_name}' — has just been "

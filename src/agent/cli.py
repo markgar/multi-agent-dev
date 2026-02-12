@@ -154,14 +154,13 @@ def _launch_agents_and_build(parent_dir: str, plan_label: str) -> None:
 def go(
     name: Annotated[str, typer.Option(help="Project name")],
     description: Annotated[str, typer.Option(help="What the project should do")] = None,
-    language: Annotated[str, typer.Option(help="Language/stack: dotnet, python, node")] = "node",
     spec_file: Annotated[str, typer.Option(help="Path to a markdown file containing the project requirements")] = None,
     local: Annotated[bool, typer.Option(help="Use a local bare git repo instead of GitHub")] = False,
 ):
     """One command to rule them all: bootstrap, plan, and launch all agents."""
     start_dir = os.getcwd()
 
-    run_bootstrap(name=name, description=description, language=language, spec_file=spec_file, local=local)
+    run_bootstrap(name=name, description=description, spec_file=spec_file, local=local)
     if not os.path.exists(os.path.join(os.getcwd(), "builder")):
         log("orchestrator", "ERROR: Bootstrap did not create the expected directory structure.", style="bold red")
         os.chdir(start_dir)

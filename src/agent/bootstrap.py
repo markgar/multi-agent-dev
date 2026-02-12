@@ -5,7 +5,6 @@ from typing import Annotated
 
 import typer
 
-from agent.config import LANGUAGE_CONFIGS, VALID_LANGUAGES
 from agent.prompts import BOOTSTRAP_PROMPT, LOCAL_BOOTSTRAP_PROMPT
 from agent.utils import (
     check_command,
@@ -25,7 +24,6 @@ def register(app: typer.Typer) -> None:
 def bootstrap(
     name: Annotated[str, typer.Option(help="Project name (used for directory and GitHub repo)")],
     description: Annotated[str, typer.Option(help="What the project should do")] = None,
-    language: Annotated[str, typer.Option(help="Language/stack: dotnet, python, node")] = "node",
     spec_file: Annotated[str, typer.Option(help="Path to a markdown file containing the project requirements")] = None,
 ):
     """Deprecated: use 'go' instead. Bootstrap only scaffolds — it does NOT launch the planner, builder, or watchers."""
@@ -71,8 +69,8 @@ def _resolve_description(description, spec_file):
     return description
 
 
-def _check_prerequisites(language, local=False):
-    """Check all prerequisites (GitHub user, core tools, auth, language tools). Returns gh_user or None."""
+def _check_prerequisites(local=False):
+    """Check all prerequisites (GitHub user, core tools, auth). Returns gh_user or None."""
     if local:
         gh_user = "local"
     else:
@@ -104,20 +102,10 @@ def _check_prerequisites(language, local=False):
             return None
         console.print("✓ gh auth  - OK (authenticated)", style="green")
 
-    lang_config = LANGUAGE_CONFIGS[language]
-    for prereq in lang_config["prerequisites"]:
-        if not check_command(prereq["command"]):
-            console.print(f"ERROR: {prereq['error']}", style="bold red")
-            install = prereq["install_mac"] if is_macos() else prereq["install_win"]
-            console.print(f"Run: {install}", style="yellow")
-            console.print("Then close and reopen your terminal.", style="yellow")
-            return None
-        console.print(f"✓ {prereq['command']:<8} - OK", style="green")
-
     return gh_user
 
 
-def _scaffold_project(name, description, gh_user, language, local=False):
+def _scaffold_project(name, description, gh_user, local=False):
     """Create repo, write REQUIREMENTS.md, run Copilot bootstrap, clone reviewer/tester. Returns True on success."""
     if not local:
         repo_check = run_cmd(["gh", "repo", "view", f"{gh_user}/{name}"], quiet=True)
@@ -186,19 +174,11 @@ def _scaffold_project(name, description, gh_user, language, local=False):
 def run_bootstrap(
     name: str,
     description: str = None,
-    language: str = "node",
     spec_file: str = None,
     local: bool = False,
 ):
     """Internal: scaffold a new project — git repo, GitHub remote (or local bare repo), clone reviewer/tester copies."""
     description = _resolve_description(description, spec_file)
-
-    if language not in VALID_LANGUAGES:
-        console.print(
-            f"ERROR: Invalid language '{language}'. Choose from: {', '.join(VALID_LANGUAGES)}",
-            style="bold red",
-        )
-        raise typer.Exit(1)
 
     current_dir = os.path.basename(os.getcwd())
     if current_dir == "multi-agent-dev":
@@ -212,15 +192,14 @@ def run_bootstrap(
             console.print("Bootstrap cancelled.", style="yellow")
             return
 
-    gh_user = _check_prerequisites(language, local=local)
+    gh_user = _check_prerequisites(local=local)
     if not gh_user:
         return
 
-    lang_config = LANGUAGE_CONFIGS[language]
     mode_label = " (local mode)" if local else ""
     console.print()
-    console.print(f"Bootstrapping {name} ({lang_config['label']}){mode_label}...", style="cyan")
+    console.print(f"Bootstrapping {name}{mode_label}...", style="cyan")
     console.print()
 
-    if not _scaffold_project(name, description, gh_user, language, local=local):
+    if not _scaffold_project(name, description, gh_user, local=local):
         return

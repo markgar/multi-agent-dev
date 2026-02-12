@@ -1,6 +1,6 @@
 #!/bin/bash
 # Test harness: runs a full end-to-end orchestration using a local bare git repo.
-# Usage: ./tests/harness/run_test.sh [--spec-file path/to/spec.md] [--language node|python|dotnet]
+# Usage: ./tests/harness/run_test.sh [--spec-file path/to/spec.md] [--name project-name]
 #
 # Handles all setup automatically:
 #   1. Cleans stale build/ artifacts
@@ -17,7 +17,6 @@ PROJECT_ROOT="$(cd "$HARNESS_DIR/../.." && pwd)"
 
 # Defaults
 SPEC_FILE="$HARNESS_DIR/sample_spec_cli_calculator.md"
-LANGUAGE="node"
 PROJECT_NAME="test-run"
 
 # Parse arguments
@@ -27,17 +26,13 @@ while [[ $# -gt 0 ]]; do
             SPEC_FILE="$2"
             shift 2
             ;;
-        --language)
-            LANGUAGE="$2"
-            shift 2
-            ;;
         --name)
             PROJECT_NAME="$2"
             shift 2
             ;;
         *)
             echo "Unknown option: $1"
-            echo "Usage: $0 [--spec-file <path>] [--language node|python|dotnet] [--name <project>]"
+            echo "Usage: $0 [--spec-file <path>] [--name <project>]"
             exit 1
             ;;
     esac
@@ -92,7 +87,6 @@ echo " Test Harness Run"
 echo "============================================"
 echo "  Run dir:    $RUN_DIR"
 echo "  Spec file:  $SPEC_FILE"
-echo "  Language:    $LANGUAGE"
 echo "  Project:     $PROJECT_NAME"
 echo "============================================"
 echo ""
@@ -103,7 +97,6 @@ cd "$RUN_DIR"
 agentic-dev go \
     --name "$PROJECT_NAME" \
     --spec-file "$SPEC_FILE" \
-    --language "$LANGUAGE" \
     --local
 
 EXIT_CODE=$?

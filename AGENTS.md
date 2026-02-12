@@ -73,9 +73,15 @@ Runs continuously via `commitwatch`, launched automatically by `go` and `resume`
 
 **Filtering:** Merge commits and the reviewer's own commits (REVIEWS.md-only changes) are automatically skipped to avoid wasted work.
 
-For each new commit detected, the watcher enumerates all commits since the last checkpoint (`git log {last_sha}..HEAD --format=%H --reverse`) and reviews them one at a time using a commit-scoped prompt:
+For each new commit detected, the watcher enumerates all commits since the last checkpoint (`git log {last_sha}..HEAD --format=%H --reverse`), filters out skippable commits (merges, reviewer-only, coordination-only), and reviews the remaining ones. If there is a single reviewable commit, it reviews that commit individually. If there are multiple reviewable commits (e.g. the builder pushed several commits while the reviewer was busy), it reviews them as a single batch using the combined diff — one Copilot call instead of N:
+
+**Single commit prompt:**
 
 > You are a code reviewer. You must NOT add features or change functionality. Your only job is to review the changes in a single commit for quality issues. Read SPEC.md and TASKS.md ONLY to understand the project goals — do NOT review those files themselves. Run `git diff {prev_sha} {commit_sha}` to get the diff. This diff is your ONLY input for review — do NOT read entire source files, do NOT review code outside the diff. Focus exclusively on the added and modified lines. Look for: code duplication, unclear naming, overly complex logic, missing error handling, security issues, violations of conventions, and dead code. Only flag issues that meaningfully affect correctness, security, maintainability, or readability. Write findings to REVIEWS.md with the commit SHA. Commit with message 'Code review: {sha}', run git pull --rebase, and push.
+
+**Batched commits prompt (2+ commits):**
+
+> You are a code reviewer. Your job is to review the combined changes from {commit_count} commits for quality issues. Read SPEC.md and TASKS.md ONLY to understand the project goals. Run `git log --oneline {base_sha}..{head_sha}` to see the commit messages. Run `git diff {base_sha} {head_sha}` to get the combined diff. This diff is your ONLY input for review. Focus exclusively on the added and modified lines. Look for: code duplication, unclear naming, overly complex logic, missing error handling, security issues, violations of conventions, and dead code. Only flag meaningful issues. Write findings to REVIEWS.md with the relevant commit SHA(s). Commit with message 'Code review: {base_sha:.8}..{head_sha:.8}', run git pull --rebase, and push.
 
 **Milestone reviews:** When the watcher detects that all tasks under a `## Milestone:` heading in TASKS.md are checked, it triggers a cross-cutting review of the entire milestone's diff. This catches issues that per-commit reviews miss: inconsistent patterns across files, API mismatches, duplicated logic introduced across separate commits, and architectural problems in how pieces fit together. Milestone review findings are prefixed with `[Milestone: <name>]` in REVIEWS.md. Each milestone is only reviewed once (tracked in `logs/reviewer.milestone`).
 

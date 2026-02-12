@@ -20,6 +20,7 @@ from agent.milestone import (
 )
 from agent.legacy_watchers import reviewoncommit, testoncommit
 from agent.prompts import (
+    REVIEWER_BATCH_PROMPT,
     REVIEWER_COMMIT_PROMPT,
     REVIEWER_MILESTONE_PROMPT,
 )
@@ -73,11 +74,54 @@ def _should_skip_commit(commit_sha: str) -> str | None:
     return None
 
 
-def _review_new_commits(last_sha: str, current_head: str) -> bool:
-    """Review each new commit between last_sha and current_head.
+def _partition_commits(commits: list[str], last_sha: str) -> tuple[list[str], str]:
+    """Split commits into reviewable ones and advance past skippable ones.
 
-    Enumerates commits, skips merges and reviewer-only commits, and invokes
-    a scoped reviewer for each real commit. Saves checkpoint after each one.
+    Returns (reviewable_shas, effective_base_sha). The effective_base_sha is
+    the last skipped commit before the first reviewable one (or last_sha if
+    the first commit is reviewable). Skippable commits at the end are logged
+    and checkpointed but excluded from the reviewable list.
+    """
+    reviewable = []
+    base_sha = last_sha
+
+    for commit_sha in commits:
+        skip_reason = _should_skip_commit(commit_sha)
+        if skip_reason:
+            now = datetime.now().strftime("%H:%M:%S")
+            log("commit-watcher", f"[{now}] Skipping {skip_reason} {commit_sha[:8]}", style="dim")
+            save_reviewer_checkpoint(commit_sha)
+            if not reviewable:
+                base_sha = commit_sha
+        else:
+            reviewable.append(commit_sha)
+
+    return reviewable, base_sha
+
+
+def _review_single_commit(prev_sha: str, commit_sha: str) -> int:
+    """Review a single commit. Returns the copilot exit code."""
+    prompt = REVIEWER_COMMIT_PROMPT.format(prev_sha=prev_sha, commit_sha=commit_sha)
+    return run_copilot("reviewer", prompt)
+
+
+def _review_batch(base_sha: str, reviewable: list[str]) -> int:
+    """Review multiple commits as a single combined diff. Returns the copilot exit code."""
+    head_sha = reviewable[-1]
+    prompt = REVIEWER_BATCH_PROMPT.format(
+        commit_count=len(reviewable),
+        base_sha=base_sha,
+        head_sha=head_sha,
+    )
+    return run_copilot("reviewer", prompt)
+
+
+def _review_new_commits(last_sha: str, current_head: str) -> bool:
+    """Review new commits between last_sha and current_head.
+
+    When a single reviewable commit is found, reviews it individually.
+    When multiple reviewable commits are found, reviews them as a batch
+    using the combined diff — one Copilot call instead of N.
 
     Returns True if the builder finished mid-review (caller should exit),
     False otherwise.
@@ -96,35 +140,39 @@ def _review_new_commits(last_sha: str, current_head: str) -> bool:
     log("commit-watcher", "")
     log("commit-watcher", f"[{now}] {len(new_commits)} new commit(s) detected", style="yellow")
 
-    prev = last_sha
-    for commit_sha in new_commits:
+    reviewable, base_sha = _partition_commits(new_commits, last_sha)
+
+    if not reviewable:
         now = datetime.now().strftime("%H:%M:%S")
-        short = commit_sha[:8]
+        log("commit-watcher", f"[{now}] No reviewable commits. Watching...", style="yellow")
+        return False
 
-        skip_reason = _should_skip_commit(commit_sha)
-        if skip_reason:
-            log("commit-watcher", f"[{now}] Skipping {skip_reason} {short}", style="dim")
-            prev = commit_sha
-            save_reviewer_checkpoint(commit_sha)
-            continue
+    if len(reviewable) == 1:
+        commit_sha = reviewable[0]
+        now = datetime.now().strftime("%H:%M:%S")
+        log("commit-watcher", f"[{now}] Reviewing commit {commit_sha[:8]}...", style="cyan")
+        exit_code = _review_single_commit(base_sha, commit_sha)
+    else:
+        head_sha = reviewable[-1]
+        now = datetime.now().strftime("%H:%M:%S")
+        log(
+            "commit-watcher",
+            f"[{now}] Reviewing {len(reviewable)} commits as batch ({base_sha[:8]}..{head_sha[:8]})...",
+            style="cyan",
+        )
+        exit_code = _review_batch(base_sha, reviewable)
 
-        log("commit-watcher", f"[{now}] Reviewing commit {short}...", style="cyan")
+    if exit_code != 0:
+        now = datetime.now().strftime("%H:%M:%S")
+        log("commit-watcher", f"[{now}] WARNING: Review exited with errors", style="red")
 
-        prompt = REVIEWER_COMMIT_PROMPT.format(prev_sha=prev, commit_sha=commit_sha)
-        exit_code = run_copilot("reviewer", prompt)
+    git_push_with_retry("commit-watcher")
+    save_reviewer_checkpoint(reviewable[-1])
 
-        if exit_code != 0:
-            now = datetime.now().strftime("%H:%M:%S")
-            log("commit-watcher", f"[{now}] WARNING: Review of {short} exited with errors", style="red")
-
-        git_push_with_retry("commit-watcher")
-        prev = commit_sha
-        save_reviewer_checkpoint(commit_sha)
-
-        if is_builder_done():
-            now = datetime.now().strftime("%H:%M:%S")
-            log("commit-watcher", f"[{now}] Builder finished. Stopping.", style="bold green")
-            return True
+    if is_builder_done():
+        now = datetime.now().strftime("%H:%M:%S")
+        log("commit-watcher", f"[{now}] Builder finished. Stopping.", style="bold green")
+        return True
 
     now = datetime.now().strftime("%H:%M:%S")
     log("commit-watcher", f"[{now}] All commits reviewed. Watching...", style="yellow")
