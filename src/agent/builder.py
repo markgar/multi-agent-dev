@@ -203,6 +203,11 @@ def _detect_milestone_progress(state: BuildState, loop: bool) -> bool:
             plan()
             check_milestone_sizes()
 
+            # Re-check after re-plan: if still no milestone, nothing to do
+            progress = get_current_milestone_progress("TASKS.md")
+            if not progress:
+                return False
+
     return True
 
 
