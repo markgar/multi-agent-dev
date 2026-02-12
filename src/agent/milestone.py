@@ -25,29 +25,39 @@ def record_milestone_boundary(name: str, start_sha: str, end_sha: str) -> None:
         pass
 
 
+def parse_milestone_log(text: str) -> list[dict]:
+    """Parse milestone log text into boundary dicts.
+
+    Pure function: takes raw text, returns structured data.
+    Format per line: name|start_sha|end_sha
+    """
+    boundaries = []
+    for line in text.strip().split("\n"):
+        parts = line.strip().split("|")
+        if len(parts) == 3:
+            boundaries.append({
+                "name": parts[0],
+                "start_sha": parts[1],
+                "end_sha": parts[2],
+            })
+    return boundaries
+
+
 def load_milestone_boundaries() -> list[dict]:
     """Load all recorded milestone boundaries from logs/milestones.log.
 
     Returns a list of dicts: [{"name": str, "start_sha": str, "end_sha": str}, ...]
     in the order they were recorded.
     """
-    boundaries = []
     try:
         logs_dir = resolve_logs_dir()
         path = os.path.join(logs_dir, _MILESTONE_LOG_FILE)
         if os.path.exists(path):
             with open(path, "r", encoding="utf-8") as f:
-                for line in f:
-                    parts = line.strip().split("|")
-                    if len(parts) == 3:
-                        boundaries.append({
-                            "name": parts[0],
-                            "start_sha": parts[1],
-                            "end_sha": parts[2],
-                        })
+                return parse_milestone_log(f.read())
     except Exception:
         pass
-    return boundaries
+    return []
 
 
 def get_last_milestone_end_sha() -> str:
@@ -113,9 +123,10 @@ def load_reviewed_milestones(checkpoint_file: str = None) -> set[str]:
     return reviewed
 
 
-def _parse_milestones(tasks_path: str) -> list[dict]:
-    """Parse TASKS.md and return every milestone with its task counts.
+def parse_milestones_from_text(content: str) -> list[dict]:
+    """Parse milestone markdown text and return every milestone with its task counts.
 
+    Pure function: takes raw markdown content, returns structured data.
     Returns a list of dicts in document order:
         [{"name": str, "done": int, "total": int}, ...]
 
@@ -123,12 +134,6 @@ def _parse_milestones(tasks_path: str) -> list[dict]:
     checkbox lines like '- [x] ...' or '- [ ] ...'.
     """
     milestones = []
-    if not os.path.exists(tasks_path):
-        return milestones
-
-    with open(tasks_path, "r", encoding="utf-8") as f:
-        content = f.read()
-
     current_name = None
     total = 0
     done = 0
@@ -154,6 +159,14 @@ def _parse_milestones(tasks_path: str) -> list[dict]:
         milestones.append({"name": current_name, "done": done, "total": total})
 
     return milestones
+
+
+def _parse_milestones(tasks_path: str) -> list[dict]:
+    """Read TASKS.md and parse milestones. Thin I/O wrapper around parse_milestones_from_text."""
+    if not os.path.exists(tasks_path):
+        return []
+    with open(tasks_path, "r", encoding="utf-8") as f:
+        return parse_milestones_from_text(f.read())
 
 
 def get_completed_milestones(tasks_path: str) -> list[dict]:

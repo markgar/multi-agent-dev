@@ -133,44 +133,69 @@ class BuildState:
 _MAX_MILESTONE_RETRIES = 3
 
 
+def update_milestone_retry_state(
+    current_name: str | None,
+    current_done: int,
+    last_name: str | None,
+    last_done: int,
+    retry_count: int,
+    max_retries: int,
+) -> tuple[bool, int]:
+    """Determine if a milestone is stuck and update the retry count.
+
+    Pure function: returns (is_stuck, new_retry_count).
+    is_stuck is True when the same milestone has failed to make progress
+    max_retries times in a row.
+    """
+    if current_name and current_name == last_name:
+        if current_done <= last_done:
+            new_count = retry_count + 1
+            return (new_count >= max_retries, new_count)
+        return (False, 0)
+    return (False, 0)
+
+
 def _detect_milestone_progress(state: BuildState, loop: bool) -> bool:
     """Check milestone progress, re-plan if needed. Return False when stuck."""
     # Import here to avoid circular import — plan lives in cli.py
     from agent.cli import plan
 
     progress = get_current_milestone_progress("TASKS.md")
+    current_name = progress["name"] if progress else None
+    current_done = progress["done"] if progress else -1
 
-    if progress and state.last_milestone_name == progress["name"]:
-        # Same milestone as last cycle — check for forward progress
-        if progress["done"] <= state.last_milestone_done_count:
-            state.milestone_retry_count += 1
-            if state.milestone_retry_count >= _MAX_MILESTONE_RETRIES:
-                log("builder", "")
-                log("builder", "======================================", style="bold red")
-                log(
-                    "builder",
-                    f" Milestone '{progress['name']}' stuck after {_MAX_MILESTONE_RETRIES} retries",
-                    style="bold red",
-                )
-                log("builder", "======================================", style="bold red")
-                return False
-        else:
-            state.milestone_retry_count = 0
+    is_stuck, new_retry_count = update_milestone_retry_state(
+        current_name, current_done,
+        state.last_milestone_name, state.last_milestone_done_count,
+        state.milestone_retry_count, _MAX_MILESTONE_RETRIES,
+    )
+    state.milestone_retry_count = new_retry_count
 
-        state.last_milestone_done_count = progress["done"]
+    if is_stuck:
+        log("builder", "")
+        log("builder", "======================================", style="bold red")
+        log(
+            "builder",
+            f" Milestone '{current_name}' stuck after {_MAX_MILESTONE_RETRIES} retries",
+            style="bold red",
+        )
+        log("builder", "======================================", style="bold red")
+        return False
+
+    if progress and state.last_milestone_name == current_name:
+        state.last_milestone_done_count = current_done
         log("builder", "")
         log(
             "builder",
-            f"[Builder] Resuming incomplete milestone '{progress['name']}' "
-            f"({progress['done']}/{progress['total']} tasks done, "
+            f"[Builder] Resuming incomplete milestone '{current_name}' "
+            f"({current_done}/{progress['total']} tasks done, "
             f"attempt {state.milestone_retry_count + 1})...",
             style="yellow",
         )
     else:
         # New milestone or first cycle — re-plan
-        state.milestone_retry_count = 0
-        state.last_milestone_done_count = progress["done"] if progress else -1
-        state.last_milestone_name = progress["name"] if progress else None
+        state.last_milestone_done_count = current_done
+        state.last_milestone_name = current_name
 
         if loop and state.cycle_count > 1:
             log("builder", "")
@@ -225,42 +250,55 @@ def _wait_for_reviewer_drain(head_after: str) -> None:
         log("builder", "Drain window expired. Proceeding.", style="yellow")
 
 
+def classify_remaining_work(bugs: int, reviews: int, tasks: int, no_work_count: int) -> str:
+    """Decide the next action based on remaining work counts.
+
+    Pure function: returns 'done', 'idle', or 'continue'.
+    - 'done' when no work remains and no_work_count >= 3
+    - 'idle' when no work remains but hasn't been confirmed 3 times yet
+    - 'continue' when there is remaining work
+    """
+    if not bugs and not reviews and not tasks:
+        if no_work_count >= 3:
+            return "done"
+        return "idle"
+    return "continue"
+
+
 def _check_remaining_work(state: BuildState) -> str:
     """Check for remaining bugs, reviews, and tasks. Return 'done', 'idle', or 'continue'."""
     remaining_bugs = has_unchecked_items("BUGS.md")
     remaining_reviews = has_unchecked_items("REVIEWS.md")
     remaining_tasks = has_unchecked_items("TASKS.md")
 
-    if not remaining_bugs and not remaining_reviews and not remaining_tasks:
-        state.no_work_count += 1
+    state.no_work_count = 0 if (remaining_bugs or remaining_reviews or remaining_tasks) else state.no_work_count + 1
 
-        if state.no_work_count >= 3:
-            log("builder", "")
-            log("builder", "======================================", style="bold green")
-            log("builder", " All work complete!", style="bold green")
-            log("builder", " - Bugs: Done", style="bold green")
-            log("builder", " - Reviews: Done", style="bold green")
-            log("builder", " - Tasks: Done", style="bold green")
-            log("builder", "======================================", style="bold green")
-            return "done"
+    signal = classify_remaining_work(remaining_bugs, remaining_reviews, remaining_tasks, state.no_work_count)
 
+    if signal == "done":
+        log("builder", "")
+        log("builder", "======================================", style="bold green")
+        log("builder", " All work complete!", style="bold green")
+        log("builder", " - Bugs: Done", style="bold green")
+        log("builder", " - Reviews: Done", style="bold green")
+        log("builder", " - Tasks: Done", style="bold green")
+        log("builder", "======================================", style="bold green")
+    elif signal == "idle":
         log("builder", "")
         log("builder", f"No work found (check {state.no_work_count}/3)", style="yellow")
         log("builder", "Waiting 1 minute in case reviewer/tester are working...", style="yellow")
         log("builder", "(Ctrl+C to stop)", style="dim")
         time.sleep(60)
-        return "idle"
+    else:
+        log("builder", "")
+        log("builder", "Work remaining:", style="cyan")
+        if remaining_bugs:
+            log("builder", f" - Bugs: {remaining_bugs} unchecked", style="yellow")
+        if remaining_reviews:
+            log("builder", f" - Reviews: {remaining_reviews} unchecked", style="yellow")
+        if remaining_tasks:
+            log("builder", f" - Tasks: {remaining_tasks} unchecked", style="yellow")
+        log("builder", " Starting next milestone in 5 seconds... (Ctrl+C to stop)", style="cyan")
+        time.sleep(5)
 
-    state.no_work_count = 0
-
-    log("builder", "")
-    log("builder", "Work remaining:", style="cyan")
-    if remaining_bugs:
-        log("builder", f" - Bugs: {remaining_bugs} unchecked", style="yellow")
-    if remaining_reviews:
-        log("builder", f" - Reviews: {remaining_reviews} unchecked", style="yellow")
-    if remaining_tasks:
-        log("builder", f" - Tasks: {remaining_tasks} unchecked", style="yellow")
-    log("builder", " Starting next milestone in 5 seconds... (Ctrl+C to stop)", style="cyan")
-    time.sleep(5)
-    return "continue"
+    return signal

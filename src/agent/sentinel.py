@@ -33,6 +33,20 @@ def clear_builder_done() -> None:
         pass
 
 
+def check_builder_done_status(
+    sentinel_exists: bool, log_exists: bool, log_age_minutes: float, timeout_minutes: float
+) -> bool:
+    """Determine if the builder should be considered done.
+
+    Pure function: returns True if the sentinel exists or the log is stale.
+    """
+    if sentinel_exists:
+        return True
+    if log_exists and log_age_minutes >= timeout_minutes:
+        return True
+    return False
+
+
 def is_builder_done() -> bool:
     """Check if the builder has finished.
 
@@ -43,17 +57,18 @@ def is_builder_done() -> bool:
     try:
         logs_dir = resolve_logs_dir()
 
-        sentinel = os.path.join(logs_dir, _BUILDER_DONE_FILE)
-        if os.path.exists(sentinel):
-            return True
+        sentinel_exists = os.path.exists(os.path.join(logs_dir, _BUILDER_DONE_FILE))
 
         builder_log = os.path.join(logs_dir, _BUILDER_LOG_FILE)
-        if os.path.exists(builder_log):
+        log_exists = os.path.exists(builder_log)
+        log_age_minutes = 0.0
+        if log_exists:
             mtime = os.path.getmtime(builder_log)
-            age_minutes = (datetime.now().timestamp() - mtime) / 60
-            if age_minutes >= _STALE_LOG_TIMEOUT_MINUTES:
-                return True
+            log_age_minutes = (datetime.now().timestamp() - mtime) / 60
 
+        return check_builder_done_status(
+            sentinel_exists, log_exists, log_age_minutes, _STALE_LOG_TIMEOUT_MINUTES
+        )
     except Exception:
         pass
     return False

@@ -124,6 +124,14 @@ def _review_new_commits(last_sha: str, current_head: str) -> bool:
     return False
 
 
+def find_unreviewed_milestones(boundaries: list[dict], reviewed: set[str]) -> list[dict]:
+    """Return milestone boundaries that have not yet been reviewed.
+
+    Pure function: filters boundaries by membership in the reviewed set.
+    """
+    return [b for b in boundaries if b["name"] not in reviewed]
+
+
 def _check_milestone_reviews() -> None:
     """Run cross-cutting reviews for any newly completed milestones.
 
@@ -134,9 +142,7 @@ def _check_milestone_reviews() -> None:
     boundaries = load_milestone_boundaries()
     reviewed = load_reviewed_milestones()
 
-    for boundary in boundaries:
-        if boundary["name"] in reviewed:
-            continue
+    for boundary in find_unreviewed_milestones(boundaries, reviewed):
 
         now = datetime.now().strftime("%H:%M:%S")
         log(

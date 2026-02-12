@@ -24,13 +24,23 @@ def pushd(path: str):
         os.chdir(prev)
 
 
+_AGENT_DIRS = {"builder", "reviewer", "tester", "watcher"}
+
+
+def find_project_root(cwd: str) -> str:
+    """Determine the project root from a working directory path.
+
+    Pure function: if cwd ends in an agent directory name, returns the parent.
+    Otherwise returns cwd itself.
+    """
+    if os.path.basename(cwd) in _AGENT_DIRS:
+        return os.path.dirname(cwd)
+    return cwd
+
+
 def resolve_logs_dir() -> str:
     """Find the project root logs directory, creating it if needed."""
-    current_dir_name = os.path.basename(os.getcwd())
-    if current_dir_name in ("builder", "reviewer", "tester", "watcher"):
-        project_root = os.path.dirname(os.getcwd())
-    else:
-        project_root = os.getcwd()
+    project_root = find_project_root(os.getcwd())
     logs_dir = os.path.join(project_root, "logs")
     os.makedirs(logs_dir, exist_ok=True)
     return logs_dir
@@ -135,10 +145,17 @@ def run_cmd(
     return subprocess.run(args, **kwargs)
 
 
+def count_unchecked_items(content: str) -> int:
+    """Count unchecked checkbox items ([ ]) in markdown content.
+
+    Pure function: takes text, returns count.
+    """
+    return len(re.findall(r"\[ \]", content))
+
+
 def has_unchecked_items(filepath: str) -> int:
     """Count unchecked checkbox items ([ ]) in a file. Returns 0 if file doesn't exist."""
     if not os.path.exists(filepath):
         return 0
     with open(filepath, "r", encoding="utf-8") as f:
-        content = f.read()
-    return len(re.findall(r"\[ \]", content))
+        return count_unchecked_items(f.read())

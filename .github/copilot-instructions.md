@@ -16,6 +16,7 @@ This software is entirely written by GitHub Copilot. The code is structured to b
 - **Graceful error handling.** Wrap I/O and subprocess calls in try/except. Never let a transient failure crash the orchestration loop. Log the error and continue.
 - **Minimal dependencies.** Only add a dependency when it provides substantial value. Fewer deps mean less surface area for Copilot to misunderstand.
 - **One concept per file.** Each module owns a single concern. Don't mix unrelated responsibilities in the same file.
+- **Design for testability.** Separate pure decision logic from I/O and subprocess calls so core functions can be tested without mocking. Pass dependencies as arguments rather than hard-coding them inside functions when practical. Keep side-effect-free helpers (parsing, validation, data transforms) in their own functions so they can be unit tested directly.
 
 ## Project structure
 

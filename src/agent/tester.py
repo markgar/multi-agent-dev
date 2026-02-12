@@ -21,6 +21,14 @@ from agent.utils import log, run_cmd, run_copilot
 _TESTER_MILESTONE_CHECKPOINT = "tester.milestone"
 
 
+def find_untested_milestones(boundaries: list[dict], tested: set[str]) -> list[dict]:
+    """Return milestone boundaries that have not yet been tested.
+
+    Pure function: filters boundaries by membership in the tested set.
+    """
+    return [b for b in boundaries if b["name"] not in tested]
+
+
 def register(app: typer.Typer) -> None:
     """Register tester commands on the shared app."""
     app.command()(testloop)
@@ -60,8 +68,7 @@ def testloop(
         boundaries = load_milestone_boundaries()
         tested = load_reviewed_milestones(checkpoint_file=_TESTER_MILESTONE_CHECKPOINT)
 
-        for boundary in boundaries:
-            if boundary["name"] not in tested:
+        for boundary in find_untested_milestones(boundaries, tested):
                 now = datetime.now().strftime("%H:%M:%S")
                 log(
                     "tester",

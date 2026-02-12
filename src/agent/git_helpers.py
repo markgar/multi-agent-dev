@@ -49,12 +49,17 @@ def git_push_with_retry(agent_name: str = "", max_attempts: int = 3, backoff: in
     return False
 
 
-def is_reviewer_only_commit(commit_sha: str) -> bool:
-    """Check if a commit only touches REVIEWS.md (i.e. the reviewer's own commit).
+def is_reviewer_only_files(file_list: list[str]) -> bool:
+    """Check if every file in the list is REVIEWS.md.
 
-    Returns True if the commit should be skipped to avoid the reviewer
-    reviewing its own review output.
+    Pure function: returns True if the commit should be skipped because it
+    only touches the reviewer's own output file.
     """
+    return len(file_list) > 0 and all(f == "REVIEWS.md" for f in file_list)
+
+
+def is_reviewer_only_commit(commit_sha: str) -> bool:
+    """Check if a commit only touches REVIEWS.md (i.e. the reviewer's own commit)."""
     result = run_cmd(
         ["git", "diff-tree", "--no-commit-id", "--name-only", "-r", commit_sha],
         capture=True,
@@ -62,7 +67,7 @@ def is_reviewer_only_commit(commit_sha: str) -> bool:
     if result.returncode != 0:
         return False
     files = [f.strip() for f in result.stdout.strip().split("\n") if f.strip()]
-    return len(files) > 0 and all(f == "REVIEWS.md" for f in files)
+    return is_reviewer_only_files(files)
 
 
 def is_merge_commit(commit_sha: str) -> bool:

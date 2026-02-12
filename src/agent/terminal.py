@@ -7,15 +7,28 @@ import tempfile
 from agent.utils import check_command, console, is_macos, is_windows
 
 
+def build_agent_script(working_dir: str, command: str, platform: str) -> str:
+    """Generate the shell script content for launching an agent.
+
+    Pure function: returns the script text for the given platform.
+    platform should be 'macos', 'windows', or 'linux'.
+    """
+    lines = ["#!/bin/bash"]
+    lines.append(f"cd '{working_dir}'")
+    lines.append(f"agentic-dev {command}")
+    if platform == "linux":
+        lines.append("exec bash")
+    return "\n".join(lines) + "\n"
+
+
 def spawn_agent_in_terminal(working_dir: str, command: str) -> None:
     """Launch an agent command in a new terminal window."""
     try:
         if is_macos():
+            script_content = build_agent_script(working_dir, command, "macos")
             fd, temp_script = tempfile.mkstemp(suffix=".sh")
             with os.fdopen(fd, "w") as f:
-                f.write("#!/bin/bash\n")
-                f.write(f"cd '{working_dir}'\n")
-                f.write(f"agentic-dev {command}\n")
+                f.write(script_content)
             os.chmod(temp_script, 0o755)
             subprocess.run(
                 ["osascript", "-e", f'tell application "Terminal" to do script "{temp_script}"'],
@@ -28,12 +41,10 @@ def spawn_agent_in_terminal(working_dir: str, command: str) -> None:
                 creationflags=subprocess.CREATE_NEW_CONSOLE,
             )
         else:
+            script_content = build_agent_script(working_dir, command, "linux")
             fd, temp_script = tempfile.mkstemp(suffix=".sh")
             with os.fdopen(fd, "w") as f:
-                f.write("#!/bin/bash\n")
-                f.write(f"cd '{working_dir}'\n")
-                f.write(f"agentic-dev {command}\n")
-                f.write("exec bash\n")
+                f.write(script_content)
             os.chmod(temp_script, 0o755)
 
             if check_command("gnome-terminal"):
