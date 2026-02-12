@@ -71,20 +71,22 @@ def _resolve_description(description, spec_file):
     return description
 
 
-def _check_prerequisites(language):
+def _check_prerequisites(language, local=False):
     """Check all prerequisites (GitHub user, core tools, auth, language tools). Returns gh_user or None."""
-    result = run_cmd(["gh", "api", "user", "--jq", ".login"], capture=True)
-    gh_user = result.stdout.strip() if result.returncode == 0 else ""
-    if not gh_user:
-        console.print("ERROR: Could not determine GitHub username.", style="bold red")
-        console.print("Run: gh auth login", style="yellow")
-        return None
+    if local:
+        gh_user = "local"
+    else:
+        result = run_cmd(["gh", "api", "user", "--jq", ".login"], capture=True)
+        gh_user = result.stdout.strip() if result.returncode == 0 else ""
+        if not gh_user:
+            console.print("ERROR: Could not determine GitHub username.", style="bold red")
+            console.print("Run: gh auth login", style="yellow")
+            return None
 
-    for tool, install_mac, install_win in [
-        ("git", "brew install git", "winget install Git.Git"),
-        ("gh", "brew install gh", "winget install GitHub.cli"),
-        ("copilot", None, None),
-    ]:
+    tools = [("git", "brew install git", "winget install Git.Git"), ("copilot", None, None)]
+    if not local:
+        tools.insert(1, ("gh", "brew install gh", "winget install GitHub.cli"))
+    for tool, install_mac, install_win in tools:
         if not check_command(tool):
             console.print(f"ERROR: {tool} is not installed.", style="bold red")
             install = install_mac if is_macos() else install_win
@@ -94,12 +96,13 @@ def _check_prerequisites(language):
             return None
         console.print(f"✓ {tool:<8} - OK", style="green")
 
-    auth_result = run_cmd(["gh", "auth", "status"], quiet=True)
-    if auth_result.returncode != 0:
-        console.print("ERROR: GitHub CLI is not authenticated.", style="bold red")
-        console.print("Run: gh auth login", style="yellow")
-        return None
-    console.print("✓ gh auth  - OK (authenticated)", style="green")
+    if not local:
+        auth_result = run_cmd(["gh", "auth", "status"], quiet=True)
+        if auth_result.returncode != 0:
+            console.print("ERROR: GitHub CLI is not authenticated.", style="bold red")
+            console.print("Run: gh auth login", style="yellow")
+            return None
+        console.print("✓ gh auth  - OK (authenticated)", style="green")
 
     lang_config = LANGUAGE_CONFIGS[language]
     for prereq in lang_config["prerequisites"]:
@@ -114,20 +117,27 @@ def _check_prerequisites(language):
     return gh_user
 
 
-def _scaffold_project(name, description, gh_user, language):
+def _scaffold_project(name, description, gh_user, language, local=False):
     """Create repo, write REQUIREMENTS.md, run Copilot bootstrap, clone reviewer/tester. Returns True on success."""
-    repo_check = run_cmd(["gh", "repo", "view", f"{gh_user}/{name}"], quiet=True)
-    if repo_check.returncode == 0:
-        console.print(f"ERROR: Repository {gh_user}/{name} already exists on GitHub.", style="bold red")
-        console.print(
-            f"Delete it first (gh repo delete {gh_user}/{name}) or choose a different name.",
-            style="yellow",
-        )
-        return False
+    if not local:
+        repo_check = run_cmd(["gh", "repo", "view", f"{gh_user}/{name}"], quiet=True)
+        if repo_check.returncode == 0:
+            console.print(f"ERROR: Repository {gh_user}/{name} already exists on GitHub.", style="bold red")
+            console.print(
+                f"Delete it first (gh repo delete {gh_user}/{name}) or choose a different name.",
+                style="yellow",
+            )
+            return False
 
     parent_dir = os.path.join(os.getcwd(), name)
     os.makedirs(parent_dir, exist_ok=True)
     os.chdir(parent_dir)
+
+    # Create local bare repo when running in local mode (no GitHub)
+    if local:
+        bare_repo_path = os.path.join(os.getcwd(), "remote.git")
+        run_cmd(["git", "init", "--bare", bare_repo_path])
+        console.print("✓ Created local bare repo at remote.git", style="green")
 
     builder_dir = os.path.join(os.getcwd(), "builder")
     os.makedirs(builder_dir, exist_ok=True)
@@ -140,7 +150,11 @@ def _scaffold_project(name, description, gh_user, language):
         f.write("\n")
     console.print("✓ Saved original requirements to REQUIREMENTS.md", style="green")
 
-    prompt = BOOTSTRAP_PROMPT.format(description=description, gh_user=gh_user, name=name)
+    if local:
+        remote_path = os.path.join(os.getcwd(), "remote.git")
+        prompt = LOCAL_BOOTSTRAP_PROMPT.format(description=description, remote_path=remote_path)
+    else:
+        prompt = BOOTSTRAP_PROMPT.format(description=description, gh_user=gh_user, name=name)
     exit_code = run_copilot("bootstrap", prompt)
 
     if exit_code != 0:
@@ -150,12 +164,17 @@ def _scaffold_project(name, description, gh_user, language):
         log("bootstrap", "======================================", style="bold red")
         return False
 
+    if local:
+        clone_source = os.path.join(os.getcwd(), "remote.git")
+    else:
+        clone_source = f"https://github.com/{gh_user}/{name}"
+
     log("bootstrap", "")
     log("bootstrap", "Cloning reviewer copy...", style="cyan")
-    run_cmd(["git", "clone", f"https://github.com/{gh_user}/{name}", "reviewer"])
+    run_cmd(["git", "clone", clone_source, "reviewer"])
 
     log("bootstrap", "Cloning tester copy...", style="cyan")
-    run_cmd(["git", "clone", f"https://github.com/{gh_user}/{name}", "tester"])
+    run_cmd(["git", "clone", clone_source, "tester"])
 
     log("bootstrap", "")
     log("bootstrap", "======================================", style="bold green")

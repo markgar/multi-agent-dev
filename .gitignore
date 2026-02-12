@@ -6,6 +6,9 @@
 # Agent logs (kept at project root, outside cloned repos)
 */logs/
 
+# Test harness runs
+tests/harness/runs/
+
 # Python
 .venv/
 __pycache__/
