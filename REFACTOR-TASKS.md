@@ -176,14 +176,52 @@ Broke `cli.py` into separate modules, each owning one concern.
 
 ---
 
-## 6. Break down `_bootstrap()` into smaller functions
+## 6. ~~Break down `run_bootstrap()` into smaller functions~~ ✅ Done
 
-**File:** `src/agent/bootstrap.py` (after task 3)
+**File:** `src/agent/bootstrap.py`
 
-`_bootstrap()` is ~100 lines. Extract:
-- `_resolve_description()` — spec-file vs description handling
-- `_check_prerequisites()` — tool/auth prerequisite checks
-- `_scaffold_project()` — the actual repo creation and cloning
+`run_bootstrap()` is ~115 lines (L54–192) mixing 5 concerns: input resolution, language validation, prerequisite checks, project scaffolding, and repo cloning. Max nesting depth is 3 levels. Only 2 computed values (`description`, `gh_user`) flow between sections — no dataclass needed.
+
+**Key constraint:** `os.chdir()` on L158 is a persistent side effect that the caller `go()` in `cli.py` depends on (it checks for `builder/` at the new cwd). This must be preserved.
+
+### 6a. ~~Extract `_resolve_description(description, spec_file) → str`~~ ✅ Done
+
+- [x] Move lines 62–78 into a standalone function
+- [x] Handle mutual exclusion of `--description` and `--spec-file`
+- [x] Read and validate spec file contents when `spec_file` is provided
+- [x] Raise `typer.Exit(1)` on validation errors (matching existing behavior)
+- [x] Return the validated description string
+- [x] Target: ~20 lines
+
+### 6b. ~~Extract `_check_prerequisites(language) → str | None`~~ ✅ Done
+
+- [x] Move lines 99–141 into a standalone function
+- [x] Include GitHub user lookup (`gh api user`), core tool checks (`git`, `gh`, `copilot`), `gh auth status`, and language-specific prerequisite checks from `LANGUAGE_CONFIGS`
+- [x] Return `gh_user` string on success, `None` on any failure
+- [x] Print per-tool success/failure messages with platform-specific install instructions
+- [x] Target: ~45 lines
+
+### 6c. ~~Extract `_scaffold_project(name, description, gh_user, language) → bool`~~ ✅ Done
+
+- [x] Move lines 147–192 into a standalone function
+- [x] Include repo existence check, directory creation, `os.chdir()`, REQUIREMENTS.md writing, Copilot execution, reviewer/tester cloning, success/failure logging
+- [x] Preserve the `os.chdir(parent_dir)` side effect so `go()` finds `builder/` at the new cwd
+- [x] Return `True` on success, `False` on failure
+- [x] Target: ~45 lines
+
+### 6d. ~~Rewrite `run_bootstrap()` as compact orchestration~~ ✅ Done
+
+- [x] Reduce `run_bootstrap()` to ~30 lines: `_resolve_description()` → language validation (5 lines inline) → safety warning for multi-agent-dev dir (10 lines inline, too interactive to extract) → `_check_prerequisites()` → status message (3 lines inline) → `_scaffold_project()`
+- [x] Preserve all exit paths: 4 `typer.Exit(1)` raises for input errors + 7 bare `return`s for runtime failures
+- [x] Language validation stays inline (raises `typer.Exit(1)`, different exit strategy than bare `return`s in prerequisites)
+- [x] Safety warning stays inline (interactive `typer.prompt()`, only 10 lines)
+
+### Verification
+
+- [x] `python -c "from agent.bootstrap import run_bootstrap"` succeeds
+- [x] `python -c "from agent.cli import app"` succeeds (no circular imports)
+- [x] `python -m agent go --help` shows correct CLI registration
+- [x] `pytest` — no failures
 
 **Why:** Same rationale as task 4.
 
