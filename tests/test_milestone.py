@@ -80,3 +80,15 @@ def test_milestone_log_skips_corrupted_lines():
 
 def test_milestone_log_empty_text():
     assert parse_milestone_log("") == []
+
+
+def test_back_to_back_milestone_headings_skips_empty_one():
+    content = (
+        "## Milestone: Empty milestone\n"
+        "## Milestone: Real milestone\n"
+        "- [ ] Do something\n"
+        "- [x] Already done\n"
+    )
+    result = parse_milestones_from_text(content)
+    assert len(result) == 1
+    assert result[0] == {"name": "Real milestone", "done": 1, "total": 2}

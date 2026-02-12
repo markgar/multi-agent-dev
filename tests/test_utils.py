@@ -3,6 +3,9 @@
 from agent.sentinel import check_builder_done_status
 from agent.utils import count_unchecked_items, find_project_root
 from agent.git_helpers import is_reviewer_only_files
+from agent.terminal import build_agent_script
+from agent.watcher import find_unreviewed_milestones
+from agent.tester import find_untested_milestones
 
 
 # --- sentinel ---
@@ -79,3 +82,49 @@ def test_commit_touching_code_is_not_skipped():
 
 def test_empty_file_list_is_not_skipped():
     assert is_reviewer_only_files([]) is False
+
+
+# --- agent script generation ---
+
+def test_macos_script_has_cd_and_command():
+    script = build_agent_script("/path/to/reviewer", "commitwatch", "macos")
+    assert "cd '/path/to/reviewer'" in script
+    assert "agentic-dev commitwatch" in script
+    assert "exec bash" not in script
+
+
+def test_linux_script_includes_exec_bash():
+    script = build_agent_script("/path/to/tester", "testloop", "linux")
+    assert "cd '/path/to/tester'" in script
+    assert "agentic-dev testloop" in script
+    assert "exec bash" in script
+
+
+def test_windows_script_still_generates_valid_content():
+    script = build_agent_script("C:\\Users\\dev\\reviewer", "commitwatch", "windows")
+    assert "agentic-dev commitwatch" in script
+
+
+# --- milestone filtering ---
+
+def test_find_unreviewed_milestones_excludes_already_reviewed():
+    boundaries = [
+        {"name": "Scaffolding", "start_sha": "aaa", "end_sha": "bbb"},
+        {"name": "API", "start_sha": "bbb", "end_sha": "ccc"},
+        {"name": "Auth", "start_sha": "ccc", "end_sha": "ddd"},
+    ]
+    reviewed = {"Scaffolding", "API"}
+    result = find_unreviewed_milestones(boundaries, reviewed)
+    assert len(result) == 1
+    assert result[0]["name"] == "Auth"
+
+
+def test_find_untested_milestones_excludes_already_tested():
+    boundaries = [
+        {"name": "Scaffolding", "start_sha": "aaa", "end_sha": "bbb"},
+        {"name": "API", "start_sha": "bbb", "end_sha": "ccc"},
+    ]
+    tested = {"Scaffolding"}
+    result = find_untested_milestones(boundaries, tested)
+    assert len(result) == 1
+    assert result[0]["name"] == "API"
