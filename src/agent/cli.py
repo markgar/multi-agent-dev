@@ -99,32 +99,13 @@ def plan():
     log("planner", "======================================", style="bold magenta")
 
 
-@app.command()
-def go(
-    name: Annotated[str, typer.Option(help="Project name")],
-    description: Annotated[str, typer.Option(help="What the project should do")] = None,
-    language: Annotated[str, typer.Option(help="Language/stack: dotnet, python, node")] = "node",
-    spec_file: Annotated[str, typer.Option(help="Path to a markdown file containing the project requirements")] = None,
-):
-    """One command to rule them all: bootstrap, plan, and launch all agents."""
-    start_dir = os.getcwd()
-
-    run_bootstrap(name=name, description=description, language=language, spec_file=spec_file)
-    if not os.path.exists(os.path.join(os.getcwd(), "builder")):
-        log("orchestrator", "ERROR: Bootstrap did not create the expected directory structure.", style="bold red")
-        os.chdir(start_dir)
-        return
-
-    parent_dir = os.getcwd()
-
-    os.chdir(os.path.join(parent_dir, "builder"))
-
-    # Clear any stale builder-done sentinel from previous runs
+def _launch_agents_and_build(parent_dir: str, plan_label: str) -> None:
+    """Run planner, spawn reviewer/tester in terminals, then build until done."""
     clear_builder_done()
 
     log("orchestrator", "")
     log("orchestrator", "======================================", style="bold magenta")
-    log("orchestrator", " Running planner...", style="bold magenta")
+    log("orchestrator", f" {plan_label}", style="bold magenta")
     log("orchestrator", "======================================", style="bold magenta")
     plan()
     check_milestone_sizes()
@@ -142,6 +123,28 @@ def go(
     log("orchestrator", "======================================", style="bold green")
     log("orchestrator", "")
     build(loop=True)
+
+
+@app.command()
+def go(
+    name: Annotated[str, typer.Option(help="Project name")],
+    description: Annotated[str, typer.Option(help="What the project should do")] = None,
+    language: Annotated[str, typer.Option(help="Language/stack: dotnet, python, node")] = "node",
+    spec_file: Annotated[str, typer.Option(help="Path to a markdown file containing the project requirements")] = None,
+):
+    """One command to rule them all: bootstrap, plan, and launch all agents."""
+    start_dir = os.getcwd()
+
+    run_bootstrap(name=name, description=description, language=language, spec_file=spec_file)
+    if not os.path.exists(os.path.join(os.getcwd(), "builder")):
+        log("orchestrator", "ERROR: Bootstrap did not create the expected directory structure.", style="bold red")
+        os.chdir(start_dir)
+        return
+
+    parent_dir = os.getcwd()
+    os.chdir(os.path.join(parent_dir, "builder"))
+
+    _launch_agents_and_build(parent_dir, "Running planner...")
 
     os.chdir(start_dir)
 
@@ -165,16 +168,6 @@ def resume(
     os.chdir(os.path.join(parent_dir, "builder"))
     run_cmd(["git", "pull", "--rebase"], quiet=True)
 
-    # Clear any stale builder-done sentinel from previous runs
-    clear_builder_done()
-
-    log("orchestrator", "")
-    log("orchestrator", "======================================", style="bold magenta")
-    log("orchestrator", " Re-evaluating plan...", style="bold magenta")
-    log("orchestrator", "======================================", style="bold magenta")
-    plan()
-    check_milestone_sizes()
-
     reviewer_dir = os.path.join(parent_dir, "reviewer")
     tester_dir = os.path.join(parent_dir, "tester")
     with pushd(reviewer_dir):
@@ -182,18 +175,6 @@ def resume(
     with pushd(tester_dir):
         run_cmd(["git", "pull", "--rebase"], quiet=True)
 
-    log("orchestrator", "")
-    log("orchestrator", "Launching commit watcher (per-commit reviewer)...", style="yellow")
-    spawn_agent_in_terminal(reviewer_dir, "commitwatch")
-
-    log("orchestrator", "Launching tester (milestone-triggered)...", style="yellow")
-    spawn_agent_in_terminal(tester_dir, "testloop")
-
-    log("orchestrator", "")
-    log("orchestrator", "======================================", style="bold green")
-    log("orchestrator", " All agents launched! Resuming build...", style="bold green")
-    log("orchestrator", "======================================", style="bold green")
-    log("orchestrator", "")
-    build(loop=True)
+    _launch_agents_and_build(parent_dir, "Re-evaluating plan...")
 
     os.chdir(start_dir)

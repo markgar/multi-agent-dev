@@ -52,37 +52,17 @@ def log(agent_name: str, message: str, style: str = "") -> None:
         pass  # Never break the workflow over logging
 
 
-def run_copilot(agent_name: str, prompt: str) -> int:
-    """
-    Run 'copilot --yolo -p <prompt>' with streaming output to both console and log.
-    Returns the process exit code.
-    """
-    logs_dir = resolve_logs_dir()
-    log_file = os.path.join(logs_dir, f"{agent_name}.log")
-    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    prompt_preview = prompt[:100]
-
-    # Write header to log
-    header = (
-        f"\n========== [{timestamp}] {agent_name} ==========\n"
-        f"Prompt: {prompt_preview}...\n"
-        f"--- output ---\n"
-    )
+def _write_log_entry(log_file: str, text: str) -> None:
+    """Append text to a log file. Never raises."""
     try:
         with open(log_file, "a", encoding="utf-8") as f:
-            f.write(header)
+            f.write(text)
     except Exception:
         pass
 
-    # Run copilot with streaming tee to console + log
-    proc = subprocess.Popen(
-        ["copilot", "--yolo", "-p", prompt],
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
-        text=True,
-        bufsize=1,  # Line-buffered
-    )
 
+def _stream_process_output(proc: subprocess.Popen, log_file: str) -> None:
+    """Stream subprocess stdout to both the console and a log file."""
     try:
         with open(log_file, "a", encoding="utf-8") as f:
             for line in proc.stdout:
@@ -95,16 +75,37 @@ def run_copilot(agent_name: str, prompt: str) -> int:
     except Exception:
         pass
 
+
+def run_copilot(agent_name: str, prompt: str) -> int:
+    """Run 'copilot --yolo -p <prompt>' with streaming output to both console and log.
+
+    Returns the process exit code.
+    """
+    logs_dir = resolve_logs_dir()
+    log_file = os.path.join(logs_dir, f"{agent_name}.log")
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    prompt_preview = prompt[:100]
+
+    header = (
+        f"\n========== [{timestamp}] {agent_name} ==========\n"
+        f"Prompt: {prompt_preview}...\n"
+        f"--- output ---\n"
+    )
+    _write_log_entry(log_file, header)
+
+    proc = subprocess.Popen(
+        ["copilot", "--yolo", "-p", prompt],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        bufsize=1,
+    )
+
+    _stream_process_output(proc, log_file)
     proc.wait()
     exit_code = proc.returncode
 
-    # Write footer to log
-    footer = f"--- end (exit: {exit_code}) ---\n"
-    try:
-        with open(log_file, "a", encoding="utf-8") as f:
-            f.write(footer)
-    except Exception:
-        pass
+    _write_log_entry(log_file, f"--- end (exit: {exit_code}) ---\n")
 
     return exit_code
 

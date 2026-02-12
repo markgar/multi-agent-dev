@@ -1,4 +1,4 @@
-"""Watcher commands: commit watcher, legacy reviewoncommit, and testoncommit."""
+"""Watcher commands: commit watcher and milestone reviewer."""
 
 import os
 import time
@@ -13,11 +13,10 @@ from agent.milestone import (
     load_reviewed_milestones,
     save_milestone_checkpoint,
 )
+from agent.legacy_watchers import reviewoncommit, testoncommit
 from agent.prompts import (
     REVIEWER_COMMIT_PROMPT,
     REVIEWER_MILESTONE_PROMPT,
-    REVIEWER_PROMPT,
-    TESTER_PROMPT,
 )
 from agent.sentinel import (
     is_builder_done,
@@ -32,57 +31,6 @@ def register(app: typer.Typer) -> None:
     app.command()(commitwatch)
     app.command()(reviewoncommit)
     app.command()(testoncommit)
-
-
-def _watch_loop(agent_name: str, prompt: str, label: str) -> None:
-    """Shared polling loop for reviewoncommit and testoncommit."""
-    log(agent_name, "======================================", style="bold yellow")
-    log(agent_name, f" {label} agent watching for commits...", style="bold yellow")
-    log(agent_name, " Press Ctrl+C to stop", style="bold yellow")
-    log(agent_name, "======================================", style="bold yellow")
-    log(agent_name, "")
-
-    last_commit = ""
-
-    while True:
-        pull_result = run_cmd(["git", "pull", "-q"], capture=True)
-        if pull_result.returncode != 0:
-            now = datetime.now().strftime("%H:%M:%S")
-            log(agent_name, f"[{now}] WARNING: git pull failed", style="red")
-            if pull_result.stderr:
-                log(agent_name, pull_result.stderr.strip(), style="red")
-
-        head_result = run_cmd(["git", "rev-parse", "HEAD"], capture=True)
-        current_commit = head_result.stdout.strip() if head_result.returncode == 0 else ""
-
-        if current_commit != last_commit and last_commit != "":
-            now = datetime.now().strftime("%H:%M:%S")
-            log(agent_name, "")
-            log(agent_name, f"[{now}] New commit detected!", style="yellow")
-            log(agent_name, "")
-
-            exit_code = run_copilot(agent_name, prompt)
-
-            if exit_code != 0:
-                now = datetime.now().strftime("%H:%M:%S")
-                log(agent_name, f"[{now}] WARNING: {label} exited with errors", style="red")
-
-            now = datetime.now().strftime("%H:%M:%S")
-            log(agent_name, "")
-            log(agent_name, f"[{now}] {label} complete. Watching...", style="yellow")
-
-        last_commit = current_commit
-        time.sleep(10)
-
-
-def reviewoncommit():
-    """Watch for new commits and review code quality (runs in a loop)."""
-    _watch_loop("reviewer", REVIEWER_PROMPT, "Review")
-
-
-def testoncommit():
-    """Watch for new commits and auto-test (runs in a loop)."""
-    _watch_loop("tester", TESTER_PROMPT, "Test run")
 
 
 def _initialize_watcher_checkpoint() -> str:
@@ -107,6 +55,15 @@ def _initialize_watcher_checkpoint() -> str:
 
     log("commit-watcher", "WARNING: Could not determine HEAD", style="red")
     return ""
+
+
+def _should_skip_commit(commit_sha: str) -> str | None:
+    """Return a skip reason if the commit should not be reviewed, or None to review it."""
+    if is_merge_commit(commit_sha):
+        return "merge commit"
+    if is_reviewer_only_commit(commit_sha):
+        return "reviewer commit"
+    return None
 
 
 def _review_new_commits(last_sha: str, current_head: str) -> bool:
@@ -137,14 +94,9 @@ def _review_new_commits(last_sha: str, current_head: str) -> bool:
         now = datetime.now().strftime("%H:%M:%S")
         short = commit_sha[:8]
 
-        if is_merge_commit(commit_sha):
-            log("commit-watcher", f"[{now}] Skipping merge commit {short}", style="dim")
-            prev = commit_sha
-            save_reviewer_checkpoint(commit_sha)
-            continue
-
-        if is_reviewer_only_commit(commit_sha):
-            log("commit-watcher", f"[{now}] Skipping reviewer commit {short}", style="dim")
+        skip_reason = _should_skip_commit(commit_sha)
+        if skip_reason:
+            log("commit-watcher", f"[{now}] Skipping {skip_reason} {short}", style="dim")
             prev = commit_sha
             save_reviewer_checkpoint(commit_sha)
             continue
