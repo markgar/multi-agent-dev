@@ -25,7 +25,12 @@ This software is entirely written by GitHub Copilot. The code is structured to b
 
 ## Key files
 
-- `src/agent/cli.py` — CLI commands (typer app): `go`, `resume`, `build`, `plan`, `commitwatch`, `testloop`, etc.
+- `src/agent/cli.py` — App definition, top-level orchestration commands: `go`, `resume`, `plan`, `status`.
+- `src/agent/bootstrap.py` — Project scaffolding: repo creation, cloning reviewer/tester copies.
+- `src/agent/builder.py` — Build loop: milestone completion, retry logic, reviewer drain window.
+- `src/agent/watcher.py` — Commit watcher: per-commit reviews, milestone-level reviews.
+- `src/agent/tester.py` — Test loop: milestone-triggered testing, final test pass.
+- `src/agent/terminal.py` — Terminal spawning helper for launching agents in new windows.
 - `src/agent/prompts.py` — All LLM prompt templates. Constants only, no logic.
 - `src/agent/utils.py` — Shared helpers: logging, git operations, milestone tracking, builder sentinel.
 - `src/agent/config.py` — Language/stack configurations and prerequisites.
@@ -37,7 +42,7 @@ This is a multi-agent orchestrator that uses GitHub Copilot CLI (`copilot --yolo
 - **Markdown files** (`TASKS.md`, `BUGS.md`, `REVIEWS.md`) — shared state via git push/pull.
 - **Log files** (`logs/`) — local coordination signals like `builder.done`, `reviewer.checkpoint`, `milestones.log`.
 
-The build loop (Python code in `cli.py`) handles deterministic orchestration — milestone boundary tracking, SHA recording, shutdown signals. The LLM agents handle creative work — writing code, reviewing diffs, writing tests.
+The build loop (Python code in `builder.py`) handles deterministic orchestration — milestone boundary tracking, SHA recording, shutdown signals. The LLM agents handle creative work — writing code, reviewing diffs, writing tests.
 
 ## Conventions
 

@@ -2,10 +2,10 @@
 
 An autonomous development workflow using GitHub Copilot CLI. Four agents collaborate through files in a shared GitHub repo to build projects in **.NET/C#**, **Python**, or **Node.js**:
 
-- **Planner** — creates and updates the task list from the spec
-- **Builder** — fixes bugs, addresses review items, builds tasks
-- **Reviewer** — watches for commits and reviews code quality
-- **Tester** — watches for commits and runs tests, files bugs
+- **Planner** — creates and updates the task list from the spec, organized into milestones
+- **Builder** — fixes bugs, addresses review items, completes one milestone per cycle
+- **Reviewer** — reviews each commit for quality, plus cross-cutting milestone reviews
+- **Tester** — runs scoped tests when milestones complete, files bugs
 
 ## Prerequisites
 
@@ -50,11 +50,11 @@ agentic-dev go --name "hello-world" --language dotnet --description "a C# consol
 That's it. `go` will:
 1. **Bootstrap** — create the project, SPEC.md, git repo, GitHub remote, and three clones (builder/, reviewer/, tester/)
 2. **Plan** — generate TASKS.md from the spec
-3. **Launch reviewer** — in a new terminal window, watching for commits
-4. **Launch tester** — in a new terminal window, watching for commits
-5. **Start building** — in your current terminal, looping through tasks
+3. **Launch reviewer** — in a new terminal window, reviewing each commit and completed milestones
+4. **Launch tester** — in a new terminal window, testing each completed milestone
+5. **Start building** — in your current terminal, completing milestones one at a time
 
-Three windows will be running. Watch the Builder work through tasks while the Reviewer and Tester react to each commit. Run `agentic-dev status` anytime in the builder directory to check progress.
+Three windows will be running. Watch the Builder work through milestones while the Reviewer and Tester react to each commit and milestone completion. Run `agentic-dev status` anytime in the builder directory to check progress.
 
 ---
 
@@ -156,17 +156,17 @@ Planner ──TASKS.md──→ Builder ──git push──→ Reviewer ──R
 |---|---|---|---|
 | Bootstrap | Planner | `SPEC.md` | Here's what the project should look like when it's done |
 | Planner | Builder | `TASKS.md` | Here's what to do next |
-| Builder | Reviewer | `git push` | I finished something, review it |
-| Builder | Tester | `git push` | I finished something, test it |
+| Builder | Reviewer | `git push` | I finished a commit or milestone, review it |
+| Builder | Tester | `milestones.log` | A milestone is complete, test it |
 | Reviewer | Builder | `REVIEWS.md` | I found quality issues, address these |
 | Tester | Builder | `BUGS.md` | I found test failures, fix these |
 
 ### Rules
 
 - The **Planner** runs on demand via `plan`. It reads `SPEC.md`, the codebase, `TASKS.md`, `BUGS.md`, and `REVIEWS.md`, then creates or updates the task list. It never writes code.
-- The **Builder** checks `BUGS.md` first (all bugs are fixed regardless of the task target), then `REVIEWS.md`, then works through tasks. It adapts how many tasks it takes on per cycle based on complexity and milestone boundaries.
-- The **Reviewer** only commits when it finds meaningful quality issues. It skips minor style nitpicks.
-- The **Tester** only commits when it finds bugs or writes new tests. If everything passes, it does nothing.
+- The **Builder** checks `BUGS.md` first (all bugs are fixed before any tasks), then `REVIEWS.md`, then completes the current milestone. One milestone per cycle, then the planner re-evaluates.
+- The **Reviewer** reviews each commit individually, plus a cross-cutting review when a milestone completes. It skips minor style nitpicks.
+- The **Tester** runs scoped tests when a milestone completes, focusing on changed files. Runs a final full test pass when the builder finishes.
 - Neither the Reviewer nor Tester duplicate items already in their respective files.
 - All agents run `git pull --rebase` before pushing to avoid merge conflicts.
 - `SPEC.md` is the source of truth. Edit it anytime to steer the project — run `plan` to adapt the task list.
@@ -182,16 +182,21 @@ myproject/
   builder/       ← git clone
   reviewer/      ← git clone
   tester/        ← git clone
-  logs/          ← all agent logs
+  logs/          ← all agent logs + coordination signals
     bootstrap.log
     planner.log
     builder.log
     reviewer.log
     tester.log
     orchestrator.log
+    builder.done           ← shutdown signal
+    reviewer.checkpoint    ← last reviewed commit SHA
+    milestones.log         ← milestone SHA boundaries (append-only)
+    reviewer.milestone     ← milestones already reviewed
+    tester.milestone       ← milestones already tested
 ```
 
-Each entry includes a timestamp, a prompt preview, the full output, and the exit code. The `logs/` directory is outside the git repos so logs are never committed.
+Each log entry includes a timestamp, a prompt preview, the full output, and the exit code. The `logs/` directory is outside the git repos so logs are never committed.
 
 To follow a log in real time:
 
@@ -233,9 +238,7 @@ After `go` has created a project, you can run individual agents if needed:
 cd my-project/builder
 agentic-dev plan
 agentic-dev build
-agentic-dev build --numtasks 3
 agentic-dev build --loop
-agentic-dev build --numtasks 5 --loop
 
 cd ../reviewer
 agentic-dev commitwatch
@@ -253,12 +256,11 @@ agentic-dev testloop
 | `go --name N --language L --description D` | Does everything: bootstrap, plan, launch agents, build | Once, from parent dir |
 | `go --name N --language L --spec-file F` | Same, but reads requirements from a markdown file | Once, from parent dir |
 | `resume --name N` | Re-plans, relaunches watchers, resumes building | Once, from parent dir |
-| `plan` | Creates or updates TASKS.md from SPEC.md | builder/, on demand |
-| `build` | Fixes bugs + reviews, then does tasks (targets ~5, adapts to complexity) | builder/, repeatedly |
-| `build --numtasks 3` | Same, but targets ~3 tasks per cycle | builder/ |
-| `build --loop` | Loops through all remaining tasks automatically | builder/, once |
-| `commitwatch` | Polls for commits, reviews each one for quality | reviewer/, once |
-| `testloop` | Runs tests every 5 minutes, files bugs | tester/, once |
+| `plan` | Creates or updates TASKS.md from SPEC.md (with milestones) | builder/, on demand |
+| `build` | Fixes bugs + reviews, then completes the current milestone | builder/, repeatedly |
+| `build --loop` | Loops through all milestones automatically (re-plans between each) | builder/, once |
+| `commitwatch` | Polls for commits, reviews each one + milestone-level reviews | reviewer/, once |
+| `testloop` | Watches for completed milestones, runs scoped tests | tester/, once |
 | `reviewoncommit` | Legacy: watches for commits, reviews code quality | reviewer/, once |
 | `testoncommit` | Legacy: watches for commits, runs tests, files bugs | tester/, once |
 | `status` | Shows spec, tasks, reviews, and bugs at a glance | Any clone, anytime |
