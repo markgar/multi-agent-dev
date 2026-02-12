@@ -7,17 +7,15 @@ from typing import Annotated
 
 import typer
 
-from agent.prompts import TESTER_MILESTONE_PROMPT, TESTER_PROMPT
-from agent.utils import (
-    git_push_with_retry,
-    is_builder_done,
+from agent.git_helpers import git_push_with_retry
+from agent.milestone import (
     load_milestone_boundaries,
     load_reviewed_milestones,
-    log,
-    run_cmd,
-    run_copilot,
     save_milestone_checkpoint,
 )
+from agent.prompts import TESTER_MILESTONE_PROMPT, TESTER_PROMPT
+from agent.sentinel import is_builder_done
+from agent.utils import log, run_cmd, run_copilot
 
 
 _TESTER_MILESTONE_CHECKPOINT = "tester.milestone"

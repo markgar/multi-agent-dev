@@ -7,14 +7,8 @@ from typing import Annotated
 import typer
 
 from agent.prompts import PLANNER_PROMPT
-from agent.utils import (
-    clear_builder_done,
-    console,
-    log,
-    pushd,
-    run_cmd,
-    run_copilot,
-)
+from agent.sentinel import clear_builder_done
+from agent.utils import console, log, pushd, run_cmd, run_copilot
 
 app = typer.Typer(
     help="Multi-agent autonomous development orchestrator using GitHub Copilot CLI.",

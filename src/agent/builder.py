@@ -7,20 +7,16 @@ from typing import Annotated
 
 import typer
 
-from agent.prompts import BUILDER_PROMPT, PLANNER_SPLIT_PROMPT
-from agent.utils import (
+from agent.milestone import (
     get_completed_milestones,
     get_current_milestone_progress,
     get_last_milestone_end_sha,
     get_tasks_per_milestone,
-    has_unchecked_items,
-    load_reviewer_checkpoint,
-    log,
     record_milestone_boundary,
-    run_cmd,
-    run_copilot,
-    write_builder_done,
 )
+from agent.prompts import BUILDER_PROMPT, PLANNER_SPLIT_PROMPT
+from agent.sentinel import load_reviewer_checkpoint, write_builder_done
+from agent.utils import has_unchecked_items, log, run_cmd, run_copilot
 
 
 _MAX_TASKS_PER_MILESTONE = 5

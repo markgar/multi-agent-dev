@@ -227,11 +227,44 @@ Broke `cli.py` into separate modules, each owning one concern.
 
 ---
 
-## 7. Replace section-separator comments with module boundaries
+## 7. ~~Replace section-separator comments with module boundaries~~ ✅ Done
 
-**File:** `src/agent/utils.py`
+**File:** `src/agent/utils.py` (499 lines → 148 lines + 3 modules)
 
-The `# ============================================` separation comments become unnecessary once related groups of functions live in their own modules (or at least their own clearly-named sections). After task 2, review whether `utils.py` itself should be split (e.g., `git_helpers.py` for git operations, `sentinel.py` for builder-done/checkpoint logic, `milestone.py` for milestone parsing).
+Split `utils.py` into focused modules, each owning a single concern. Removed all `# ============` section-separator comments — module boundaries now communicate the grouping.
+
+### 7a. ~~Extract `git_helpers.py`~~ ✅ Done
+
+- [x] Move `git_push_with_retry`, `is_reviewer_only_commit`, `is_merge_commit` into `src/agent/git_helpers.py`
+- [x] Update imports in `watcher.py` and `tester.py`
+
+### 7b. ~~Extract `sentinel.py`~~ ✅ Done
+
+- [x] Move `write_builder_done`, `clear_builder_done`, `is_builder_done`, `save_reviewer_checkpoint`, `load_reviewer_checkpoint` into `src/agent/sentinel.py`
+- [x] Move constants: `_BUILDER_DONE_FILE`, `_BUILDER_LOG_FILE`, `_STALE_LOG_TIMEOUT_MINUTES`, `_REVIEWER_CHECKPOINT_FILE`
+- [x] Update imports in `cli.py`, `builder.py`, `watcher.py`, `tester.py`
+
+### 7c. ~~Extract `milestone.py`~~ ✅ Done
+
+- [x] Move `record_milestone_boundary`, `load_milestone_boundaries`, `get_last_milestone_end_sha`, `save_milestone_checkpoint`, `load_reviewed_milestones`, `_parse_milestones`, `get_completed_milestones`, `get_current_milestone_progress`, `get_tasks_per_milestone` into `src/agent/milestone.py`
+- [x] Move constants: `_MILESTONE_CHECKPOINT_FILE`, `_MILESTONE_LOG_FILE`
+- [x] Update imports in `builder.py`, `watcher.py`, `tester.py`
+
+### 7d. ~~Slim down `utils.py`~~ ✅ Done
+
+- [x] Remove all `# ============` section-separator comments
+- [x] Remove unused `time` import
+- [x] Keep only core utilities: `pushd`, `resolve_logs_dir`, `log`, `run_copilot`, `is_macos`, `is_windows`, `check_command`, `run_cmd`, `has_unchecked_items`, `console`
+- [x] Update docstring to reflect narrowed scope
+
+### Verification
+
+- [x] `python -c "from agent.git_helpers import git_push_with_retry, is_reviewer_only_commit, is_merge_commit"` succeeds
+- [x] `python -c "from agent.sentinel import write_builder_done, clear_builder_done, is_builder_done"` succeeds
+- [x] `python -c "from agent.milestone import get_completed_milestones, get_current_milestone_progress"` succeeds
+- [x] `python -c "from agent.cli import app"` succeeds (no circular imports)
+- [x] All CLI commands register correctly (`python -m agent --help`)
+- [x] `pytest` — no failures
 
 **Why:** "Descriptive naming over comments." Module boundaries are more informative than comment banners.
 

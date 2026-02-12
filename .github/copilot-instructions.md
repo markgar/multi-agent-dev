@@ -32,7 +32,10 @@ This software is entirely written by GitHub Copilot. The code is structured to b
 - `src/agent/tester.py` — Test loop: milestone-triggered testing, final test pass.
 - `src/agent/terminal.py` — Terminal spawning helper for launching agents in new windows.
 - `src/agent/prompts.py` — All LLM prompt templates. Constants only, no logic.
-- `src/agent/utils.py` — Shared helpers: logging, git operations, milestone tracking, builder sentinel.
+- `src/agent/utils.py` — Core helpers: logging, command execution, platform detection.
+- `src/agent/git_helpers.py` — Git operations: push with retry, commit classification.
+- `src/agent/sentinel.py` — Builder-done sentinel and reviewer checkpoint persistence.
+- `src/agent/milestone.py` — Milestone parsing, boundary tracking, and per-agent milestone checkpoints.
 - `src/agent/config.py` — Language/stack configurations and prerequisites.
 
 ## Architecture
