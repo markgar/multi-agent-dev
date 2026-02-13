@@ -202,7 +202,12 @@ REVIEWER_PROMPT = (
     "or remove existing lines in REVIEWS.md. Do not duplicate items already in REVIEWS.md. "
     "If there are no meaningful issues, do nothing. If you wrote to REVIEWS.md, commit "
     "with message 'Code review findings', run git pull --rebase, and push. If the push "
-    "fails, run git pull --rebase and push again (retry up to 3 times)."
+    "fails, run git pull --rebase and push again (retry up to 3 times). "
+    "CONFLICT RECOVERY: If git pull --rebase fails with merge conflicts, run "
+    "`git rebase --abort`, then `git stash`, then `git pull`, then `git stash pop`. "
+    "If stash pop reports conflicts, resolve each conflicted file by running "
+    "`git checkout --theirs <file> && git add <file>` to keep your version. "
+    "Then commit and push."
 )
 
 REVIEWER_COMMIT_PROMPT = (
@@ -237,7 +242,12 @@ REVIEWER_COMMIT_PROMPT = (
     "existing lines in REVIEWS.md. Do not duplicate items already in REVIEWS.md. If there "
     "are no meaningful issues, do nothing. If you wrote to REVIEWS.md, commit with message "
     "'Code review: {commit_sha:.8}', run git pull --rebase, and push. If the push fails, "
-    "run git pull --rebase and push again (retry up to 3 times)."
+    "run git pull --rebase and push again (retry up to 3 times). "
+    "CONFLICT RECOVERY: If git pull --rebase fails with merge conflicts, run "
+    "`git rebase --abort`, then `git stash`, then `git pull`, then `git stash pop`. "
+    "If stash pop reports conflicts, resolve each conflicted file by running "
+    "`git checkout --theirs <file> && git add <file>` to keep your version. "
+    "Then commit and push."
 )
 
 REVIEWER_BATCH_PROMPT = (
@@ -272,7 +282,12 @@ REVIEWER_BATCH_PROMPT = (
     "existing lines in REVIEWS.md. Do not duplicate items already in REVIEWS.md. If there "
     "are no meaningful issues, do nothing. If you wrote to REVIEWS.md, commit with message "
     "'Code review: {base_sha:.8}..{head_sha:.8}', run git pull --rebase, and push. "
-    "If the push fails, run git pull --rebase and push again (retry up to 3 times)."
+    "If the push fails, run git pull --rebase and push again (retry up to 3 times). "
+    "CONFLICT RECOVERY: If git pull --rebase fails with merge conflicts, run "
+    "`git rebase --abort`, then `git stash`, then `git pull`, then `git stash pop`. "
+    "If stash pop reports conflicts, resolve each conflicted file by running "
+    "`git checkout --theirs <file> && git add <file>` to keep your version. "
+    "Then commit and push."
 )
 
 REVIEWER_MILESTONE_PROMPT = (
@@ -315,7 +330,12 @@ REVIEWER_MILESTONE_PROMPT = (
     "made any changes to REVIEWS.md or fixed doc issues, commit with message "
     "'Milestone review: {milestone_name}', run "
     "git pull --rebase, and push. If the push fails, run git pull --rebase and push "
-    "again (retry up to 3 times)."
+    "again (retry up to 3 times). "
+    "CONFLICT RECOVERY: If git pull --rebase fails with merge conflicts, run "
+    "`git rebase --abort`, then `git stash`, then `git pull`, then `git stash pop`. "
+    "If stash pop reports conflicts, resolve each conflicted file by running "
+    "`git checkout --theirs <file> && git add <file>` to keep your version. "
+    "Then commit and push."
 )
 
 TESTER_PROMPT = (
@@ -335,6 +355,11 @@ TESTER_PROMPT = (
     "remove existing lines in BUGS.md. Do not duplicate bugs that are already in BUGS.md. "
     "Commit all new tests and any BUGS.md changes, run git pull --rebase, and push. "
     "If the push fails, run git pull --rebase and push again (retry up to 3 times). "
+    "CONFLICT RECOVERY: If git pull --rebase fails with merge conflicts, run "
+    "`git rebase --abort`, then `git stash`, then `git pull`, then `git stash pop`. "
+    "If stash pop reports conflicts, resolve each conflicted file by running "
+    "`git checkout --theirs <file> && git add <file>` to keep your version. "
+    "Then commit and push. "
     "If everything passes and no new tests are needed, do nothing."
 )
 
@@ -361,6 +386,11 @@ TESTER_MILESTONE_PROMPT = (
     "remove existing lines in BUGS.md. Do not duplicate bugs that are already in BUGS.md. "
     "Commit all new tests and any BUGS.md changes, run git pull --rebase, and push. "
     "If the push fails, run git pull --rebase and push again (retry up to 3 times). "
+    "CONFLICT RECOVERY: If git pull --rebase fails with merge conflicts, run "
+    "`git rebase --abort`, then `git stash`, then `git pull`, then `git stash pop`. "
+    "If stash pop reports conflicts, resolve each conflicted file by running "
+    "`git checkout --theirs <file> && git add <file>` to keep your version. "
+    "Then commit and push. "
     "If everything passes and no new tests are needed, do nothing."
 )
 
@@ -434,7 +464,12 @@ VALIDATOR_MILESTONE_PROMPT = (
     "Update any information that has changed (e.g. new env vars, different ports).\n\n"
     "Commit all changes (Dockerfile, docker-compose.yml, DEPLOY.md, BUGS.md), run "
     "git pull --rebase, and push. If the push fails, run git pull --rebase and push "
-    "again (retry up to 3 times)."
+    "again (retry up to 3 times). "
+    "CONFLICT RECOVERY: If git pull --rebase fails with merge conflicts, run "
+    "`git rebase --abort`, then `git stash`, then `git pull`, then `git stash pop`. "
+    "If stash pop reports conflicts, resolve each conflicted file by running "
+    "`git checkout --theirs <file> && git add <file>` to keep your version. "
+    "Then commit and push."
 )
 
 # ============================================

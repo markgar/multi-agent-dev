@@ -32,8 +32,9 @@ def test_reviews_only_with_agents_idle_returns_reviews_only():
     assert classify_remaining_work(bugs=0, reviews=3, tasks=0, agents_idle=True) == "reviews-only"
 
 
-def test_reviews_only_with_agents_active_returns_waiting():
-    assert classify_remaining_work(bugs=0, reviews=3, tasks=0, agents_idle=False) == "waiting"
+def test_reviews_only_with_agents_active_returns_reviews_only():
+    """Reviews should be acted on immediately, not gated by agent idle status."""
+    assert classify_remaining_work(bugs=0, reviews=3, tasks=0, agents_idle=False) == "reviews-only"
 
 
 def test_bugs_take_priority_over_reviews_only():

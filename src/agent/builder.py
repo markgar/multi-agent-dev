@@ -370,7 +370,7 @@ def classify_remaining_work(bugs: int, reviews: int, tasks: int, agents_idle: bo
 
     Pure function: returns 'done', 'reviews-only', 'waiting', or 'continue'.
     - 'done' when no work remains and agents are idle
-    - 'reviews-only' when only reviews remain (no bugs/tasks) and agents are idle
+    - 'reviews-only' when only reviews remain (no bugs/tasks) — act immediately
     - 'waiting' when no actionable work but agents are still active
     - 'continue' when bugs or tasks remain (must-fix work)
     """
@@ -378,9 +378,7 @@ def classify_remaining_work(bugs: int, reviews: int, tasks: int, agents_idle: bo
     if has_must_fix:
         return "continue"
     if reviews > 0:
-        if agents_idle:
-            return "reviews-only"
-        return "waiting"
+        return "reviews-only"
     if agents_idle:
         return "done"
     return "waiting"
@@ -421,9 +419,6 @@ def _check_remaining_work(state: BuildState) -> str:
             return "continue"
 
         if signal == "reviews-only":
-            # Only reviews remain — give the builder one shot to fix them,
-            # but don't loop indefinitely. Reviews are best-effort after all
-            # milestones and bugs are done.
             log("builder", "")
             log("builder", f"Only reviews remain ({remaining_reviews} unchecked). "
                 "One more pass, then done.", style="cyan")
@@ -442,7 +437,7 @@ def _check_remaining_work(state: BuildState) -> str:
             log("builder", "======================================", style="bold green")
             return "done"
 
-        # signal == "waiting" — agents still active
+        # signal == "waiting" — no work yet, agents still active
         wait_cycle += 1
         if wait_cycle == 1:
             log("builder", "")

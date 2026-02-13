@@ -160,7 +160,7 @@ When the builder finishes, the validator sees `logs/builder.done` and exits.
 - The **Tester** runs scoped tests when a milestone completes, focusing on changed files. It runs the test suite only — it does not start the app or test live endpoints. Exits when the builder finishes.
 - The **Validator** builds the app in a Docker container after each milestone, starts it, and tests it against SPEC.md acceptance criteria. Persists deployment knowledge in DEPLOY.md. Exits when the builder finishes.
 - Neither the Reviewer nor Tester duplicate items already in their respective files.
-- All agents run `git pull --rebase` before pushing to avoid merge conflicts.
+- All agents run `git pull --rebase` before pushing to avoid merge conflicts. If rebase fails with conflicts (e.g. two agents edited DEPLOY.md or BUGS.md concurrently), agents recover automatically: abort the rebase, stash local changes, pull fresh, pop the stash, and keep the local version for any conflicted files.
 - `SPEC.md` is the source of truth. Edit it anytime to steer the project — run `plan` to adapt the task list.
 
 ---
