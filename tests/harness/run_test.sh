@@ -124,6 +124,12 @@ if [[ "$RESUME" == true ]]; then
     echo "============================================"
     echo ""
 
+    read -rp "Proceed? [Y/n] " CONFIRM
+    if [[ "${CONFIRM:-Y}" =~ ^[Nn] ]]; then
+        echo "Aborted."
+        exit 0
+    fi
+
     GO_ARGS=(--directory "$PROJ_DIR" --local)
     if [[ -n "${SPEC_FILE:-}" && -f "${SPEC_FILE:-}" ]]; then
         GO_ARGS+=(--spec-file "$SPEC_FILE")
@@ -135,7 +141,6 @@ else
     # Fresh run: create new timestamped directory
     TIMESTAMP="$(date +%Y%m%d-%H%M%S)"
     RUN_DIR="$HARNESS_DIR/runs/$TIMESTAMP"
-    mkdir -p "$RUN_DIR"
     PROJ_DIR="$RUN_DIR/$PROJECT_NAME"
 
     echo "============================================"
@@ -146,6 +151,14 @@ else
     echo "  Project:    $PROJECT_NAME"
     echo "============================================"
     echo ""
+
+    read -rp "Proceed? [Y/n] " CONFIRM
+    if [[ "${CONFIRM:-Y}" =~ ^[Nn] ]]; then
+        echo "Aborted."
+        exit 0
+    fi
+
+    mkdir -p "$RUN_DIR"
 
     agentic-dev go \
         --directory "$PROJ_DIR" \

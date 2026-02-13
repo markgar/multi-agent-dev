@@ -5,3 +5,4 @@ Resuming from: /private/var/folders/2w/5z33c5j13bzdyv7rrfj3hf0m0000gn/T/pytest-o
 Resuming from: /private/var/folders/2w/5z33c5j13bzdyv7rrfj3hf0m0000gn/T/pytest-of-markgarner/pytest-3/test_resolve_run_dir_accepts_v0/my-run
 Resuming from: /private/var/folders/2w/5z33c5j13bzdyv7rrfj3hf0m0000gn/T/pytest-of-markgarner/pytest-4/test_resolve_run_dir_accepts_v0/my-run
 ERROR: Bootstrap did not create the expected directory structure.
+ERROR: Bootstrap did not create the expected directory structure.
