@@ -27,7 +27,7 @@ The planner first assesses the project state to determine which situation applie
 
 - **(A) Fresh project** — no TASKS.md, no code. SPEC.md exists from bootstrap. Creates TASKS.md with milestones.
 - **(B) Continuing project** — TASKS.md exists with completed milestones, SPEC.md covers everything in REQUIREMENTS.md. Evaluates whether the existing plan needs adjustment.
-- **(C) Evolving project** — REQUIREMENTS.md contains features not covered in SPEC.md (new requirements added since last session). Updates SPEC.md to incorporate the new requirements, then plans new milestones for the unimplemented work.
+- **(C) Evolving project** — REQUIREMENTS.md contains features not covered in SPEC.md (new requirements added since last session). Updates SPEC.md to incorporate the new requirements, then plans new milestones for the unimplemented work. The default is additive — existing features stay in SPEC.md unless REQUIREMENTS.md explicitly asks to remove or replace them. Silence about an existing feature is not a removal request.
 
 In cases B and C, the planner looks at the actual codebase to understand what is already built — it does not rely only on checked tasks.
 
