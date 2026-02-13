@@ -224,11 +224,19 @@ def _detect_milestone_progress(state: BuildState, loop: bool) -> bool:
             # the planner tends to create new cleanup milestones from
             # review items, causing a tail-chasing loop.
             if state.fix_only_cycles > 0:
+                # Check if the planner added a new milestone during a previous
+                # re-plan cycle.  If so, exit fix-only mode and build it.
+                progress = get_current_milestone_progress("TASKS.md")
+                if progress:
+                    log("builder", "")
+                    log("builder", "[Planner] New milestone detected — exiting fix-only mode.", style="magenta")
+                    state.fix_only_cycles = 0
+                    state.last_milestone_done_count = progress["done"]
+                    state.last_milestone_name = progress["name"]
+                    return True
                 log("builder", "")
                 log("builder", "[Planner] Skipping re-plan (already in fix-only mode).", style="dim")
-                progress = get_current_milestone_progress("TASKS.md")
-                if not progress:
-                    return False
+                return False
             elif not progress and state.post_completion_replans >= _MAX_POST_COMPLETION_REPLANS:
                 # All milestones done and we've already re-planned once.
                 # Don't let the planner keep manufacturing cleanup milestones
