@@ -4,8 +4,8 @@ A minimal full-stack notes application.
 
 ## Backend
 
-- Node.js Express API
-- In-memory array storage (no database)
+- ASP.NET Core minimal API (C#)
+- In-memory list storage (no database)
 - `GET /notes` — returns all notes as JSON array
 - `POST /notes` — accepts `{ "text": "..." }`, assigns an auto-increment `id`, returns the created note
 - `GET /health` — returns `{ "status": "ok" }`

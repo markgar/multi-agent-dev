@@ -4,11 +4,11 @@ A minimal full-stack notes application with create and delete.
 
 ## Backend
 
-- Node.js Express API
-- In-memory array storage (no database)
+- ASP.NET Core minimal API (C#)
+- In-memory list storage (no database)
 - `GET /notes` — returns all notes as JSON array
 - `POST /notes` — accepts `{ "text": "..." }`, assigns an auto-increment `id`, returns the created note
-- `DELETE /notes/:id` — removes the note with the given id, returns 204 on success, 404 if not found
+- `DELETE /notes/{id}` — removes the note with the given id, returns 204 on success, 404 if not found
 - `GET /health` — returns `{ "status": "ok" }`
 - Serve the React frontend's build output as static files from the root route
 

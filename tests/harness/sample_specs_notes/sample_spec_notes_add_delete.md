@@ -4,7 +4,7 @@ Add delete functionality to the existing notes application.
 
 ## Backend
 
-- Add `DELETE /notes/:id` — removes the note with the given id, returns 204 on success, 404 if not found
+- Add `DELETE /notes/{id}` — removes the note with the given id, returns 204 on success, 404 if not found
 
 ## Frontend
 
