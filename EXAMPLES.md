@@ -63,24 +63,21 @@ Build a project in phases — start with a base, then add features in later sess
 ```bash
 agentic-dev go \
   --directory notes-app \
-  --description "a full-stack notes app: ASP.NET Core minimal API backend with in-memory list storage (GET /notes, POST /notes, GET /health), and a React frontend (Vite) that lists notes and has an Add form. Backend serves the React build as static files." \
-  --local
+  --description "a full-stack notes app: ASP.NET Core minimal API backend with in-memory list storage (GET /notes, POST /notes, GET /health), and a React frontend (Vite) that lists notes and has an Add form. Backend serves the React build as static files."
 ```
 
 **Session 2 — Add delete functionality:**
 ```bash
 agentic-dev go \
   --directory notes-app \
-  --description "Add delete functionality: DELETE /notes/{id} endpoint (204 on success, 404 if not found), and a Delete button next to each note in the frontend." \
-  --local
+  --description "Add delete functionality: DELETE /notes/{id} endpoint (204 on success, 404 if not found), and a Delete button next to each note in the frontend."
 ```
 
 **Session 3 — Add timestamps:**
 ```bash
 agentic-dev go \
   --directory notes-app \
-  --description "Add created-at timestamps: each note gets a createdAt field set on creation. Display the timestamp next to each note in the UI, formatted as a readable date/time." \
-  --local
+  --description "Add created-at timestamps: each note gets a createdAt field set on creation. Display the timestamp next to each note in the UI, formatted as a readable date/time."
 ```
 
 Each session picks up from the existing repo — if agent directories are missing, `go` clones them automatically. The planner compares REQUIREMENTS.md against SPEC.md to determine what's new and creates milestones only for the unimplemented work.
