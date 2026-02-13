@@ -9,7 +9,7 @@ same final app (Express API + React UI with create and delete).
 |---|---|
 | `sample_spec_notes_1_base.md` | Session 1: API + UI with list and add |
 | `sample_spec_notes_2_add_delete.md` | Session 2 (delta): just the delete feature |
-| `sample_spec_notes_3_full.md` | Session 2 (combined): everything in one file |
+| `sample_spec_notes_full.md` | Combined: everything in one file |
 
 ## Test paths
 
@@ -27,7 +27,7 @@ agentic-dev go --directory notes-app --spec-file tests/harness/sample_specs_note
 
 **Path B — combined (single session):**
 ```bash
-agentic-dev go --directory notes-app --spec-file tests/harness/sample_specs_notes/sample_spec_notes_3_full.md --local
+agentic-dev go --directory notes-app --spec-file tests/harness/sample_specs_notes/sample_spec_notes_full.md --local
 ```
 
 ---
@@ -48,7 +48,7 @@ The harness creates a timestamped `runs/` directory, passes `--directory` and `-
 
 **Path B — combined (single session):**
 ```bash
-./tests/harness/run_test.sh --name notes-app --spec-file tests/harness/sample_specs_notes/sample_spec_notes_3_full.md
+./tests/harness/run_test.sh --name notes-app --spec-file tests/harness/sample_specs_notes/sample_spec_notes_full.md
 ```
 
 ---
