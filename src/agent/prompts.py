@@ -74,6 +74,13 @@ PLANNER_PROMPT = (
     "checkbox tasks are checked. The reviewer uses milestone boundaries to do cross-cutting "
     "code reviews, so organize milestones around code that interacts — put related tasks "
     "together even if they touch different files. "
+    "RUNNABLE AFTER EVERY MILESTONE: Each milestone must leave the application in a "
+    "buildable, startable state. The very first milestone must include enough scaffolding "
+    "so the app can be built and launched (even if it does nothing useful yet). Never "
+    "create a milestone that leaves the app in a broken or un-startable state — for "
+    "example, don't add routes in one milestone and create the server entry point in "
+    "the next. Order tasks so the entry point, server, or main function exists before "
+    "features are added. "
     "TESTING: Do not create milestones for writing tests, refactoring tests, splitting "
     "tests, or any test-only changes. A separate testing agent writes and runs tests "
     "after each milestone. Focus milestones on building features and functionality only. "
@@ -138,7 +145,13 @@ BUILDER_PROMPT = (
     "do NOT make separate commits for the code change and the checkbox update — each task "
     "gets exactly one commit containing both the code and the TASKS.md update. After each "
     "commit, run git pull --rebase and push. "
-    "When every task in the current milestone is checked, you are done for this session."
+    "When every task in the current milestone is checked, verify the application still "
+    "builds and runs successfully. For a server or web app, start it, confirm it responds "
+    "(e.g. curl a health or root endpoint), then stop it. For a CLI tool, run it with a "
+    "basic command (e.g. --help) and confirm it exits cleanly. For a library, confirm the "
+    "main module imports without errors. If the app does not build or start, fix it before "
+    "finishing the milestone — commit the fix with a descriptive message, pull, and push. "
+    "Once the app is verified runnable, you are done for this session."
 )
 
 REVIEWER_PROMPT = (
