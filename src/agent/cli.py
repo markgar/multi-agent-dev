@@ -145,13 +145,24 @@ def status():
 
 
 @app.command()
-def plan():
+def plan(requirements_changed: bool = False):
     """Run the planner to create or update TASKS.md based on SPEC.md."""
     log("planner", "")
     log("planner", "[Planner] Evaluating project state...", style="magenta")
     log("planner", "")
 
-    exit_code = run_copilot("planner", PLANNER_PROMPT)
+    prompt = PLANNER_PROMPT
+    if requirements_changed:
+        prefix = (
+            "IMPORTANT: REQUIREMENTS.md was JUST updated with new requirements this session. "
+            "This is almost certainly Case C — new features or changes were added. "
+            "Compare REQUIREMENTS.md against SPEC.md carefully and identify everything "
+            "that is new or changed. Do NOT conclude that 'everything is already covered' "
+            "without verifying each requirement against SPEC.md line by line.\n\n"
+        )
+        prompt = prefix + PLANNER_PROMPT
+
+    exit_code = run_copilot("planner", prompt)
 
     if exit_code != 0:
         log("planner", "")
@@ -190,7 +201,7 @@ def _generate_copilot_instructions() -> None:
         log("orchestrator", "WARNING: Failed to generate copilot-instructions.md. Continuing.", style="yellow")
 
 
-def _launch_agents_and_build(parent_dir: str, plan_label: str) -> None:
+def _launch_agents_and_build(parent_dir: str, plan_label: str, requirements_changed: bool = False) -> None:
     """Run planner, spawn reviewer/tester in terminals, then build until done."""
     clear_builder_done()
 
@@ -198,7 +209,7 @@ def _launch_agents_and_build(parent_dir: str, plan_label: str) -> None:
     log("orchestrator", "======================================", style="bold magenta")
     log("orchestrator", f" {plan_label}", style="bold magenta")
     log("orchestrator", "======================================", style="bold magenta")
-    plan()
+    plan(requirements_changed=requirements_changed)
     check_milestone_sizes()
     _generate_copilot_instructions()
 
@@ -298,7 +309,7 @@ def go(
         if new_description:
             _update_requirements(os.path.join(parent_dir, "builder"), new_description)
 
-        _launch_agents_and_build(parent_dir, "Evaluating plan...")
+        _launch_agents_and_build(parent_dir, "Evaluating plan...", requirements_changed=bool(new_description))
 
     os.chdir(start_dir)
 
