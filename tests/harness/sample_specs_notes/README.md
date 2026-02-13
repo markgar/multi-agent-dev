@@ -21,11 +21,8 @@ agentic-dev go --directory notes-app --spec-file tests/harness/sample_specs_note
 agentic-dev go --directory notes-app --spec-file tests/harness/sample_specs_notes/sample_spec_notes_add_delete.md --local
 ```
 
-**Path B — combined (full replacement):**
+**Path B — combined (single session):**
 ```bash
-# Session 1: build the base app
-agentic-dev go --directory notes-app --spec-file tests/harness/sample_specs_notes/sample_spec_notes_base.md --local
-# Session 2: resume with the full combined spec
 agentic-dev go --directory notes-app --spec-file tests/harness/sample_specs_notes/sample_spec_notes_full.md --local
 ```
 
@@ -39,10 +36,7 @@ agentic-dev go --directory notes-app --spec-file tests/harness/sample_specs_note
 
 **Using the test harness (Path B — combined):**
 ```bash
-# Session 1: build the base app
-./tests/harness/run_test.sh --name notes-app --spec-file tests/harness/sample_specs_notes/sample_spec_notes_base.md
-# Session 2: resume the latest run with the full combined spec
-./tests/harness/run_test.sh --name notes-app --spec-file tests/harness/sample_specs_notes/sample_spec_notes_full.md --resume
+./tests/harness/run_test.sh --name notes-app --spec-file tests/harness/sample_specs_notes/sample_spec_notes_full.md
 ```
 
 > **Note:** `--name` here is the harness's flag (names the directory inside `runs/<timestamp>/`).
