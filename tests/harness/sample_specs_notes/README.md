@@ -13,7 +13,11 @@ same final app (Express API + React UI with create and delete).
 
 ## Test paths
 
-**Path A — incremental (new stuff only):**
+### Direct CLI
+
+Run `agentic-dev go` yourself — you manage the project directory.
+
+**Path A — incremental (two sessions):**
 ```bash
 # Session 1: build the base app
 agentic-dev go --directory notes-app --spec-file tests/harness/sample_specs_notes/sample_spec_notes_base.md --local
@@ -26,7 +30,15 @@ agentic-dev go --directory notes-app --spec-file tests/harness/sample_specs_note
 agentic-dev go --directory notes-app --spec-file tests/harness/sample_specs_notes/sample_spec_notes_full.md --local
 ```
 
-**Using the test harness (Path A — incremental):**
+---
+
+### Test Harness
+
+The harness creates a timestamped `runs/` directory, passes `--directory` and `--local` automatically, and supports `--resume` to find and continue the latest run.
+
+> `--name` here is the harness's flag (names the subdirectory inside `runs/<timestamp>/`), not the CLI's `--name`.
+
+**Path A — incremental (two sessions):**
 ```bash
 # Session 1: build the base app
 ./tests/harness/run_test.sh --name notes-app --spec-file tests/harness/sample_specs_notes/sample_spec_notes_base.md
@@ -34,12 +46,11 @@ agentic-dev go --directory notes-app --spec-file tests/harness/sample_specs_note
 ./tests/harness/run_test.sh --name notes-app --spec-file tests/harness/sample_specs_notes/sample_spec_notes_add_delete.md --resume
 ```
 
-**Using the test harness (Path B — combined):**
+**Path B — combined (single session):**
 ```bash
 ./tests/harness/run_test.sh --name notes-app --spec-file tests/harness/sample_specs_notes/sample_spec_notes_full.md
 ```
 
-> **Note:** `--name` here is the harness's flag (names the directory inside `runs/<timestamp>/`).
-> The harness passes `--directory` and `--local` to the CLI automatically.
+---
 
 Both paths should produce the same result: a notes app with list, add, and delete.
