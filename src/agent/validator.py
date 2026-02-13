@@ -1,6 +1,7 @@
 """Validator command: watch for completed milestones, build containers, and run acceptance tests."""
 
 import os
+import shutil
 import time
 from datetime import datetime
 from typing import Annotated
@@ -15,7 +16,7 @@ from agent.milestone import (
 )
 from agent.prompts import VALIDATOR_MILESTONE_PROMPT
 from agent.sentinel import is_builder_done
-from agent.utils import log, run_cmd, run_copilot
+from agent.utils import log, run_cmd, run_copilot, resolve_logs_dir
 
 
 _VALIDATOR_MILESTONE_CHECKPOINT = "validator.milestone"
@@ -41,6 +42,27 @@ def _cleanup_containers() -> None:
                 return
         # Fallback: remove containers with the 'validator-' label if any
         run_cmd(["docker", "rm", "-f", "$(docker ps -aq --filter label=validator)"], quiet=True)
+    except Exception:
+        pass
+
+
+def _copy_validation_results(milestone_name: str) -> None:
+    """Copy validation-results.txt from the working dir to logs/.
+
+    The validator prompt asks Copilot to write this file but not commit it.
+    We copy it to logs/ with the milestone name for post-run analysis.
+    Silently does nothing if the file doesn't exist.
+    """
+    results_file = "validation-results.txt"
+    if not os.path.exists(results_file):
+        return
+    try:
+        logs_dir = resolve_logs_dir()
+        safe_name = milestone_name.lower().replace(" ", "-")
+        dest = os.path.join(logs_dir, f"validation-{safe_name}.txt")
+        shutil.copy(results_file, dest)
+        log("validator", f"Validation results saved to {dest}", style="blue")
+        os.remove(results_file)
     except Exception:
         pass
 
@@ -95,6 +117,10 @@ def validateloop(
 
                 run_cmd(["git", "pull", "--rebase", "-q"], quiet=True)
 
+                # Check out the exact milestone end SHA so we validate
+                # exactly what was built at that point, not later code.
+                run_cmd(["git", "checkout", boundary["end_sha"]], quiet=True)
+
                 # Clean up any leftover containers before starting
                 _cleanup_containers()
 
@@ -104,6 +130,9 @@ def validateloop(
                     milestone_end_sha=boundary["end_sha"],
                 )
                 exit_code = run_copilot("validator", prompt)
+
+                # Copy validation results to logs if the file was created
+                _copy_validation_results(boundary["name"])
 
                 # Clean up containers after the run regardless of outcome
                 _cleanup_containers()
@@ -120,6 +149,9 @@ def validateloop(
                     boundary["name"],
                     checkpoint_file=_VALIDATOR_MILESTONE_CHECKPOINT,
                 )
+
+                # Return to the main branch after validating at a pinned SHA.
+                run_cmd(["git", "checkout", "-"], quiet=True)
 
         if builder_done:
             now = datetime.now().strftime("%H:%M:%S")

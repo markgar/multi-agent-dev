@@ -82,7 +82,22 @@ def build(
                 if signal == "done":
                     write_builder_done()
                     return
-                # signal == "continue" → new work found, loop back
+                # signal == "continue" → remaining work (bugs/reviews) but no milestones.
+                # Run the builder to fix them, but cap how many fix-only cycles we allow
+                # to prevent tail-chasing (reviewer files nitpick → builder fixes → repeat).
+                state.fix_only_cycles += 1
+                if state.fix_only_cycles > _MAX_FIX_ONLY_CYCLES:
+                    log("builder", "")
+                    log("builder", f"Fix-only cycle limit reached ({_MAX_FIX_ONLY_CYCLES}). "
+                        "Remaining items deferred. Shutting down.", style="bold yellow")
+                    write_builder_done()
+                    return
+                log("builder", "")
+                log("builder", f"[Builder] Fixing remaining bugs/reviews "
+                    f"(fix-only cycle {state.fix_only_cycles}/{_MAX_FIX_ONLY_CYCLES})...",
+                    style="green")
+                log("builder", "")
+                run_copilot("builder", BUILDER_PROMPT)
                 continue
             write_builder_done()
             return
@@ -131,9 +146,13 @@ class BuildState:
     last_milestone_name: str | None = None
     milestone_retry_count: int = 0
     last_milestone_done_count: int = -1
+    fix_only_cycles: int = 0
+    post_completion_replans: int = 0
 
 
 _MAX_MILESTONE_RETRIES = 3
+_MAX_FIX_ONLY_CYCLES = 4
+_MAX_POST_COMPLETION_REPLANS = 1
 
 
 def update_milestone_retry_state(
@@ -201,15 +220,34 @@ def _detect_milestone_progress(state: BuildState, loop: bool) -> bool:
         state.last_milestone_name = current_name
 
         if loop and state.cycle_count > 1:
-            log("builder", "")
-            log("builder", f"[Planner] Re-evaluating task plan (cycle {state.cycle_count})...", style="magenta")
-            plan()
-            check_milestone_sizes()
-
-            # Re-check after re-plan: if still no milestone, nothing to do
-            progress = get_current_milestone_progress("TASKS.md")
-            if not progress:
+            # Skip re-planning if we've already had fix-only cycles —
+            # the planner tends to create new cleanup milestones from
+            # review items, causing a tail-chasing loop.
+            if state.fix_only_cycles > 0:
+                log("builder", "")
+                log("builder", "[Planner] Skipping re-plan (already in fix-only mode).", style="dim")
+                progress = get_current_milestone_progress("TASKS.md")
+                if not progress:
+                    return False
+            elif not progress and state.post_completion_replans >= _MAX_POST_COMPLETION_REPLANS:
+                # All milestones done and we've already re-planned once.
+                # Don't let the planner keep manufacturing cleanup milestones
+                # from review items — that causes tail-chasing.
+                log("builder", "")
+                log("builder", "[Planner] Skipping re-plan (post-completion replan limit reached).", style="dim")
                 return False
+            else:
+                if not progress:
+                    state.post_completion_replans += 1
+                log("builder", "")
+                log("builder", f"[Planner] Re-evaluating task plan (cycle {state.cycle_count})...", style="magenta")
+                plan()
+                check_milestone_sizes()
+
+                # Re-check after re-plan: if still no milestone, nothing to do
+                progress = get_current_milestone_progress("TASKS.md")
+                if not progress:
+                    return False
 
     return True
 
@@ -330,16 +368,22 @@ def _find_per_milestone_boundaries(
 def classify_remaining_work(bugs: int, reviews: int, tasks: int, agents_idle: bool) -> str:
     """Decide the next action based on remaining work counts and agent status.
 
-    Pure function: returns 'done', 'waiting', or 'continue'.
+    Pure function: returns 'done', 'reviews-only', 'waiting', or 'continue'.
     - 'done' when no work remains and agents are idle
-    - 'waiting' when no work remains but agents are still active
-    - 'continue' when there is remaining work
+    - 'reviews-only' when only reviews remain (no bugs/tasks) and agents are idle
+    - 'waiting' when no actionable work but agents are still active
+    - 'continue' when bugs or tasks remain (must-fix work)
     """
-    if not bugs and not reviews and not tasks:
+    has_must_fix = bugs > 0 or tasks > 0
+    if has_must_fix:
+        return "continue"
+    if reviews > 0:
         if agents_idle:
-            return "done"
+            return "reviews-only"
         return "waiting"
-    return "continue"
+    if agents_idle:
+        return "done"
+    return "waiting"
 
 
 _AGENT_WAIT_INTERVAL = 15
@@ -374,6 +418,15 @@ def _check_remaining_work(state: BuildState) -> str:
                 log("builder", f" - Tasks: {remaining_tasks} unchecked", style="yellow")
             log("builder", " Starting next build cycle in 5 seconds...", style="cyan")
             time.sleep(5)
+            return "continue"
+
+        if signal == "reviews-only":
+            # Only reviews remain — give the builder one shot to fix them,
+            # but don't loop indefinitely. Reviews are best-effort after all
+            # milestones and bugs are done.
+            log("builder", "")
+            log("builder", f"Only reviews remain ({remaining_reviews} unchecked). "
+                "One more pass, then done.", style="cyan")
             return "continue"
 
         if signal == "done":

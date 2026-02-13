@@ -12,7 +12,7 @@ _REVIEWER_CHECKPOINT_FILE = "reviewer.checkpoint"
 _REVIEWER_LOG_FILE = "reviewer.log"
 _TESTER_LOG_FILE = "tester.log"
 _VALIDATOR_LOG_FILE = "validator.log"
-_AGENT_IDLE_SECONDS = 30
+_AGENT_IDLE_SECONDS = 120
 
 
 def write_builder_done() -> None:

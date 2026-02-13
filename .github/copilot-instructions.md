@@ -108,6 +108,7 @@ tests/harness/runs/<timestamp>/
 - `logs/reviewer.log` — per-commit and milestone reviews
 - `logs/tester.log` — test runs and bug reports
 - `logs/validator.log` — container builds and acceptance test results
+- `logs/validation-*.txt` — per-milestone PASS/FAIL test results from the validator
 - `logs/milestones.log` — milestone boundaries (name|start_sha|end_sha)
 - `logs/orchestrator.log` — high-level orchestration status
 

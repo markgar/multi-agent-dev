@@ -259,6 +259,10 @@ def commitwatch(
 
     while True:
         if is_builder_done():
+            # Builder is done — but finish any remaining milestone reviews first.
+            # Pull latest to pick up final milestones.log entries.
+            run_cmd(["git", "pull", "-q"], capture=True)
+            _check_milestone_reviews()
             now = datetime.now().strftime("%H:%M:%S")
             log("commit-watcher", "")
             log("commit-watcher", f"[{now}] Builder finished. Shutting down.", style="bold green")
@@ -277,6 +281,9 @@ def commitwatch(
         if current_head and current_head != last_sha and last_sha:
             builder_finished = _review_new_commits(last_sha, current_head)
             if builder_finished:
+                # Builder finished mid-review — still do final milestone reviews.
+                run_cmd(["git", "pull", "-q"], capture=True)
+                _check_milestone_reviews()
                 return
 
         last_sha = current_head if current_head else last_sha

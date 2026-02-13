@@ -1,6 +1,12 @@
 """Tests for build loop decision logic and stuck detection."""
 
-from agent.builder import classify_remaining_work, update_milestone_retry_state
+from agent.builder import (
+    BuildState,
+    _MAX_FIX_ONLY_CYCLES,
+    _MAX_POST_COMPLETION_REPLANS,
+    classify_remaining_work,
+    update_milestone_retry_state,
+)
 from agent.sentinel import check_agent_idle
 
 
@@ -12,15 +18,27 @@ def test_no_work_but_agents_active_returns_waiting():
     assert classify_remaining_work(bugs=0, reviews=0, tasks=0, agents_idle=False) == "waiting"
 
 
-def test_any_remaining_work_returns_continue():
+def test_bugs_or_tasks_return_continue():
     assert classify_remaining_work(bugs=1, reviews=0, tasks=0, agents_idle=False) == "continue"
-    assert classify_remaining_work(bugs=0, reviews=3, tasks=0, agents_idle=False) == "continue"
     assert classify_remaining_work(bugs=0, reviews=0, tasks=5, agents_idle=False) == "continue"
     assert classify_remaining_work(bugs=2, reviews=1, tasks=3, agents_idle=False) == "continue"
 
 
-def test_remaining_work_returns_continue_even_when_agents_idle():
+def test_bugs_return_continue_even_when_agents_idle():
     assert classify_remaining_work(bugs=1, reviews=0, tasks=0, agents_idle=True) == "continue"
+
+
+def test_reviews_only_with_agents_idle_returns_reviews_only():
+    assert classify_remaining_work(bugs=0, reviews=3, tasks=0, agents_idle=True) == "reviews-only"
+
+
+def test_reviews_only_with_agents_active_returns_waiting():
+    assert classify_remaining_work(bugs=0, reviews=3, tasks=0, agents_idle=False) == "waiting"
+
+
+def test_bugs_take_priority_over_reviews_only():
+    """Even with reviews, if bugs exist the signal is 'continue' (must-fix)."""
+    assert classify_remaining_work(bugs=1, reviews=5, tasks=0, agents_idle=True) == "continue"
 
 
 def test_agent_idle_when_log_old_enough():
@@ -77,3 +95,35 @@ def test_first_cycle_with_no_previous_milestone():
     )
     assert is_stuck is False
     assert count == 0
+
+
+def test_fix_only_cycles_default_to_zero():
+    state = BuildState()
+    assert state.fix_only_cycles == 0
+
+
+def test_fix_only_cycle_limit_is_reasonable():
+    assert _MAX_FIX_ONLY_CYCLES >= 1
+    assert _MAX_FIX_ONLY_CYCLES <= 10
+
+
+def test_fix_only_cycles_increment_independently_of_cycle_count():
+    state = BuildState()
+    state.cycle_count = 10
+    state.fix_only_cycles = 1
+    assert state.fix_only_cycles < state.cycle_count
+
+
+def test_post_completion_replans_default_to_zero():
+    state = BuildState()
+    assert state.post_completion_replans == 0
+
+
+def test_post_completion_replan_limit_is_at_least_one():
+    assert _MAX_POST_COMPLETION_REPLANS >= 1
+
+
+def test_post_completion_replan_limit_prevents_unlimited_cleanup_milestones():
+    """After all milestones are done, the planner should only get a limited number
+    of chances to create new cleanup milestones before the builder stops re-planning."""
+    assert _MAX_POST_COMPLETION_REPLANS <= 3
