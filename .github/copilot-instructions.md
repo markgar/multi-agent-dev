@@ -28,10 +28,11 @@ This software is entirely written by GitHub Copilot. The code is structured to b
 ## Key files
 
 - `src/agent/cli.py` — App definition, top-level orchestration commands: `go`, `resume`, `plan`, `status`.
-- `src/agent/bootstrap.py` — Project scaffolding: repo creation, cloning reviewer/tester copies.
+- `src/agent/bootstrap.py` — Project scaffolding: repo creation, cloning reviewer/tester/validator copies.
 - `src/agent/builder.py` — Build loop: milestone completion, retry logic.
 - `src/agent/watcher.py` — Commit watcher: per-commit reviews, milestone-level reviews.
 - `src/agent/tester.py` — Test loop: milestone-triggered testing.
+- `src/agent/validator.py` — Validator loop: milestone-triggered container build and acceptance testing.
 - `src/agent/terminal.py` — Terminal spawning helper for launching agents in new windows.
 - `src/agent/prompts.py` — All LLM prompt templates. Constants only, no logic.
 - `src/agent/utils.py` — Core helpers: logging, command execution, platform detection.
@@ -43,10 +44,10 @@ This software is entirely written by GitHub Copilot. The code is structured to b
 
 ## Architecture
 
-This is a multi-agent orchestrator that uses GitHub Copilot CLI (`copilot --yolo`) as the execution engine. Agents (builder, planner, reviewer, tester) run as separate processes in separate git clones of the same repo. They coordinate through:
+This is a multi-agent orchestrator that uses GitHub Copilot CLI (`copilot --yolo`) as the execution engine. Agents (builder, planner, reviewer, tester, validator) run as separate processes in separate git clones of the same repo. They coordinate through:
 
-- **Markdown files** (`TASKS.md`, `BUGS.md`, `REVIEWS.md`) — shared state via git push/pull.
-- **Log files** (`logs/`) — local coordination signals like `builder.done`, `reviewer.checkpoint`, `milestones.log`.
+- **Markdown files** (`TASKS.md`, `BUGS.md`, `REVIEWS.md`, `DEPLOY.md`) — shared state via git push/pull.
+- **Log files** (`logs/`) — local coordination signals like `builder.done`, `reviewer.checkpoint`, `milestones.log`, `validator.milestone`.
 
 The build loop (Python code in `builder.py`) handles deterministic orchestration — milestone boundary tracking, SHA recording, shutdown signals. The LLM agents handle creative work — writing code, reviewing diffs, writing tests.
 
@@ -96,6 +97,7 @@ tests/harness/runs/<timestamp>/
     ├── builder/          ← builder clone
     ├── reviewer/         ← reviewer clone (commitwatch terminal)
     ├── tester/           ← tester clone (testloop terminal)
+    ├── validator/        ← validator clone (validateloop terminal)
     └── logs/             ← all logs for post-mortem analysis
 ```
 
@@ -105,6 +107,7 @@ tests/harness/runs/<timestamp>/
 - `logs/planner.log` — planner decisions and task list changes
 - `logs/reviewer.log` — per-commit and milestone reviews
 - `logs/tester.log` — test runs and bug reports
+- `logs/validator.log` — container builds and acceptance test results
 - `logs/milestones.log` — milestone boundaries (name|start_sha|end_sha)
 - `logs/orchestrator.log` — high-level orchestration status
 
@@ -141,4 +144,4 @@ This gives the user visibility into the live Copilot session while Copilot retai
 
 - Agent prompts are append-only format strings in `prompts.py`. Use `.format()` for interpolation.
 - All file I/O helpers in `utils.py` wrap operations in try/except and never crash the workflow over I/O errors.
-- `resolve_logs_dir()` finds the project-root `logs/` directory regardless of which clone (builder/reviewer/tester) the code is running in.
+- `resolve_logs_dir()` finds the project-root `logs/` directory regardless of which clone (builder/reviewer/tester/validator) the code is running in.

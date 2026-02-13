@@ -11,6 +11,7 @@ _STALE_LOG_TIMEOUT_MINUTES = 10
 _REVIEWER_CHECKPOINT_FILE = "reviewer.checkpoint"
 _REVIEWER_LOG_FILE = "reviewer.log"
 _TESTER_LOG_FILE = "tester.log"
+_VALIDATOR_LOG_FILE = "validator.log"
 _AGENT_IDLE_SECONDS = 30
 
 
@@ -113,9 +114,9 @@ def check_agent_idle(log_exists: bool, log_age_seconds: float, idle_threshold: f
 
 
 def are_agents_idle() -> bool:
-    """Check if both the reviewer and tester are idle.
+    """Check if the reviewer, tester, and validator are all idle.
 
-    Returns True when both agent logs haven't been modified within
+    Returns True when all agent logs haven't been modified within
     the idle threshold (30 seconds), meaning they're just sleeping
     in their poll loops with nothing to do.
     """
@@ -131,9 +132,14 @@ def are_agents_idle() -> bool:
         tester_exists = os.path.exists(tester_log)
         tester_age = (now - os.path.getmtime(tester_log)) if tester_exists else 0.0
 
+        validator_log = os.path.join(logs_dir, _VALIDATOR_LOG_FILE)
+        validator_exists = os.path.exists(validator_log)
+        validator_age = (now - os.path.getmtime(validator_log)) if validator_exists else 0.0
+
         return (
             check_agent_idle(reviewer_exists, reviewer_age, _AGENT_IDLE_SECONDS)
             and check_agent_idle(tester_exists, tester_age, _AGENT_IDLE_SECONDS)
+            and check_agent_idle(validator_exists, validator_age, _AGENT_IDLE_SECONDS)
         )
     except Exception:
         pass

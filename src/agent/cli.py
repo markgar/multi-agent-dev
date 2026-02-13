@@ -20,16 +20,35 @@ from agent import bootstrap as _bootstrap_mod
 from agent import builder as _builder_mod
 from agent import watcher as _watcher_mod
 from agent import tester as _tester_mod
+from agent import validator as _validator_mod
 
 _bootstrap_mod.register(app)
 _builder_mod.register(app)
 _watcher_mod.register(app)
 _tester_mod.register(app)
+_validator_mod.register(app)
 
 # Re-export for internal use by builder (which calls plan() in its loop)
 from agent.bootstrap import run_bootstrap
 from agent.builder import build, check_milestone_sizes
 from agent.terminal import spawn_agent_in_terminal
+
+
+def _detect_clone_source(parent_dir: str) -> str:
+    """Determine the git clone source for creating missing agent clones.
+
+    Checks for a local bare repo first, then reads the remote URL from the builder clone.
+    Returns empty string if neither is found.
+    """
+    bare_repo = os.path.join(parent_dir, "remote.git")
+    if os.path.exists(bare_repo):
+        return bare_repo
+    builder_dir = os.path.join(parent_dir, "builder")
+    with pushd(builder_dir):
+        result = run_cmd(["git", "remote", "get-url", "origin"], capture=True)
+    if result.returncode == 0:
+        return result.stdout.strip()
+    return ""
 
 
 # ============================================
@@ -142,6 +161,9 @@ def _launch_agents_and_build(parent_dir: str, plan_label: str) -> None:
     log("orchestrator", "Launching tester (milestone-triggered)...", style="yellow")
     spawn_agent_in_terminal(os.path.join(parent_dir, "tester"), "testloop")
 
+    log("orchestrator", "Launching validator (milestone-triggered)...", style="yellow")
+    spawn_agent_in_terminal(os.path.join(parent_dir, "validator"), "validateloop")
+
     log("orchestrator", "")
     log("orchestrator", "======================================", style="bold green")
     log("orchestrator", " All agents launched! Building...", style="bold green")
@@ -195,10 +217,24 @@ def resume(
 
     reviewer_dir = os.path.join(parent_dir, "reviewer")
     tester_dir = os.path.join(parent_dir, "tester")
+    validator_dir = os.path.join(parent_dir, "validator")
     with pushd(reviewer_dir):
         run_cmd(["git", "pull", "--rebase"], quiet=True)
     with pushd(tester_dir):
         run_cmd(["git", "pull", "--rebase"], quiet=True)
+
+    # Clone validator if it doesn't exist (project bootstrapped before validator was added)
+    if not os.path.exists(validator_dir):
+        log("orchestrator", "Validator clone not found — creating it...", style="yellow")
+        clone_source = _detect_clone_source(parent_dir)
+        if clone_source:
+            with pushd(parent_dir):
+                run_cmd(["git", "clone", clone_source, "validator"])
+        else:
+            log("orchestrator", "WARNING: Could not determine clone source for validator.", style="yellow")
+    else:
+        with pushd(validator_dir):
+            run_cmd(["git", "pull", "--rebase"], quiet=True)
 
     _launch_agents_and_build(parent_dir, "Re-evaluating plan...")
 

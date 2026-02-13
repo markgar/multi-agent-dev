@@ -1,11 +1,12 @@
 # Multi-Agent Flow
 
-An autonomous development workflow using GitHub Copilot CLI. Four agents collaborate through files in a shared GitHub repo to build projects in **.NET/C#**, **Python**, or **Node.js**:
+An autonomous development workflow using GitHub Copilot CLI. Five agents collaborate through files in a shared GitHub repo to build projects in **.NET/C#**, **Python**, or **Node.js**:
 
 - **Planner** — creates and updates the task list from the spec, organized into milestones
 - **Builder** — fixes bugs, addresses review items, completes one milestone per cycle
 - **Reviewer** — reviews each commit for quality, plus cross-cutting milestone reviews
 - **Tester** — runs scoped tests when milestones complete, files bugs
+- **Validator** — builds the app in a Docker container, runs it, and validates it against the spec
 
 ## Prerequisites
 
@@ -18,6 +19,7 @@ Install these one time. After each install, **close and reopen your terminal** s
 | Git | `winget install Git.Git` | `brew install git` (or Xcode CLT) | `git --version` |
 | GitHub CLI | `winget install GitHub.cli` | `brew install gh` | `gh auth status` |
 | Python 3 | `winget install Python.Python.3.12` | `brew install python` | `python3 --version` |
+| Docker | `winget install Docker.DockerDesktop` | `brew install --cask docker` | `docker --version` |
 | GitHub Copilot CLI | See GitHub Copilot CLI docs | See GitHub Copilot CLI docs | `copilot --version` |
 
 **Install for your target language (`--language` option):**
@@ -48,13 +50,14 @@ agentic-dev go --name "hello-world" --language dotnet --description "a C# consol
 ```
 
 That's it. `go` will:
-1. **Bootstrap** — create the project, SPEC.md, git repo, GitHub remote, and three clones (builder/, reviewer/, tester/)
+1. **Bootstrap** — create the project, SPEC.md, git repo, GitHub remote, and four clones (builder/, reviewer/, tester/, validator/)
 2. **Plan** — generate TASKS.md from the spec
 3. **Launch reviewer** — in a new terminal window, reviewing each commit and completed milestones
 4. **Launch tester** — in a new terminal window, testing each completed milestone
-5. **Start building** — in your current terminal, completing milestones one at a time
+5. **Launch validator** — in a new terminal window, building containers and validating against the spec
+6. **Start building** — in your current terminal, completing milestones one at a time
 
-Three windows will be running. Watch the Builder work through milestones while the Reviewer and Tester react to each commit and milestone completion. Run `agentic-dev status` anytime in the builder directory to check progress.
+Four windows will be running. Watch the Builder work through milestones while the Reviewer, Tester, and Validator react to each commit and milestone completion. Run `agentic-dev status` anytime in the builder directory to check progress.
 
 ### Local Mode (no GitHub)
 
@@ -159,6 +162,8 @@ Planner ──TASKS.md──→ Builder ──git push──→ Reviewer ──R
                          ↑                                              
                          │         Builder ──git push──→ Tester
                          │                                  │
+                         │         Builder ──git push──→ Validator
+                         │                                  │
                          └──────────── BUGS.md ←────────────┘
 ```
 
@@ -168,15 +173,19 @@ Planner ──TASKS.md──→ Builder ──git push──→ Reviewer ──R
 | Planner | Builder | `TASKS.md` | Here's what to do next |
 | Builder | Reviewer | `git push` | I finished a commit or milestone, review it |
 | Builder | Tester | `milestones.log` | A milestone is complete, test it |
+| Builder | Validator | `milestones.log` | A milestone is complete, validate it in a container |
 | Reviewer | Builder | `REVIEWS.md` | I found quality issues, address these |
 | Tester | Builder | `BUGS.md` | I found test failures, fix these |
+| Validator | Builder | `BUGS.md` | The app failed validation in a container, fix these |
+| Validator | Builder | `DEPLOY.md` | Here's what I learned about deploying this app |
 
 ### Rules
 
 - The **Planner** runs on demand via `plan`. It reads `SPEC.md`, the codebase, `TASKS.md`, `BUGS.md`, and `REVIEWS.md`, then creates or updates the task list. It never writes code.
 - The **Builder** checks `BUGS.md` first (all bugs are fixed before any tasks), then `REVIEWS.md`, then completes the current milestone. One milestone per cycle, then the planner re-evaluates.
 - The **Reviewer** reviews each commit individually, plus a cross-cutting review when a milestone completes. It skips minor style nitpicks.
-- The **Tester** runs scoped tests when a milestone completes, focusing on changed files. Exits when the builder finishes.
+- The **Tester** runs scoped tests when a milestone completes, focusing on changed files. It runs the test suite only — it does not start the app or test live endpoints. Exits when the builder finishes.
+- The **Validator** builds the app in a Docker container after each milestone, starts it, and tests it against SPEC.md acceptance criteria. Persists deployment knowledge in DEPLOY.md. Exits when the builder finishes.
 - Neither the Reviewer nor Tester duplicate items already in their respective files.
 - All agents run `git pull --rebase` before pushing to avoid merge conflicts.
 - `SPEC.md` is the source of truth. Edit it anytime to steer the project — run `plan` to adapt the task list.
@@ -193,18 +202,21 @@ myproject/
   builder/       ← git clone
   reviewer/      ← git clone
   tester/        ← git clone
+  validator/     ← git clone
   logs/          ← all agent logs + coordination signals
     bootstrap.log
     planner.log
     builder.log
     reviewer.log
     tester.log
+    validator.log
     orchestrator.log
     builder.done           ← shutdown signal
     reviewer.checkpoint    ← last reviewed commit SHA
     milestones.log         ← milestone SHA boundaries (append-only)
     reviewer.milestone     ← milestones already reviewed
     tester.milestone       ← milestones already tested
+    validator.milestone    ← milestones already validated
 ```
 
 Each log entry includes a timestamp, a prompt preview, the full output, and the exit code. The `logs/` directory is outside the git repos so logs are never committed.
@@ -262,6 +274,9 @@ agentic-dev commitwatch
 
 cd ../tester
 agentic-dev testloop
+
+cd ../validator
+agentic-dev validateloop
 ```
 
 > **Note:** Always use `go` for new projects — it runs bootstrap, plan, and launches all agents automatically. Do not run `bootstrap` directly.
@@ -279,6 +294,7 @@ agentic-dev testloop
 | `build --loop` | Loops through all milestones automatically (re-plans between each) | builder/, once |
 | `commitwatch` | Polls for commits, reviews each one + milestone-level reviews | reviewer/, once |
 | `testloop` | Watches for completed milestones, runs scoped tests | tester/, once |
+| `validateloop` | Watches for completed milestones, builds containers, validates against spec | validator/, once |
 | `reviewoncommit` | Legacy: watches for commits, reviews code quality | reviewer/, once |
 | `testoncommit` | Legacy: watches for commits, runs tests, files bugs | tester/, once |
 | `status` | Shows spec, tasks, reviews, and bugs at a glance | Any clone, anytime |
@@ -292,6 +308,8 @@ agentic-dev testloop
 | GitHub Copilot generates bad code | Tests fail, tester files bugs, builder tries to fix them | Review commits periodically — don't let it run unattended forever |
 | Both agents edit BUGS.md at the same time | Push fails due to conflict | All prompts include `git pull --rebase` before pushing |
 | Tester starts a server and doesn't stop it | Port stays bound, next test run fails | GitHub Copilot is prompted to stop it, but if it doesn't, kill the process manually |
+| Validator container won't build | Validator files bug, builder fixes Dockerfile next cycle | Check DEPLOY.md for known issues; ensure Docker is running |
+| Orphaned Docker containers | Port conflicts or resource waste | Validator cleans up before/after each run; run `docker ps` to check |
 | Bootstrap creates wrong project structure | Tasks reference files that don't exist | Edit SPEC.md to clarify requirements, then run `plan` |
 | GitHub Copilot enters an infinite fix loop | Builder and tester keep passing bugs back and forth | Stop all agents, review BUGS.md and the code, fix the root cause |
 

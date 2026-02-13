@@ -13,7 +13,7 @@ Runs once internally when you call `go`. Do not run `bootstrap` directly — it 
 **Creates:** README.md, SPEC.md, REQUIREMENTS.md, git repo, GitHub remote  
 **Writes code:** No
 
-**Local mode (`--local`):** When `go` is called with `--local`, the bootstrap prompt replaces `gh repo create` with `git remote add origin {remote_path}` pointing to a local bare git repo. No GitHub CLI calls are made. The `--local` flag also skips the `gh` prerequisite checks and clones reviewer/tester copies from the local bare repo instead of GitHub.
+**Local mode (`--local`):** When `go` is called with `--local`, the bootstrap prompt replaces `gh repo create` with `git remote add origin {remote_path}` pointing to a local bare git repo. No GitHub CLI calls are made. The `--local` flag also skips the `gh` prerequisite checks and clones reviewer/tester/validator copies from the local bare repo instead of GitHub.
 
 **Note:** Before Copilot runs, the CLI pre-creates `builder/REQUIREMENTS.md` containing the original prompt or spec-file content verbatim. This file is committed with the rest of the bootstrap and never modified afterward.
 
@@ -53,11 +53,11 @@ The generated file includes:
 
 ## Builder
 
-Runs via `build`. Completes one milestone per cycle. Between milestones the planner re-evaluates the task list. After all milestones are done, waits for the reviewer and tester to go idle and verifies that all checklists are clean before writing `logs/builder.done` to signal shutdown.
+Runs via `build`. Completes one milestone per cycle. Between milestones the planner re-evaluates the task list. After all milestones are done, waits for the reviewer, tester, and validator to go idle and verifies that all checklists are clean before writing `logs/builder.done` to signal shutdown.
 
-> Before starting, review README.md, SPEC.md, and TASKS.md to understand the project's purpose and plan. Read .github/copilot-instructions.md if it exists — follow its coding guidelines and conventions in all code you write. Only build, fix, or keep code that serves that purpose. Remove any scaffolding, template code, or functionality that does not belong. When completing a task that changes the project structure, key files, architecture, or conventions, update .github/copilot-instructions.md to reflect the change. Now look at BUGS.md first. Fix ALL unfixed bugs — bugs are never deferred. Fix them one at a time — fix a bug, mark it fixed in BUGS.md, commit with a meaningful message, run git pull --rebase, and push. Then look at REVIEWS.md. Address unchecked review items one at a time — fix the issue, mark it done in REVIEWS.md, commit, pull --rebase, and push. Once all bugs and review items are fixed (or if there are none), move to TASKS.md. TASKS.md is organized into milestones (sections headed with `## Milestone: <name>`). Find the first milestone that has unchecked tasks — this is your current milestone. Complete every task in this milestone, then stop. Do not start the next milestone. Do tasks one at a time. For each task: write the code AND mark it complete in TASKS.md, then commit both together in a single commit with a meaningful message. Do not make separate commits for the code and the checkbox update. After each commit, run git pull --rebase and push. When every task in the current milestone is checked, verify the application still builds and runs successfully. For a server or web app, start it, confirm it responds (e.g. curl a health or root endpoint), then stop it. For a CLI tool, run it with a basic command (e.g. --help) and confirm it exits cleanly. For a library, confirm the main module imports without errors. If the app does not build or start, fix it before finishing the milestone — commit the fix with a descriptive message, pull, and push. Once the app is verified runnable, you are done for this session.
+> Before starting, review README.md, SPEC.md, and TASKS.md to understand the project's purpose and plan. Read .github/copilot-instructions.md if it exists — follow its coding guidelines and conventions in all code you write. Read DEPLOY.md if it exists — it contains deployment configuration and lessons learned from the validator agent. If it mentions required env vars, ports, or startup requirements, ensure your code is compatible. Do NOT modify DEPLOY.md — only the validator agent manages that file. Only build, fix, or keep code that serves that purpose. Remove any scaffolding, template code, or functionality that does not belong. When completing a task that changes the project structure, key files, architecture, or conventions, update .github/copilot-instructions.md to reflect the change. Now look at BUGS.md first. Fix ALL unfixed bugs — bugs are never deferred. Fix them one at a time — fix a bug, mark it fixed in BUGS.md, commit with a meaningful message, run git pull --rebase, and push. Then look at REVIEWS.md. Address unchecked review items one at a time — fix the issue, mark it done in REVIEWS.md, commit, pull --rebase, and push. Once all bugs and review items are fixed (or if there are none), move to TASKS.md. TASKS.md is organized into milestones (sections headed with `## Milestone: <name>`). Find the first milestone that has unchecked tasks — this is your current milestone. Complete every task in this milestone, then stop. Do not start the next milestone. Do tasks one at a time. For each task: write the code AND mark it complete in TASKS.md, then commit both together in a single commit with a meaningful message. Do not make separate commits for the code and the checkbox update. After each commit, run git pull --rebase and push. When every task in the current milestone is checked, verify the application still builds and runs successfully. For a server or web app, start it, confirm it responds (e.g. curl a health or root endpoint), then stop it. For a CLI tool, run it with a basic command (e.g. --help) and confirm it exits cleanly. For a library, confirm the main module imports without errors. If the app does not build or start, fix it before finishing the milestone — commit the fix with a descriptive message, pull, and push. Once the app is verified runnable, you are done for this session.
 
-**Reads:** README.md, SPEC.md, TASKS.md, BUGS.md, REVIEWS.md, .github/copilot-instructions.md  
+**Reads:** README.md, SPEC.md, TASKS.md, BUGS.md, REVIEWS.md, DEPLOY.md, .github/copilot-instructions.md  
 **Writes code:** Yes  
 **Updates:** .github/copilot-instructions.md (when project structure changes)  
 **Commits:** After each bug fix, review fix, and task  
@@ -117,6 +117,28 @@ When the builder finishes, the tester sees `logs/builder.done` and exits.
 
 ---
 
+## Validator
+
+Milestone-triggered via `validateloop`, launched automatically by `go` and `resume`. Watches `logs/milestones.log` for newly completed milestones and validates the application in a Docker container.
+
+For each newly completed milestone:
+
+> You are a deployment validator. Your job is to build the application in a Docker container, run it, and verify it works against the acceptance criteria in SPEC.md. FIRST: Read DEPLOY.md if it exists — it contains everything previous runs learned about building and deploying this application. Follow its instructions for Dockerfile configuration, environment variables, port mappings, startup sequence, and known gotchas. Read SPEC.md for acceptance criteria. Read TASKS.md to see which milestones are complete — you should test all requirements that should be working up to and including milestone '{milestone_name}'. First stop and remove any running containers from previous runs. If no Dockerfile exists, create one appropriate for the project's tech stack. Build the container. Start it. Wait for the app to be healthy. Test every SPEC.md requirement that should be working at this point — for milestone 1, just confirm the app starts and responds; for later milestones, test accumulated functionality. Tear down containers after testing. Report failures to BUGS.md. Update DEPLOY.md with everything learned about deploying this application. Commit and push.
+
+**Persistent deployment knowledge:** The validator reads DEPLOY.md at the start of each run and updates it at the end. This creates a ratchet effect — each milestone's validation run gets more reliable because it inherits knowledge from all prior runs. DEPLOY.md captures: Dockerfile configuration, required environment variables, port mappings, docker-compose service setup, startup sequence, health check details, and known gotchas. The builder also reads DEPLOY.md to stay compatible with deployment requirements.
+
+When the builder finishes, the validator sees `logs/builder.done` and exits.
+
+**Trigger:** Polls `logs/milestones.log` every 10 seconds (configurable via `--interval`)  
+**Scope:** All SPEC.md requirements that should work at the current milestone  
+**Checkpoint:** `logs/validator.milestone` (set of milestones already validated)  
+**Runs from:** `validator/` clone  
+**Shutdown:** Checks for `logs/builder.done`; exits when builder is done  
+**Writes code:** Dockerfile, docker-compose.yml (if needed), DEPLOY.md  
+**Commits:** When it creates/updates deployment files, finds bugs, or updates DEPLOY.md
+
+---
+
 ## Legacy Commands
 
 The original `reviewoncommit` and `testoncommit` commands still exist for manual/standalone use. They use the old `_watch_loop` polling mechanism and are not launched by `go` or `resume`.
@@ -128,10 +150,10 @@ The original `reviewoncommit` and `testoncommit` commands still exist for manual
 The builder waits for all agents to finish before exiting:
 
 1. **Builder completes all milestones:** After the last milestone, the builder enters a wait loop.
-2. **Wait for agents to go idle:** The builder monitors `logs/reviewer.log` and `logs/tester.log` modification times. When both logs haven't changed in 30+ seconds, agents are considered idle.
+2. **Wait for agents to go idle:** The builder monitors `logs/reviewer.log`, `logs/tester.log`, and `logs/validator.log` modification times. When all logs haven't changed in 30+ seconds, agents are considered idle.
 3. **Check work lists:** The builder pulls latest and checks `BUGS.md`, `REVIEWS.md`, and `TASKS.md` for unchecked items.
-4. **Fix or exit:** If new work was filed (bugs from tester, reviews from reviewer), the builder fixes it and loops back to step 2. If checklists are clean and agents are idle, the builder writes `logs/builder.done` and exits.
-5. **Agents shut down:** The reviewer and tester see `logs/builder.done` on their next poll cycle and exit.
+4. **Fix or exit:** If new work was filed (bugs from tester/validator, reviews from reviewer), the builder fixes it and loops back to step 2. If checklists are clean and agents are idle, the builder writes `logs/builder.done` and exits.
+5. **Agents shut down:** The reviewer, tester, and validator see `logs/builder.done` on their next poll cycle and exit.
 6. **Crash fallback:** If `logs/builder.log` hasn't been modified in 10+ minutes, agents assume the builder crashed and shut down.
 7. **Startup cleanup:** `go` and `resume` clear any stale `builder.done` sentinel before launching agents.
 8. **Timeout safety:** If agents don't go idle within 10 minutes, the builder writes `builder.done` and exits anyway.

@@ -24,7 +24,7 @@ def pushd(path: str):
         os.chdir(prev)
 
 
-_AGENT_DIRS = {"builder", "reviewer", "tester", "watcher"}
+_AGENT_DIRS = {"builder", "reviewer", "tester", "validator", "watcher"}
 
 
 def find_project_root(cwd: str) -> str:

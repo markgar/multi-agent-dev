@@ -109,6 +109,7 @@ echo "  Logs:       $RUN_DIR/$PROJECT_NAME/logs/"
 echo "  Builder:    $RUN_DIR/$PROJECT_NAME/builder/"
 echo "  Reviewer:   $RUN_DIR/$PROJECT_NAME/reviewer/"
 echo "  Tester:     $RUN_DIR/$PROJECT_NAME/tester/"
+echo "  Validator:  $RUN_DIR/$PROJECT_NAME/validator/"
 echo "  Bare repo:  $RUN_DIR/$PROJECT_NAME/remote.git/"
 echo "============================================"
 

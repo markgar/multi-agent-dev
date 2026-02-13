@@ -81,7 +81,7 @@ def _check_prerequisites(local=False):
             console.print("Run: gh auth login", style="yellow")
             return None
 
-    tools = [("git", "brew install git", "winget install Git.Git"), ("copilot", None, None)]
+    tools = [("git", "brew install git", "winget install Git.Git"), ("docker", "brew install --cask docker", "winget install Docker.DockerDesktop"), ("copilot", None, None)]
     if not local:
         tools.insert(1, ("gh", "brew install gh", "winget install GitHub.cli"))
     for tool, install_mac, install_win in tools:
@@ -163,6 +163,9 @@ def _scaffold_project(name, description, gh_user, local=False):
 
     log("bootstrap", "Cloning tester copy...", style="cyan")
     run_cmd(["git", "clone", clone_source, "tester"])
+
+    log("bootstrap", "Cloning validator copy...", style="cyan")
+    run_cmd(["git", "clone", clone_source, "validator"])
 
     log("bootstrap", "")
     log("bootstrap", "======================================", style="bold green")
