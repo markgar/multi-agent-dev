@@ -80,6 +80,7 @@ def _stream_process_output(proc: subprocess.Popen, log_file: str) -> None:
                 sys.stdout.flush()
                 try:
                     f.write(line)
+                    f.flush()
                 except Exception:
                     pass
     except Exception:
