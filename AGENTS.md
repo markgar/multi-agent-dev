@@ -154,6 +154,7 @@ When the builder finishes, the validator sees `logs/builder.done` and exits.
 
 ## Agent Coordination Rules
 
+- **Commit message tagging:** Every agent prefixes its commit messages with its name in brackets — `[builder]`, `[reviewer]`, `[tester]`, `[validator]`, `[planner]`, `[bootstrap]`. This makes it easy to see who did what in `git log`.
 - The **Planner** runs on demand via `plan`. It assesses project state (fresh / continuing / evolving), updates SPEC.md if new requirements are detected, then creates or updates the task list. It never writes application code.
 - The **Builder** checks `BUGS.md` first (all bugs are fixed before any tasks), then `REVIEWS.md`, then completes the current milestone. One milestone per cycle, then the planner re-evaluates.
 - The **Reviewer** reviews each commit individually, plus a cross-cutting review when a milestone completes. Non-code issues ([doc]: stale docs, misleading comments) are fixed directly by the reviewer. Code-level issues ([code]) are filed to REVIEWS.md for the builder. Milestone reviews clean up stale/already-resolved review items.

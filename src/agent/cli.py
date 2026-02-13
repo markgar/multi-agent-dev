@@ -10,11 +10,29 @@ import typer
 from agent.prompts import COPILOT_INSTRUCTIONS_PROMPT, COPILOT_INSTRUCTIONS_TEMPLATE, PLANNER_PROMPT
 from agent.sentinel import clear_builder_done
 from agent.utils import console, log, pushd, run_cmd, run_copilot
+from agent.version import get_version
+
+
+def _version_callback(value: bool):
+    if value:
+        console.print(get_version())
+        raise typer.Exit()
+
 
 app = typer.Typer(
     help="Multi-agent autonomous development orchestrator using GitHub Copilot CLI.",
     no_args_is_help=True,
 )
+
+
+@app.callback()
+def main(
+    version: Annotated[
+        bool,
+        typer.Option("--version", "-v", help="Show version and exit.", callback=_version_callback, is_eager=True),
+    ] = False,
+):
+    """Multi-agent autonomous development orchestrator."""
 
 # Register commands from submodules
 from agent import bootstrap as _bootstrap_mod
