@@ -15,19 +15,28 @@ Runs once internally when you call `go`. Do not run `bootstrap` directly — it 
 
 **Local mode (`--local`):** When `go` is called with `--local`, the bootstrap prompt replaces `gh repo create` with `git remote add origin {remote_path}` pointing to a local bare git repo. No GitHub CLI calls are made. The `--local` flag also skips the `gh` prerequisite checks and clones reviewer/tester/validator copies from the local bare repo instead of GitHub.
 
-**Note:** Before Copilot runs, the CLI pre-creates `builder/REQUIREMENTS.md` containing the original prompt or spec-file content verbatim. This file is committed with the rest of the bootstrap and never modified afterward.
+**Note:** Before Copilot runs, the CLI pre-creates `builder/REQUIREMENTS.md` containing the prompt or spec-file content verbatim. This file is committed with the rest of the bootstrap. In later sessions, `go` may overwrite REQUIREMENTS.md with new requirements before re-planning.
 
 ---
 
 ## Planner
 
-Runs on demand via `plan`. Call it before the first `build`, or whenever you need to re-evaluate the task list.
+Runs on demand via `plan`. Called automatically by `go` before each build session.
 
-> You are a planning-only orchestrator. You must NOT write any code or modify any source files. Your only job is to manage TASKS.md. Read REQUIREMENTS.md first — this is the original requirements document provided by the user and is the ultimate source of truth for what must be built. Then read SPEC.md to understand the desired end state. Read README.md for project context. Look at the current codebase to see what has been built so far. Read BUGS.md if it exists to see outstanding bugs. Read REVIEWS.md if it exists to see outstanding review items. Read TASKS.md if it exists to see the current plan. Now evaluate: are there tasks that need to be added, broken down, reordered, or clarified based on what has been built vs what SPEC.md requires? Cross-check against REQUIREMENTS.md to ensure no features or requirements from the original prompt have been missed or dropped. If TASKS.md does not exist, create it with a detailed numbered checkbox task list that will achieve everything in SPEC.md and REQUIREMENTS.md. Group the tasks under milestone headings using the format `## Milestone: <name>`. Each milestone is the builder's unit of work — the builder will complete one entire milestone per session, then stop so the planner can re-evaluate. MILESTONE SIZING RULES (follow these strictly): Keep each milestone to at most 5 tasks. Each task should describe one logical change. If a task has 'and' connecting two distinct pieces of work, split it into two tasks. If a task requires creating something new AND integrating it elsewhere, make those separate tasks. If a feature area needs more than 5 tasks, split it into sequential milestones (e.g. 'User API: models and routes' then 'User API: validation and error handling'). If several small related pieces fit under 5 tasks, combine them into one milestone. Good milestones are things like 'Project scaffolding', 'Core data models', 'API endpoints', 'Authentication', 'Frontend views', 'Error handling and validation'. A milestone is considered complete when all its checkbox tasks are checked. The reviewer uses milestone boundaries to do cross-cutting code reviews, so organize milestones around code that interacts — put related tasks together even if they touch different files. RUNNABLE AFTER EVERY MILESTONE: Each milestone must leave the application in a buildable, startable state. The very first milestone must include enough scaffolding so the app can be built and launched (even if it does nothing useful yet). Never create a milestone that leaves the app in a broken or un-startable state — for example, don't add routes in one milestone and create the server entry point in the next. Order tasks so the entry point, server, or main function exists before features are added. CONTAINERIZATION: Do not create tasks for Dockerfiles, docker-compose files, or deployment configuration. A separate validator agent creates and maintains container configuration after each milestone. Focus milestones on building features and functionality only. TESTING: Do not create milestones for writing tests. A separate testing agent writes and runs tests after each milestone. Focus milestones on building features and functionality only. Include a final task to verify everything works end to end. Each task should be concrete and actionable, building on the last. Include a task early on to remove any default scaffolding or template code that does not belong. If TASKS.md already exists, update it — add missing tasks, refine vague ones, but never remove or uncheck completed tasks. Commit any changes to TASKS.md with message 'Update task plan', run git pull --rebase, and push. If no changes are needed, do nothing.
+The planner first assesses the project state to determine which situation applies:
+
+- **(A) Fresh project** — no TASKS.md, no code. SPEC.md exists from bootstrap. Creates TASKS.md with milestones.
+- **(B) Continuing project** — TASKS.md exists with completed milestones, SPEC.md covers everything in REQUIREMENTS.md. Evaluates whether the existing plan needs adjustment.
+- **(C) Evolving project** — REQUIREMENTS.md contains features not covered in SPEC.md (new requirements added since last session). Updates SPEC.md to incorporate the new requirements, then plans new milestones for the unimplemented work.
+
+In cases B and C, the planner looks at the actual codebase to understand what is already built — it does not rely only on checked tasks.
+
+> FIRST — ASSESS THE PROJECT STATE. Read REQUIREMENTS.md, then read SPEC.md if it exists, then look at the codebase and TASKS.md if they exist. Determine which situation applies: (A) Fresh project, (B) Continuing project, or (C) Evolving project with new requirements. In case C, update SPEC.md to incorporate the new requirements. Then proceed to planning. [...milestone sizing rules, containerization/testing exclusions, preserve completed tasks...]
 
 **Post-plan enforcement:** After the planner runs, the build loop checks milestone sizes. If any uncompleted milestone exceeds 5 tasks, the planner is re-invoked with a targeted split prompt. If still oversized after one retry, a warning is logged and the build proceeds.
 
 **Creates:** TASKS.md (first run), updates it on subsequent runs  
+**Updates:** SPEC.md (when new requirements are detected — case C)  
 **Reads:** SPEC.md, README.md, REQUIREMENTS.md, codebase, TASKS.md, BUGS.md, REVIEWS.md  
 **Writes code:** No
 
@@ -35,7 +44,7 @@ Runs on demand via `plan`. Call it before the first `build`, or whenever you nee
 
 ## Copilot Instructions Generator
 
-Runs once automatically after the first planner run (in both `go` and `resume`). Skipped if `.github/copilot-instructions.md` already exists.
+Runs once automatically after the first planner run. Skipped if `.github/copilot-instructions.md` already exists.
 
 > You are a documentation generator. You must NOT write any application code or modify any source files other than .github/copilot-instructions.md. Read SPEC.md to understand the tech stack, language, and architecture. Read TASKS.md to understand the planned components and milestones. Read REQUIREMENTS.md for the original project intent. Now create the file .github/copilot-instructions.md (create the .github directory if it doesn't exist). Fill in the project-specific sections (Project structure, Key files, Architecture, Conventions) based on SPEC.md and TASKS.md. Keep the coding guidelines and testing conventions sections exactly as provided in the template. Commit with message 'Add copilot instructions', run git pull --rebase, and push.
 
@@ -67,7 +76,7 @@ Runs via `build`. Completes one milestone per cycle. Between milestones the plan
 
 ## Commit Watcher
 
-Runs continuously via `commitwatch`, launched automatically by `go` and `resume`. Polls for new commits and spawns a scoped reviewer for each one.
+Runs continuously via `commitwatch`, launched automatically by `go`. Polls for new commits and spawns a scoped reviewer for each one.
 
 **Persistent checkpoint:** The last-reviewed commit SHA is saved to `logs/reviewer.checkpoint` after each commit is processed. On restart, the watcher resumes from the checkpoint — no commits are ever missed or re-reviewed.
 
@@ -99,7 +108,7 @@ For each new commit detected, the watcher enumerates all commits since the last 
 
 ## Tester
 
-Milestone-triggered via `testloop`, launched automatically by `go` and `resume`. Watches `logs/milestones.log` for newly completed milestones and runs scoped tests for each one.
+Milestone-triggered via `testloop`, launched automatically by `go`. Watches `logs/milestones.log` for newly completed milestones and runs scoped tests for each one.
 
 For each newly completed milestone:
 
@@ -119,7 +128,7 @@ When the builder finishes, the tester sees `logs/builder.done` and exits.
 
 ## Validator
 
-Milestone-triggered via `validateloop`, launched automatically by `go` and `resume`. Watches `logs/milestones.log` for newly completed milestones and validates the application in a Docker container.
+Milestone-triggered via `validateloop`, launched automatically by `go`. Watches `logs/milestones.log` for newly completed milestones and validates the application in a Docker container.
 
 For each newly completed milestone:
 
@@ -145,7 +154,7 @@ When the builder finishes, the validator sees `logs/builder.done` and exits.
 
 ## Agent Coordination Rules
 
-- The **Planner** runs on demand via `plan`. It reads `SPEC.md`, the codebase, `TASKS.md`, `BUGS.md`, and `REVIEWS.md`, then creates or updates the task list. It never writes code.
+- The **Planner** runs on demand via `plan`. It assesses project state (fresh / continuing / evolving), updates SPEC.md if new requirements are detected, then creates or updates the task list. It never writes application code.
 - The **Builder** checks `BUGS.md` first (all bugs are fixed before any tasks), then `REVIEWS.md`, then completes the current milestone. One milestone per cycle, then the planner re-evaluates.
 - The **Reviewer** reviews each commit individually, plus a cross-cutting review when a milestone completes. Non-code issues ([doc]: stale docs, misleading comments) are fixed directly by the reviewer. Code-level issues ([code]) are filed to REVIEWS.md for the builder. Milestone reviews clean up stale/already-resolved review items.
 - The **Tester** runs scoped tests when a milestone completes, focusing on changed files. It runs the test suite only — it does not start the app or test live endpoints. Exits when the builder finishes.
@@ -156,9 +165,21 @@ When the builder finishes, the validator sees `logs/builder.done` and exits.
 
 ---
 
+## Iterative Development
+
+`go` supports iterative sessions. You can build a project in phases:
+
+1. **Session 1:** `go --name my-app --spec-file api-spec.md --local` — bootstraps project, builds API
+2. **Session 2:** `go --name my-app --spec-file frontend-spec.md` — detects existing project, overwrites REQUIREMENTS.md with frontend spec, planner updates SPEC.md and creates new milestones, builder implements frontend
+3. **Session 3:** `go --name my-app` — continues where it left off (no new requirements)
+
+The `--spec-file` for session 2 can contain just new requirements ("Add a React frontend") or a complete updated requirements doc (old API spec + new frontend spec). The planner compares REQUIREMENTS.md against SPEC.md and the codebase to determine what's new.
+
+---
+
 ## Legacy Commands
 
-The original `reviewoncommit` and `testoncommit` commands still exist for manual/standalone use. They use the old `_watch_loop` polling mechanism and are not launched by `go` or `resume`.
+The original `reviewoncommit` and `testoncommit` commands still exist for manual/standalone use. They use the old `_watch_loop` polling mechanism and are not launched by `go`.
 
 ---
 
@@ -172,5 +193,5 @@ The builder waits for all agents to finish before exiting:
 4. **Fix or exit:** If new work was filed (bugs from tester/validator, reviews from reviewer), the builder fixes it (up to 4 fix-only cycles) and loops back to step 2. If checklists are clean and agents are idle, the builder writes `logs/builder.done` and exits.
 5. **Agents shut down:** The reviewer, tester, and validator see `logs/builder.done` on their next poll cycle. The reviewer completes any remaining milestone reviews before exiting. The tester and validator exit immediately.
 6. **Crash fallback:** If `logs/builder.log` hasn't been modified in 10+ minutes, agents assume the builder crashed and shut down.
-7. **Startup cleanup:** `go` and `resume` clear any stale `builder.done` sentinel before launching agents.
+7. **Startup cleanup:** `go` clears any stale `builder.done` sentinel before launching agents.
 8. **Timeout safety:** If agents don't go idle within 10 minutes, the builder writes `builder.done` and exits anyway.

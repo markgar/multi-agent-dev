@@ -2,6 +2,7 @@
 
 import os
 import re
+from datetime import datetime, timezone
 from typing import Annotated
 
 import typer
@@ -49,6 +50,53 @@ def _detect_clone_source(parent_dir: str) -> str:
     if result.returncode == 0:
         return result.stdout.strip()
     return ""
+
+
+def _pull_all_clones(parent_dir: str) -> None:
+    """Pull latest on all agent clones. Create validator clone if missing."""
+    builder_dir = os.path.join(parent_dir, "builder")
+    reviewer_dir = os.path.join(parent_dir, "reviewer")
+    tester_dir = os.path.join(parent_dir, "tester")
+    validator_dir = os.path.join(parent_dir, "validator")
+
+    with pushd(builder_dir):
+        run_cmd(["git", "pull", "--rebase"], quiet=True)
+    with pushd(reviewer_dir):
+        run_cmd(["git", "pull", "--rebase"], quiet=True)
+    with pushd(tester_dir):
+        run_cmd(["git", "pull", "--rebase"], quiet=True)
+
+    if not os.path.exists(validator_dir):
+        log("orchestrator", "Validator clone not found — creating it...", style="yellow")
+        clone_source = _detect_clone_source(parent_dir)
+        if clone_source:
+            with pushd(parent_dir):
+                run_cmd(["git", "clone", clone_source, "validator"])
+        else:
+            log("orchestrator", "WARNING: Could not determine clone source for validator.", style="yellow")
+    else:
+        with pushd(validator_dir):
+            run_cmd(["git", "pull", "--rebase"], quiet=True)
+
+
+def _update_requirements(builder_dir: str, description: str) -> None:
+    """Overwrite REQUIREMENTS.md with new requirements, commit, pull, and push."""
+    req_path = os.path.join(builder_dir, "REQUIREMENTS.md")
+    with open(req_path, "w", encoding="utf-8") as f:
+        f.write("# Project Requirements\n\n")
+        f.write("> This document contains the project requirements as provided by the user.\n")
+        f.write("> It may be updated with new requirements in later sessions.\n\n")
+        f.write(description)
+        f.write("\n")
+
+    timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+    with pushd(builder_dir):
+        run_cmd(["git", "add", "REQUIREMENTS.md"])
+        run_cmd(["git", "commit", "-m", f"Update requirements ({timestamp})"])
+        run_cmd(["git", "pull", "--rebase"], quiet=True)
+        run_cmd(["git", "push"])
+
+    log("orchestrator", "Updated REQUIREMENTS.md with new requirements.", style="green")
 
 
 # ============================================
@@ -172,6 +220,25 @@ def _launch_agents_and_build(parent_dir: str, plan_label: str) -> None:
     build(loop=True)
 
 
+def _resolve_description_optional(description, spec_file):
+    """Resolve project description from --description or --spec-file. Returns None if neither provided."""
+    if spec_file and description:
+        console.print("ERROR: Provide --description or --spec-file, not both.", style="bold red")
+        raise typer.Exit(1)
+    if spec_file:
+        spec_path = os.path.expanduser(spec_file)
+        if not os.path.isfile(spec_path):
+            console.print(f"ERROR: Spec file not found: {spec_path}", style="bold red")
+            raise typer.Exit(1)
+        with open(spec_path, "r", encoding="utf-8") as f:
+            description = f.read().strip()
+        if not description:
+            console.print("ERROR: Spec file is empty.", style="bold red")
+            raise typer.Exit(1)
+        console.print(f"Using requirements from: {spec_path}", style="cyan")
+    return description
+
+
 @app.command()
 def go(
     name: Annotated[str, typer.Option(help="Project name")],
@@ -179,63 +246,49 @@ def go(
     spec_file: Annotated[str, typer.Option(help="Path to a markdown file containing the project requirements")] = None,
     local: Annotated[bool, typer.Option(help="Use a local bare git repo instead of GitHub")] = False,
 ):
-    """One command to rule them all: bootstrap, plan, and launch all agents."""
-    start_dir = os.getcwd()
+    """Start or continue a project. Detects whether the project already exists.
 
-    run_bootstrap(name=name, description=description, spec_file=spec_file, local=local)
-    if not os.path.exists(os.path.join(os.getcwd(), "builder")):
-        log("orchestrator", "ERROR: Bootstrap did not create the expected directory structure.", style="bold red")
-        os.chdir(start_dir)
-        return
-
-    parent_dir = os.getcwd()
-    os.chdir(os.path.join(parent_dir, "builder"))
-
-    _launch_agents_and_build(parent_dir, "Running planner...")
-
-    os.chdir(start_dir)
-
-
-@app.command()
-def resume(
-    name: Annotated[str, typer.Option(help="Project name (existing project directory)")],
-):
-    """Pick up where you left off: re-plan, launch watchers, resume building."""
+    New project:      bootstraps, plans, and launches all agents.
+    Existing project: pulls latest, optionally updates requirements, re-plans, and builds.
+    """
     start_dir = os.getcwd()
     parent_dir = os.path.join(os.getcwd(), name)
+    project_exists = os.path.exists(os.path.join(parent_dir, "builder"))
 
-    if not os.path.exists(os.path.join(parent_dir, "builder")):
-        log(
-            "orchestrator",
-            f"ERROR: Could not find builder directory under {parent_dir}. Are you in the right directory?",
-            style="bold red",
-        )
-        return
+    if not project_exists:
+        # --- New project: full bootstrap ---
+        if not description and not spec_file:
+            console.print("ERROR: New project requires --description or --spec-file.", style="bold red")
+            return
 
-    os.chdir(os.path.join(parent_dir, "builder"))
-    run_cmd(["git", "pull", "--rebase"], quiet=True)
+        run_bootstrap(name=name, description=description, spec_file=spec_file, local=local)
+        if not os.path.exists(os.path.join(os.getcwd(), "builder")):
+            log("orchestrator", "ERROR: Bootstrap did not create the expected directory structure.", style="bold red")
+            os.chdir(start_dir)
+            return
 
-    reviewer_dir = os.path.join(parent_dir, "reviewer")
-    tester_dir = os.path.join(parent_dir, "tester")
-    validator_dir = os.path.join(parent_dir, "validator")
-    with pushd(reviewer_dir):
-        run_cmd(["git", "pull", "--rebase"], quiet=True)
-    with pushd(tester_dir):
-        run_cmd(["git", "pull", "--rebase"], quiet=True)
+        parent_dir = os.getcwd()
+        os.chdir(os.path.join(parent_dir, "builder"))
+        _launch_agents_and_build(parent_dir, "Running planner...")
 
-    # Clone validator if it doesn't exist (project bootstrapped before validator was added)
-    if not os.path.exists(validator_dir):
-        log("orchestrator", "Validator clone not found — creating it...", style="yellow")
-        clone_source = _detect_clone_source(parent_dir)
-        if clone_source:
-            with pushd(parent_dir):
-                run_cmd(["git", "clone", clone_source, "validator"])
-        else:
-            log("orchestrator", "WARNING: Could not determine clone source for validator.", style="yellow")
     else:
-        with pushd(validator_dir):
-            run_cmd(["git", "pull", "--rebase"], quiet=True)
+        # --- Existing project: continue or iterate ---
+        new_description = _resolve_description_optional(description, spec_file)
 
-    _launch_agents_and_build(parent_dir, "Re-evaluating plan...")
+        log("orchestrator", "")
+        log("orchestrator", "======================================", style="bold cyan")
+        if new_description:
+            log("orchestrator", f" Continuing project '{name}' with new requirements", style="bold cyan")
+        else:
+            log("orchestrator", f" Continuing project '{name}'", style="bold cyan")
+        log("orchestrator", "======================================", style="bold cyan")
+
+        _pull_all_clones(parent_dir)
+        os.chdir(os.path.join(parent_dir, "builder"))
+
+        if new_description:
+            _update_requirements(os.path.join(parent_dir, "builder"), new_description)
+
+        _launch_agents_and_build(parent_dir, "Evaluating plan...")
 
     os.chdir(start_dir)

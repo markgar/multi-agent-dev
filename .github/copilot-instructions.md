@@ -27,7 +27,7 @@ This software is entirely written by GitHub Copilot. The code is structured to b
 
 ## Key files
 
-- `src/agent/cli.py` — App definition, top-level orchestration commands: `go`, `resume`, `plan`, `status`.
+- `src/agent/cli.py` — App definition, top-level orchestration commands: `go`, `plan`, `status`.
 - `src/agent/bootstrap.py` — Project scaffolding: repo creation, cloning reviewer/tester/validator copies.
 - `src/agent/builder.py` — Build loop: milestone completion, retry logic.
 - `src/agent/watcher.py` — Commit watcher: per-commit reviews, milestone-level reviews.
@@ -40,7 +40,7 @@ This software is entirely written by GitHub Copilot. The code is structured to b
 - `src/agent/sentinel.py` — Builder-done sentinel, agent-idle detection, and reviewer checkpoint persistence.
 - `src/agent/milestone.py` — Milestone parsing, boundary tracking, and per-agent milestone checkpoints.
 - `src/agent/config.py` — Language/stack configurations and prerequisites.
-- `src/agent/legacy_watchers.py` — Deprecated `reviewoncommit` and `testoncommit` commands (not used by `go`/`resume`).
+- `src/agent/legacy_watchers.py` — Deprecated `reviewoncommit` and `testoncommit` commands (not used by `go`).
 
 ## Architecture
 
@@ -69,14 +69,11 @@ A test harness at `tests/harness/run_test.sh` runs the full orchestration end-to
 ### Running the harness
 
 ```bash
-# Default: sample CLI calculator spec, Node.js
+# Default: sample CLI calculator spec
 ./tests/harness/run_test.sh
 
-# C# hello world
-./tests/harness/run_test.sh --name hello-world --language dotnet --spec-file /path/to/spec.md
-
-# Python project with custom spec
-./tests/harness/run_test.sh --name my-test --language python --spec-file /path/to/spec.md
+# Custom spec
+./tests/harness/run_test.sh --name hello-world --spec-file /path/to/spec.md
 ```
 
 ### What it does (in order)
@@ -117,7 +114,6 @@ tests/harness/runs/<timestamp>/
 | Flag | Default | Description |
 |---|---|---|
 | `--name` | `test-run` | Project name (directory name) |
-| `--language` | `node` | Language/stack: `node`, `python`, `dotnet` |
 | `--spec-file` | `tests/harness/sample_spec_cli_calculator.md` | Path to requirements spec |
 
 ### Sample spec

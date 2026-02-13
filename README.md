@@ -22,7 +22,7 @@ Install these one time. After each install, **close and reopen your terminal** s
 | Docker | `winget install Docker.DockerDesktop` | `brew install --cask docker` | `docker --version` |
 | GitHub Copilot CLI | See GitHub Copilot CLI docs | See GitHub Copilot CLI docs | `copilot --version` |
 
-**Install for your target language (`--language` option):**
+**Install for your target language:**
 
 | Language | Tool(s) | Install (Windows) | Install (macOS) |
 |---|---|---|---|
@@ -46,7 +46,7 @@ cd multi-agent-dev
 pip install .
 cd ..
 
-agentic-dev go --name "hello-world" --language dotnet --description "a C# console app that prints Hello World"
+agentic-dev go --name "hello-world" --description "a C# console app that prints Hello World"
 ```
 
 That's it. `go` will:
@@ -59,12 +59,30 @@ That's it. `go` will:
 
 Four windows will be running. Watch the Builder work through milestones while the Reviewer, Tester, and Validator react to each commit and milestone completion. Run `agentic-dev status` anytime in the builder directory to check progress.
 
+### Continuing with New Requirements
+
+Come back later and add new features to the same project:
+
+```bash
+agentic-dev go --name "hello-world" --spec-file new-features.md
+```
+
+The planner detects what's already built, updates the spec, and creates new milestones for the unimplemented work.
+
+### Resuming Where You Left Off
+
+```bash
+agentic-dev go --name "hello-world"
+```
+
+No spec needed — just re-evaluates the plan and continues building.
+
 ### Local Mode (no GitHub)
 
 Add `--local` to run entirely offline with a local bare git repo instead of GitHub:
 
 ```bash
-agentic-dev go --name "my-project" --language node --description "..." --local
+agentic-dev go --name "my-project" --description "..." --local
 ```
 
 This skips all `gh` CLI calls and creates a bare repo at `remote.git/` inside the project directory. All git operations (push, pull, clone) work identically against it. Useful for testing, offline development, or environments without GitHub access.

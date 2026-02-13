@@ -3,26 +3,38 @@
 ## One Command
 
 ```bash
-agentic-dev go --name "my-project" --language dotnet --description "description of what to build"
+agentic-dev go --name "my-project" --description "description of what to build"
 ```
 
 Or use a requirements file:
 
 ```bash
-agentic-dev go --name "my-project" --language python --spec-file requirements.md
+agentic-dev go --name "my-project" --spec-file requirements.md
 ```
 
 Or run without GitHub (local bare git repo):
 
 ```bash
-agentic-dev go --name "my-project" --language node --description "..." --local
+agentic-dev go --name "my-project" --description "..." --local
 ```
 
-## Resuming a Previous Project
+## Continuing with New Requirements
+
+Come back later and add new features to the same project:
 
 ```bash
-agentic-dev resume --name "my-project"
+agentic-dev go --name "my-project" --spec-file new-features.md
 ```
+
+The planner detects what's already built, updates the spec, and plans new milestones.
+
+## Resuming Where You Left Off
+
+```bash
+agentic-dev go --name "my-project"
+```
+
+No spec needed — just re-evaluates the plan and continues building.
 
 ## Running Agents Individually
 
@@ -50,10 +62,11 @@ agentic-dev validateloop
 
 | Command | What it does | Where |
 |---|---|---|
-| `go --name N --language L --description D` | Does everything: bootstrap, plan, launch agents, build | Once, from parent dir |
-| `go --name N --language L --spec-file F` | Same, but reads requirements from a markdown file | Once, from parent dir |
+| `go --name N --description D` | Does everything: bootstrap, plan, launch agents, build | Once, from parent dir |
+| `go --name N --spec-file F` | Same, but reads requirements from a markdown file | Once, from parent dir |
 | `go --name N ... --local` | Same, but uses a local bare git repo instead of GitHub | Once, from parent dir |
-| `resume --name N` | Re-plans, relaunches watchers, resumes building | Once, from parent dir |
+| `go --name N --spec-file F` (existing project) | Updates requirements, re-plans, launches agents, builds | From parent dir |
+| `go --name N` (existing project) | Re-plans, launches agents, resumes building | From parent dir |
 | `plan` | Creates or updates TASKS.md from SPEC.md (with milestones) | builder/, on demand |
 | `build` | Fixes bugs + reviews, then completes the current milestone | builder/, repeatedly |
 | `build --loop` | Loops through all milestones automatically (re-plans between each) | builder/, once |
