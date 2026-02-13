@@ -198,6 +198,9 @@ def _scaffold_project(directory, name, description, gh_user, local=False):
     os.makedirs(directory, exist_ok=True)
     os.chdir(directory)
 
+    # Write workspace README immediately so the directory is self-documenting
+    write_workspace_readme(os.getcwd())
+
     # Create local bare repo when running in local mode (no GitHub)
     if local:
         bare_repo_path = os.path.join(os.getcwd(), "remote.git")
