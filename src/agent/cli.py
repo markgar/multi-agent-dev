@@ -30,7 +30,7 @@ _tester_mod.register(app)
 _validator_mod.register(app)
 
 # Re-export for internal use by builder (which calls plan() in its loop)
-from agent.bootstrap import run_bootstrap
+from agent.bootstrap import run_bootstrap, write_workspace_readme
 from agent.builder import build, check_milestone_sizes
 from agent.terminal import spawn_agent_in_terminal
 
@@ -85,6 +85,7 @@ def _clone_all_agents(parent_dir: str, clone_source: str) -> None:
             log("orchestrator", f"Cloning {agent} from existing repo...", style="cyan")
             with pushd(parent_dir):
                 run_cmd(["git", "clone", clone_source, agent])
+    write_workspace_readme(parent_dir)
 
 
 def _pull_all_clones(parent_dir: str) -> None:

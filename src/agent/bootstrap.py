@@ -105,6 +105,79 @@ def _check_prerequisites(local=False):
     return gh_user
 
 
+_WORKSPACE_README = """# Multi-Agent Workspace
+
+This directory is managed by the **agentic-dev** multi-agent orchestrator.
+It is not the project source code itself — it is the workspace that contains
+separate clones of the project repo, each used by a different agent.
+
+## Directory Structure
+
+| Directory | Purpose |
+|---|---|
+| `builder/` | Builder agent — writes code, fixes bugs, completes milestones |
+| `reviewer/` | Reviewer agent — reviews each commit and milestone for quality |
+| `tester/` | Tester agent — runs scoped tests after each milestone |
+| `validator/` | Validator agent — builds Docker containers and validates against spec |
+| `remote.git/` | Local bare git repo (local mode only; replaced by GitHub in production) |
+| `logs/` | Agent logs, checkpoints, and coordination signals |
+
+Each agent directory is an independent git clone of the same repo.
+They coordinate through git push/pull and shared markdown files.
+
+## Key Files (inside each clone)
+
+| File | Purpose |
+|---|---|
+| `SPEC.md` | Source of truth — defines the desired end state of the project |
+| `TASKS.md` | Milestones and tasks — checked off as work is completed |
+| `REQUIREMENTS.md` | Original user requirements (may be updated between sessions) |
+| `BUGS.md` | Bugs found by the tester and validator |
+| `REVIEWS.md` | Code review findings from the reviewer |
+| `DEPLOY.md` | Deployment knowledge accumulated by the validator |
+| `.github/copilot-instructions.md` | Coding guidelines and project conventions for the builder |
+
+## Log Files
+
+| File | What it captures |
+|---|---|
+| `logs/builder.log` | Every Copilot invocation — prompts and output |
+| `logs/planner.log` | Planner decisions and task list changes |
+| `logs/reviewer.log` | Per-commit and milestone reviews |
+| `logs/tester.log` | Test runs and bug reports |
+| `logs/validator.log` | Container builds and acceptance test results |
+| `logs/milestones.log` | Milestone boundaries (name, start SHA, end SHA) |
+| `logs/orchestrator.log` | High-level orchestration status |
+| `logs/builder.done` | Sentinel file — signals all agents to shut down |
+| `logs/reviewer.checkpoint` | Last-reviewed commit SHA |
+| `logs/reviewer.milestone` | Set of milestones already reviewed |
+| `logs/tester.milestone` | Set of milestones already tested |
+| `logs/validator.milestone` | Set of milestones already validated |
+
+## How It Works
+
+1. The **planner** reads SPEC.md and creates milestones in TASKS.md
+2. The **builder** completes one milestone at a time, committing after each task
+3. The **reviewer** watches for new commits and reviews them for quality
+4. The **tester** runs scoped tests when a milestone completes
+5. The **validator** builds the app in Docker and tests against SPEC.md acceptance criteria
+6. When all milestones are done and all agents are idle, the builder writes `logs/builder.done` and everyone shuts down
+
+Agent directories are disposable — they can be deleted and re-cloned from the repo at any time.
+The repo and `logs/` directory are the persistent state.
+"""
+
+
+def write_workspace_readme(directory: str) -> None:
+    """Write a README.md in the workspace root describing the multi-agent structure."""
+    readme_path = os.path.join(directory, "README.md")
+    try:
+        with open(readme_path, "w", encoding="utf-8") as f:
+            f.write(_WORKSPACE_README)
+    except Exception:
+        pass
+
+
 def _scaffold_project(directory, name, description, gh_user, local=False):
     """Create repo, write REQUIREMENTS.md, run Copilot bootstrap, clone reviewer/tester.
 
@@ -170,6 +243,8 @@ def _scaffold_project(directory, name, description, gh_user, local=False):
 
     log("bootstrap", "Cloning validator copy...", style="cyan")
     run_cmd(["git", "clone", clone_source, "validator"])
+
+    write_workspace_readme(os.getcwd())
 
     log("bootstrap", "")
     log("bootstrap", "======================================", style="bold green")
