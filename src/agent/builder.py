@@ -438,6 +438,7 @@ def _check_remaining_work(state: BuildState) -> str:
             log("builder", " - Tasks: Done", style="bold green")
             log("builder", " - Reviewer: Idle", style="bold green")
             log("builder", " - Tester: Idle", style="bold green")
+            log("builder", " - Validator: Idle", style="bold green")
             log("builder", "======================================", style="bold green")
             return "done"
 
@@ -445,7 +446,7 @@ def _check_remaining_work(state: BuildState) -> str:
         wait_cycle += 1
         if wait_cycle == 1:
             log("builder", "")
-            log("builder", "Waiting for reviewer/tester to finish...", style="yellow")
+            log("builder", "Waiting for reviewer/tester/validator to finish...", style="yellow")
             log("builder", "(Ctrl+C to stop)", style="dim")
         time.sleep(_AGENT_WAIT_INTERVAL)
 

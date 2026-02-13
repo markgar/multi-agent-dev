@@ -117,7 +117,7 @@ def are_agents_idle() -> bool:
     """Check if the reviewer, tester, and validator are all idle.
 
     Returns True when all agent logs haven't been modified within
-    the idle threshold (30 seconds), meaning they're just sleeping
+    the idle threshold (120 seconds), meaning they're just sleeping
     in their poll loops with nothing to do.
     """
     try:
