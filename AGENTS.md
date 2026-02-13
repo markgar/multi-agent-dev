@@ -170,8 +170,16 @@ When the builder finishes, the validator sees `logs/builder.done` and exits.
 `go` supports iterative sessions. You can build a project in phases:
 
 1. **Session 1:** `go --directory my-app --spec-file api-spec.md --local` — bootstraps project, builds API
-2. **Session 2:** `go --directory my-app --spec-file frontend-spec.md` — detects existing project, overwrites REQUIREMENTS.md with frontend spec, planner updates SPEC.md and creates new milestones, builder implements frontend
-3. **Session 3:** `go --directory my-app` — continues where it left off (no new requirements)
+2. **Session 2:** `go --directory my-app --spec-file frontend-spec.md --local` — detects existing repo, clones agent directories, overwrites REQUIREMENTS.md with frontend spec, planner updates SPEC.md and creates new milestones, builder implements frontend
+3. **Session 3:** `go --directory my-app --local` — continues where it left off (no new requirements)
+
+`go` uses repo-first detection: it checks whether the repo already exists (locally via `remote.git/`, or on GitHub via `gh repo view`) rather than checking for local clone directories. This means:
+
+- **Repo exists, agent dirs exist:** pulls all clones, plans, builds (standard resume)
+- **Repo exists, agent dirs missing:** clones all agents from the repo, then continues (fresh-machine resume)
+- **No repo:** bootstraps from scratch (requires `--spec-file` or `--description`)
+
+Agent directories (`builder/`, `reviewer/`, `tester/`, `validator/`) are treated as disposable working copies — they can be recreated from the repo at any time. The repo (GitHub or `remote.git/`) and `logs/` directory (checkpoints) are the persistent state.
 
 The `--spec-file` for session 2 can contain just new requirements ("Add a React frontend") or a complete updated requirements doc (old API spec + new frontend spec). The planner compares REQUIREMENTS.md against SPEC.md and the codebase to determine what's new.
 

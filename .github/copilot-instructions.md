@@ -115,6 +115,19 @@ tests/harness/runs/<timestamp>/
 |---|---|---|
 | `--name` | `test-run` | Project name (directory name) |
 | `--spec-file` | `tests/harness/sample_spec_cli_calculator.md` | Path to requirements spec |
+| `--resume` | `false` | Find the latest run with the given `--name`, delete agent clone directories, and resume from the repo |
+
+### Resuming a run
+
+```bash
+# Resume with new requirements
+./tests/harness/run_test.sh --name hello-world --spec-file new-features.md --resume
+
+# Resume without new requirements
+./tests/harness/run_test.sh --name hello-world --resume
+```
+
+On resume, the harness deletes `builder/`, `reviewer/`, `tester/`, `validator/` and keeps `remote.git/` and `logs/` intact. This simulates a fresh-machine resume where only the repo exists — matching production behavior against GitHub. `go` detects the existing repo, clones all agent directories from it, and continues.
 
 ### Sample spec
 

@@ -41,8 +41,10 @@ No spec needed — just re-evaluates the plan and continues building.
 Point `--directory` at any existing project directory:
 
 ```bash
-agentic-dev go --directory /path/to/runs/20260213/my-app
+agentic-dev go --directory /path/to/runs/20260213/my-app --local
 ```
+
+`go` detects the existing repo (locally via `remote.git/`, or on GitHub via `gh repo view`) and automatically clones any missing agent directories. You can resume on a fresh machine with nothing but the repo.
 
 ## Running Agents Individually
 

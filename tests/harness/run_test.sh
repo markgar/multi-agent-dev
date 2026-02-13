@@ -12,8 +12,10 @@
 #
 # Resume mode (--resume):
 #   Instead of creating a new run, finds the latest existing run with the
-#   given --name and resumes it via --directory. Optionally accepts a new
-#   --spec-file to add requirements to the existing project.
+#   given --name and resumes it via --directory. Deletes agent clone directories
+#   (builder/, reviewer/, tester/, validator/) to simulate starting on a fresh
+#   machine with only the repo available — matching production behavior against
+#   GitHub. Optionally accepts a new --spec-file to add requirements.
 
 set -euo pipefail
 
@@ -92,10 +94,12 @@ echo ""
 # --- Run ---
 if [[ "$RESUME" == true ]]; then
     # Find all run directories for this project name (newest first)
+    # Search by remote.git (the repo) rather than builder/ (agent clone)
+    # so we can find runs even after agent dirs have been deleted.
     MATCHING_RUNS=()
     for ts_dir in $(ls -1dr "$HARNESS_DIR/runs/"* 2>/dev/null); do
         candidate="$ts_dir/$PROJECT_NAME"
-        if [[ -d "$candidate/builder" ]]; then
+        if [[ -d "$candidate/remote.git" ]]; then
             MATCHING_RUNS+=("$candidate")
         fi
     done
@@ -105,7 +109,7 @@ if [[ "$RESUME" == true ]]; then
         echo ""
         echo "Available runs in $HARNESS_DIR/runs/:"
         ls -1d "$HARNESS_DIR/runs/"*/* 2>/dev/null | while read -r d; do
-            if [[ -d "$d/builder" ]]; then echo "  $d"; fi
+            if [[ -d "$d/remote.git" ]]; then echo "  $d"; fi
         done || echo "  (none found)"
         exit 1
     elif [[ ${#MATCHING_RUNS[@]} -eq 1 ]]; then
@@ -146,6 +150,16 @@ if [[ "$RESUME" == true ]]; then
         echo "Aborted."
         exit 0
     fi
+
+    # Delete agent clone directories to simulate a fresh machine.
+    # Keep remote.git (the repo) and logs/ (checkpoints) intact.
+    for agent_dir in builder reviewer tester validator; do
+        if [[ -d "$PROJ_DIR/$agent_dir" ]]; then
+            echo "  Removing $agent_dir/..."
+            rm -rf "$PROJ_DIR/$agent_dir"
+        fi
+    done
+    echo ""
 
     GO_ARGS=(--directory "$PROJ_DIR" --local)
     if [[ -n "${SPEC_FILE:-}" && -f "${SPEC_FILE:-}" ]]; then

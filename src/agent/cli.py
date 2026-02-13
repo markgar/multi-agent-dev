@@ -45,6 +45,8 @@ def _detect_clone_source(parent_dir: str) -> str:
     if os.path.exists(bare_repo):
         return bare_repo
     builder_dir = os.path.join(parent_dir, "builder")
+    if not os.path.exists(builder_dir):
+        return ""
     with pushd(builder_dir):
         result = run_cmd(["git", "remote", "get-url", "origin"], capture=True)
     if result.returncode == 0:
@@ -52,31 +54,55 @@ def _detect_clone_source(parent_dir: str) -> str:
     return ""
 
 
-def _pull_all_clones(parent_dir: str) -> None:
-    """Pull latest on all agent clones. Create validator clone if missing."""
-    builder_dir = os.path.join(parent_dir, "builder")
-    reviewer_dir = os.path.join(parent_dir, "reviewer")
-    tester_dir = os.path.join(parent_dir, "tester")
-    validator_dir = os.path.join(parent_dir, "validator")
+def _find_existing_repo(parent_dir: str, name: str, local: bool) -> str:
+    """Check if the project repo already exists. Returns the clone URL/path, or empty string.
 
-    with pushd(builder_dir):
-        run_cmd(["git", "pull", "--rebase"], quiet=True)
-    with pushd(reviewer_dir):
-        run_cmd(["git", "pull", "--rebase"], quiet=True)
-    with pushd(tester_dir):
-        run_cmd(["git", "pull", "--rebase"], quiet=True)
+    Local mode: checks for <parent_dir>/remote.git.
+    GitHub mode: checks for the repo on GitHub via gh repo view.
+    """
+    if local:
+        bare_repo = os.path.join(parent_dir, "remote.git")
+        if os.path.exists(bare_repo):
+            return bare_repo
+        return ""
 
-    if not os.path.exists(validator_dir):
-        log("orchestrator", "Validator clone not found — creating it...", style="yellow")
-        clone_source = _detect_clone_source(parent_dir)
-        if clone_source:
+    result = run_cmd(["gh", "api", "user", "--jq", ".login"], capture=True)
+    gh_user = result.stdout.strip() if result.returncode == 0 else ""
+    if not gh_user:
+        return ""
+    repo_check = run_cmd(["gh", "repo", "view", f"{gh_user}/{name}"], quiet=True)
+    if repo_check.returncode == 0:
+        return f"https://github.com/{gh_user}/{name}"
+    return ""
+
+
+def _clone_all_agents(parent_dir: str, clone_source: str) -> None:
+    """Clone any missing agent directories from the given source."""
+    os.makedirs(parent_dir, exist_ok=True)
+    for agent in ["builder", "reviewer", "tester", "validator"]:
+        agent_dir = os.path.join(parent_dir, agent)
+        if not os.path.exists(agent_dir):
+            log("orchestrator", f"Cloning {agent} from existing repo...", style="cyan")
             with pushd(parent_dir):
-                run_cmd(["git", "clone", clone_source, "validator"])
+                run_cmd(["git", "clone", clone_source, agent])
+
+
+def _pull_all_clones(parent_dir: str) -> None:
+    """Pull latest on all agent clones. Create any missing clones."""
+    clone_source = _detect_clone_source(parent_dir)
+
+    for agent in ["builder", "reviewer", "tester", "validator"]:
+        agent_dir = os.path.join(parent_dir, agent)
+        if not os.path.exists(agent_dir):
+            if clone_source:
+                log("orchestrator", f"{agent} clone not found — creating it...", style="yellow")
+                with pushd(parent_dir):
+                    run_cmd(["git", "clone", clone_source, agent])
+            else:
+                log("orchestrator", f"WARNING: Could not determine clone source for {agent}.", style="yellow")
         else:
-            log("orchestrator", "WARNING: Could not determine clone source for validator.", style="yellow")
-    else:
-        with pushd(validator_dir):
-            run_cmd(["git", "pull", "--rebase"], quiet=True)
+            with pushd(agent_dir):
+                run_cmd(["git", "pull", "--rebase"], quiet=True)
 
 
 def _update_requirements(builder_dir: str, description: str) -> None:
@@ -274,9 +300,11 @@ def go(
         return
 
     project_name = name or os.path.basename(parent_dir)
-    project_exists = os.path.exists(os.path.join(parent_dir, "builder"))
 
-    if not project_exists:
+    # --- Check if the repo already exists (locally or on GitHub) ---
+    repo_source = _find_existing_repo(parent_dir, project_name, local)
+
+    if not repo_source:
         # --- New project: full bootstrap ---
         if not description and not spec_file:
             console.print("ERROR: New project requires --description or --spec-file.", style="bold red")
@@ -292,7 +320,7 @@ def go(
         _launch_agents_and_build(parent_dir, "Running planner...")
 
     else:
-        # --- Existing project: continue or iterate ---
+        # --- Existing repo: ensure agent clones exist and are current ---
         new_description = _resolve_description_optional(description, spec_file)
 
         log("orchestrator", "")
@@ -303,6 +331,7 @@ def go(
             log("orchestrator", f" Continuing project '{project_name}'", style="bold cyan")
         log("orchestrator", "======================================", style="bold cyan")
 
+        _clone_all_agents(parent_dir, repo_source)
         _pull_all_clones(parent_dir)
         os.chdir(os.path.join(parent_dir, "builder"))
 

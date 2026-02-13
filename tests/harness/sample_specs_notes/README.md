@@ -37,7 +37,7 @@ agentic-dev go --directory notes-app --spec-file tests/harness/sample_specs_note
 
 ### Test Harness
 
-The harness creates a timestamped `runs/` directory, passes `--directory` and `--local` automatically, and supports `--resume` to find and continue the latest run.
+The harness creates a timestamped `runs/` directory, passes `--directory` and `--local` automatically, and supports `--resume` to find and continue the latest run. On resume, the harness deletes agent clone directories (`builder/`, `reviewer/`, `tester/`, `validator/`) and lets `go` reconstitute them from `remote.git/` — simulating a fresh-machine resume against the repo.
 
 > `--name` here is the harness's flag (names the subdirectory inside `runs/<timestamp>/`), not the CLI's `--name`.
 
