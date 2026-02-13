@@ -91,17 +91,16 @@ echo ""
 
 # --- Run ---
 if [[ "$RESUME" == true ]]; then
-    # Find the latest run directory for this project name
-    LATEST_RUN=""
+    # Find all run directories for this project name (newest first)
+    MATCHING_RUNS=()
     for ts_dir in $(ls -1dr "$HARNESS_DIR/runs/"* 2>/dev/null); do
         candidate="$ts_dir/$PROJECT_NAME"
         if [[ -d "$candidate/builder" ]]; then
-            LATEST_RUN="$candidate"
-            break
+            MATCHING_RUNS+=("$candidate")
         fi
     done
 
-    if [[ -z "$LATEST_RUN" ]]; then
+    if [[ ${#MATCHING_RUNS[@]} -eq 0 ]]; then
         echo "ERROR: No existing run found for project '$PROJECT_NAME'."
         echo ""
         echo "Available runs in $HARNESS_DIR/runs/:"
@@ -109,9 +108,27 @@ if [[ "$RESUME" == true ]]; then
             if [[ -d "$d/builder" ]]; then echo "  $d"; fi
         done || echo "  (none found)"
         exit 1
+    elif [[ ${#MATCHING_RUNS[@]} -eq 1 ]]; then
+        PROJ_DIR="${MATCHING_RUNS[0]}"
+    else
+        echo ""
+        echo "Multiple runs found for '$PROJECT_NAME':"
+        echo ""
+        for i in "${!MATCHING_RUNS[@]}"; do
+            RUN_TS="$(basename "$(dirname "${MATCHING_RUNS[$i]}")")"
+            MARKER=""
+            if [[ $i -eq 0 ]]; then MARKER=" (latest)"; fi
+            echo "  $((i + 1))) $RUN_TS$MARKER"
+        done
+        echo ""
+        read -rp "Which run? [1] " PICK
+        PICK="${PICK:-1}"
+        if ! [[ "$PICK" =~ ^[0-9]+$ ]] || [[ "$PICK" -lt 1 ]] || [[ "$PICK" -gt ${#MATCHING_RUNS[@]} ]]; then
+            echo "Invalid selection."
+            exit 1
+        fi
+        PROJ_DIR="${MATCHING_RUNS[$((PICK - 1))]}"
     fi
-
-    PROJ_DIR="$LATEST_RUN"
 
     echo "============================================"
     echo " Resuming existing run"
