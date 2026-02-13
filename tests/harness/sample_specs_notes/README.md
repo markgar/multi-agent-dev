@@ -9,6 +9,7 @@ same final app (Express API + React UI with create and delete).
 |---|---|
 | `sample_spec_notes_1_base.md` | Session 1: API + UI with list and add |
 | `sample_spec_notes_2_add_delete.md` | Session 2 (delta): just the delete feature |
+| `sample_spec_notes_3_add_timestamps.md` | Session 3 (delta): add created-at timestamps |
 | `sample_spec_notes_full.md` | Combined: everything in one file |
 
 ## Test paths
@@ -23,6 +24,8 @@ Run `agentic-dev go` yourself — you manage the project directory.
 agentic-dev go --directory notes-app --spec-file tests/harness/sample_specs_notes/sample_spec_notes_1_base.md --local
 # Session 2: resume and add the delete feature
 agentic-dev go --directory notes-app --spec-file tests/harness/sample_specs_notes/sample_spec_notes_2_add_delete.md --local
+# Session 3: resume and add timestamps
+agentic-dev go --directory notes-app --spec-file tests/harness/sample_specs_notes/sample_spec_notes_3_add_timestamps.md --local
 ```
 
 **Path B — combined (single session):**
@@ -44,6 +47,8 @@ The harness creates a timestamped `runs/` directory, passes `--directory` and `-
 ./tests/harness/run_test.sh --name notes-app --spec-file tests/harness/sample_specs_notes/sample_spec_notes_1_base.md
 # Session 2: resume the latest run with the delta spec
 ./tests/harness/run_test.sh --name notes-app --spec-file tests/harness/sample_specs_notes/sample_spec_notes_2_add_delete.md --resume
+# Session 3: resume and add timestamps
+./tests/harness/run_test.sh --name notes-app --spec-file tests/harness/sample_specs_notes/sample_spec_notes_3_add_timestamps.md --resume
 ```
 
 **Path B — combined (single session):**
@@ -53,4 +58,4 @@ The harness creates a timestamped `runs/` directory, passes `--directory` and `-
 
 ---
 
-Both paths should produce the same result: a notes app with list, add, and delete.
+Both paths should produce the same result: a notes app with list, add, delete, and timestamps.
