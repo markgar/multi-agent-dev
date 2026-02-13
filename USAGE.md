@@ -3,19 +3,19 @@
 ## One Command
 
 ```bash
-agentic-dev go --name "my-project" --description "description of what to build"
+agentic-dev go --directory my-project --description "description of what to build"
 ```
 
 Or use a requirements file:
 
 ```bash
-agentic-dev go --name "my-project" --spec-file requirements.md
+agentic-dev go --directory my-project --spec-file requirements.md
 ```
 
 Or run without GitHub (local bare git repo):
 
 ```bash
-agentic-dev go --name "my-project" --description "..." --local
+agentic-dev go --directory my-project --description "..." --local
 ```
 
 ## Continuing with New Requirements
@@ -23,7 +23,7 @@ agentic-dev go --name "my-project" --description "..." --local
 Come back later and add new features to the same project:
 
 ```bash
-agentic-dev go --name "my-project" --spec-file new-features.md
+agentic-dev go --directory my-project --spec-file new-features.md
 ```
 
 The planner detects what's already built, updates the spec, and plans new milestones.
@@ -31,10 +31,18 @@ The planner detects what's already built, updates the spec, and plans new milest
 ## Resuming Where You Left Off
 
 ```bash
-agentic-dev go --name "my-project"
+agentic-dev go --directory my-project
 ```
 
 No spec needed — just re-evaluates the plan and continues building.
+
+## Resuming from a Different Location
+
+Point `--directory` at any existing project directory:
+
+```bash
+agentic-dev go --directory /path/to/runs/20260213/my-app
+```
 
 ## Running Agents Individually
 
@@ -62,11 +70,12 @@ agentic-dev validateloop
 
 | Command | What it does | Where |
 |---|---|---|
-| `go --name N --description D` | Does everything: bootstrap, plan, launch agents, build | Once, from parent dir |
-| `go --name N --spec-file F` | Same, but reads requirements from a markdown file | Once, from parent dir |
-| `go --name N ... --local` | Same, but uses a local bare git repo instead of GitHub | Once, from parent dir |
-| `go --name N --spec-file F` (existing project) | Updates requirements, re-plans, launches agents, builds | From parent dir |
-| `go --name N` (existing project) | Re-plans, launches agents, resumes building | From parent dir |
+| `go --directory D --description DESC` | Does everything: bootstrap, plan, launch agents, build | Once, from anywhere |
+| `go --directory D --spec-file F` | Same, but reads requirements from a markdown file | Once, from anywhere |
+| `go --directory D ... --local` | Same, but uses a local bare git repo instead of GitHub | Once, from anywhere |
+| `go --directory D ... --name N` | Same, but overrides the GitHub repo name (defaults to dirname) | Once, from anywhere |
+| `go --directory D --spec-file F` (existing) | Updates requirements, re-plans, launches agents, builds | From anywhere |
+| `go --directory D` (existing) | Re-plans, launches agents, resumes building | From anywhere |
 | `plan` | Creates or updates TASKS.md from SPEC.md (with milestones) | builder/, on demand |
 | `build` | Fixes bugs + reviews, then completes the current milestone | builder/, repeatedly |
 | `build --loop` | Loops through all milestones automatically (re-plans between each) | builder/, once |

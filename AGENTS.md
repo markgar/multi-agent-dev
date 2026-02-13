@@ -169,9 +169,9 @@ When the builder finishes, the validator sees `logs/builder.done` and exits.
 
 `go` supports iterative sessions. You can build a project in phases:
 
-1. **Session 1:** `go --name my-app --spec-file api-spec.md --local` — bootstraps project, builds API
-2. **Session 2:** `go --name my-app --spec-file frontend-spec.md` — detects existing project, overwrites REQUIREMENTS.md with frontend spec, planner updates SPEC.md and creates new milestones, builder implements frontend
-3. **Session 3:** `go --name my-app` — continues where it left off (no new requirements)
+1. **Session 1:** `go --directory my-app --spec-file api-spec.md --local` — bootstraps project, builds API
+2. **Session 2:** `go --directory my-app --spec-file frontend-spec.md` — detects existing project, overwrites REQUIREMENTS.md with frontend spec, planner updates SPEC.md and creates new milestones, builder implements frontend
+3. **Session 3:** `go --directory my-app` — continues where it left off (no new requirements)
 
 The `--spec-file` for session 2 can contain just new requirements ("Add a React frontend") or a complete updated requirements doc (old API spec + new frontend spec). The planner compares REQUIREMENTS.md against SPEC.md and the codebase to determine what's new.
 

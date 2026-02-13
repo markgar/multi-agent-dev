@@ -241,18 +241,28 @@ def _resolve_description_optional(description, spec_file):
 
 @app.command()
 def go(
-    name: Annotated[str, typer.Option(help="Project name")],
+    directory: Annotated[str, typer.Option(help="Project directory path (created if new, resumed if existing)")],
     description: Annotated[str, typer.Option(help="What the project should do")] = None,
     spec_file: Annotated[str, typer.Option(help="Path to a markdown file containing the project requirements")] = None,
     local: Annotated[bool, typer.Option(help="Use a local bare git repo instead of GitHub")] = False,
+    name: Annotated[str, typer.Option(help="GitHub repo name (defaults to directory basename)")] = None,
 ):
     """Start or continue a project. Detects whether the project already exists.
 
     New project:      bootstraps, plans, and launches all agents.
     Existing project: pulls latest, optionally updates requirements, re-plans, and builds.
+
+    --directory is the project working directory — relative or absolute.
+    --name optionally overrides the GitHub repo name (defaults to basename of directory).
     """
     start_dir = os.getcwd()
-    parent_dir = os.path.join(os.getcwd(), name)
+
+    # --- Resolve project directory ---
+    parent_dir = _resolve_directory(directory)
+    if parent_dir is None:
+        return
+
+    project_name = name or os.path.basename(parent_dir)
     project_exists = os.path.exists(os.path.join(parent_dir, "builder"))
 
     if not project_exists:
@@ -261,13 +271,12 @@ def go(
             console.print("ERROR: New project requires --description or --spec-file.", style="bold red")
             return
 
-        run_bootstrap(name=name, description=description, spec_file=spec_file, local=local)
-        if not os.path.exists(os.path.join(os.getcwd(), "builder")):
+        run_bootstrap(directory=parent_dir, name=project_name, description=description, spec_file=spec_file, local=local)
+        if not os.path.exists(os.path.join(parent_dir, "builder")):
             log("orchestrator", "ERROR: Bootstrap did not create the expected directory structure.", style="bold red")
             os.chdir(start_dir)
             return
 
-        parent_dir = os.getcwd()
         os.chdir(os.path.join(parent_dir, "builder"))
         _launch_agents_and_build(parent_dir, "Running planner...")
 
@@ -278,9 +287,9 @@ def go(
         log("orchestrator", "")
         log("orchestrator", "======================================", style="bold cyan")
         if new_description:
-            log("orchestrator", f" Continuing project '{name}' with new requirements", style="bold cyan")
+            log("orchestrator", f" Continuing project '{project_name}' with new requirements", style="bold cyan")
         else:
-            log("orchestrator", f" Continuing project '{name}'", style="bold cyan")
+            log("orchestrator", f" Continuing project '{project_name}'", style="bold cyan")
         log("orchestrator", "======================================", style="bold cyan")
 
         _pull_all_clones(parent_dir)
@@ -292,3 +301,14 @@ def go(
         _launch_agents_and_build(parent_dir, "Evaluating plan...")
 
     os.chdir(start_dir)
+
+
+def _resolve_directory(directory: str) -> str | None:
+    """Resolve the --directory option to an absolute path.
+
+    For new projects the directory doesn't need to exist yet.
+    For existing projects it validates the path exists.
+    Returns the resolved absolute path, or None on error.
+    """
+    resolved = os.path.abspath(os.path.expanduser(directory))
+    return resolved

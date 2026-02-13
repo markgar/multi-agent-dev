@@ -37,12 +37,12 @@ def bootstrap(
     console.print()
     console.print("Use 'go' instead, which does everything end-to-end:", style="green")
     console.print()
-    console.print("  agentic-dev go --name <project> --spec-file <file>", style="bold cyan")
-    console.print("  agentic-dev go --name <project> --description \"...\"", style="bold cyan")
+    console.print("  agentic-dev go --directory <path> --spec-file <file>", style="bold cyan")
+    console.print("  agentic-dev go --directory <path> --description \"...\"", style="bold cyan")
     console.print()
     console.print("To continue an existing project with new requirements:", style="green")
     console.print()
-    console.print("  agentic-dev go --name <project> --spec-file <new-features.md>", style="bold cyan")
+    console.print("  agentic-dev go --directory <path> --spec-file <new-features.md>", style="bold cyan")
     console.print()
     raise typer.Exit(1)
 
@@ -105,8 +105,13 @@ def _check_prerequisites(local=False):
     return gh_user
 
 
-def _scaffold_project(name, description, gh_user, local=False):
-    """Create repo, write REQUIREMENTS.md, run Copilot bootstrap, clone reviewer/tester. Returns True on success."""
+def _scaffold_project(directory, name, description, gh_user, local=False):
+    """Create repo, write REQUIREMENTS.md, run Copilot bootstrap, clone reviewer/tester.
+
+    directory: absolute path to the project parent directory.
+    name: project name (used for GitHub repo name in non-local mode).
+    Returns True on success.
+    """
     if not local:
         repo_check = run_cmd(["gh", "repo", "view", f"{gh_user}/{name}"], quiet=True)
         if repo_check.returncode == 0:
@@ -117,9 +122,8 @@ def _scaffold_project(name, description, gh_user, local=False):
             )
             return False
 
-    parent_dir = os.path.join(os.getcwd(), name)
-    os.makedirs(parent_dir, exist_ok=True)
-    os.chdir(parent_dir)
+    os.makedirs(directory, exist_ok=True)
+    os.chdir(directory)
 
     # Create local bare repo when running in local mode (no GitHub)
     if local:
@@ -175,20 +179,25 @@ def _scaffold_project(name, description, gh_user, local=False):
 
 
 def run_bootstrap(
+    directory: str,
     name: str,
     description: str = None,
     spec_file: str = None,
     local: bool = False,
 ):
-    """Internal: scaffold a new project — git repo, GitHub remote (or local bare repo), clone reviewer/tester copies."""
+    """Internal: scaffold a new project — git repo, GitHub remote (or local bare repo), clone reviewer/tester copies.
+
+    directory: absolute path to the project parent directory.
+    name: project name (used for GitHub repo name, display labels).
+    """
     description = _resolve_description(description, spec_file)
 
     current_dir = os.path.basename(os.getcwd())
     if current_dir == "multi-agent-dev":
         console.print()
         console.print("WARNING: You are in the multi-agent-dev directory.", style="yellow")
-        console.print("Projects will be created as subdirectories here:", style="yellow")
-        console.print(f"  {os.getcwd()}/{name}/", style="cyan")
+        console.print("Project will be created at:", style="yellow")
+        console.print(f"  {directory}/", style="cyan")
         console.print()
         response = typer.prompt("Are you sure you want to continue? (y/N)")
         if not response.strip().lower().startswith("y"):
@@ -204,5 +213,5 @@ def run_bootstrap(
     console.print(f"Bootstrapping {name}{mode_label}...", style="cyan")
     console.print()
 
-    if not _scaffold_project(name, description, gh_user, local=local):
+    if not _scaffold_project(directory, name, description, gh_user, local=local):
         return

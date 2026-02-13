@@ -1,6 +1,6 @@
 #!/bin/bash
 # Test harness: runs a full end-to-end orchestration using a local bare git repo.
-# Usage: ./tests/harness/run_test.sh [--spec-file path/to/spec.md] [--name project-name]
+# Usage: ./tests/harness/run_test.sh [--spec-file path/to/spec.md] [--name project-name] [--resume]
 #
 # Handles all setup automatically:
 #   1. Cleans stale build/ artifacts
@@ -9,6 +9,11 @@
 #   4. Creates a timestamped run directory under tests/harness/runs/
 #   5. Launches agentic-dev go --local
 #   6. Prints log locations for post-mortem analysis
+#
+# Resume mode (--resume):
+#   Instead of creating a new run, finds the latest existing run with the
+#   given --name and resumes it via --directory. Optionally accepts a new
+#   --spec-file to add requirements to the existing project.
 
 set -euo pipefail
 
@@ -18,6 +23,7 @@ PROJECT_ROOT="$(cd "$HARNESS_DIR/../.." && pwd)"
 # Defaults
 SPEC_FILE="$HARNESS_DIR/sample_spec_cli_calculator.md"
 PROJECT_NAME="test-run"
+RESUME=false
 
 # Parse arguments
 while [[ $# -gt 0 ]]; do
@@ -30,19 +36,25 @@ while [[ $# -gt 0 ]]; do
             PROJECT_NAME="$2"
             shift 2
             ;;
+        --resume)
+            RESUME=true
+            shift
+            ;;
         *)
             echo "Unknown option: $1"
-            echo "Usage: $0 [--spec-file <path>] [--name <project>]"
+            echo "Usage: $0 [--spec-file <path>] [--name <project>] [--resume]"
             exit 1
             ;;
     esac
 done
 
-# Resolve spec file to absolute path
-SPEC_FILE="$(cd "$(dirname "$SPEC_FILE")" && pwd)/$(basename "$SPEC_FILE")"
-if [[ ! -f "$SPEC_FILE" ]]; then
-    echo "ERROR: Spec file not found: $SPEC_FILE"
-    exit 1
+# --- Resolve spec file (only required for new runs) ---
+if [[ "$RESUME" == false ]]; then
+    SPEC_FILE="$(cd "$(dirname "$SPEC_FILE")" && pwd)/$(basename "$SPEC_FILE")"
+    if [[ ! -f "$SPEC_FILE" ]]; then
+        echo "ERROR: Spec file not found: $SPEC_FILE"
+        exit 1
+    fi
 fi
 
 # --- Pre-flight setup ---
@@ -78,39 +90,83 @@ fi
 echo ""
 
 # --- Run ---
-TIMESTAMP="$(date +%Y%m%d-%H%M%S)"
-RUN_DIR="$HARNESS_DIR/runs/$TIMESTAMP"
-mkdir -p "$RUN_DIR"
+if [[ "$RESUME" == true ]]; then
+    # Find the latest run directory for this project name
+    LATEST_RUN=""
+    for ts_dir in $(ls -1dr "$HARNESS_DIR/runs/"* 2>/dev/null); do
+        candidate="$ts_dir/$PROJECT_NAME"
+        if [[ -d "$candidate/builder" ]]; then
+            LATEST_RUN="$candidate"
+            break
+        fi
+    done
 
-echo "============================================"
-echo " Test Harness Run"
-echo "============================================"
-echo "  Run dir:    $RUN_DIR"
-echo "  Spec file:  $SPEC_FILE"
-echo "  Project:     $PROJECT_NAME"
-echo "============================================"
-echo ""
+    if [[ -z "$LATEST_RUN" ]]; then
+        echo "ERROR: No existing run found for project '$PROJECT_NAME'."
+        echo ""
+        echo "Available runs in $HARNESS_DIR/runs/:"
+        ls -1d "$HARNESS_DIR/runs/"*/* 2>/dev/null | while read -r d; do
+            if [[ -d "$d/builder" ]]; then echo "  $d"; fi
+        done || echo "  (none found)"
+        exit 1
+    fi
 
-# Run from the timestamped directory
-cd "$RUN_DIR"
+    PROJ_DIR="$LATEST_RUN"
 
-agentic-dev go \
-    --name "$PROJECT_NAME" \
-    --spec-file "$SPEC_FILE" \
-    --local
+    echo "============================================"
+    echo " Resuming existing run"
+    echo "============================================"
+    echo "  Directory:  $PROJ_DIR"
+    echo "  Project:    $PROJECT_NAME"
+    if [[ -n "${SPEC_FILE:-}" && -f "${SPEC_FILE:-}" ]]; then
+        echo "  New spec:   $SPEC_FILE"
+    fi
+    echo "============================================"
+    echo ""
 
-EXIT_CODE=$?
+    GO_ARGS=(--directory "$PROJ_DIR" --local)
+    if [[ -n "${SPEC_FILE:-}" && -f "${SPEC_FILE:-}" ]]; then
+        GO_ARGS+=(--spec-file "$SPEC_FILE")
+    fi
+
+    agentic-dev go "${GO_ARGS[@]}"
+    EXIT_CODE=$?
+else
+    # Fresh run: create new timestamped directory
+    TIMESTAMP="$(date +%Y%m%d-%H%M%S)"
+    RUN_DIR="$HARNESS_DIR/runs/$TIMESTAMP"
+    mkdir -p "$RUN_DIR"
+    PROJ_DIR="$RUN_DIR/$PROJECT_NAME"
+
+    echo "============================================"
+    echo " Test Harness Run"
+    echo "============================================"
+    echo "  Run dir:    $RUN_DIR"
+    echo "  Spec file:  $SPEC_FILE"
+    echo "  Project:    $PROJECT_NAME"
+    echo "============================================"
+    echo ""
+
+    agentic-dev go \
+        --directory "$PROJ_DIR" \
+        --spec-file "$SPEC_FILE" \
+        --local
+
+    EXIT_CODE=$?
+fi
 
 echo ""
 echo "============================================"
 echo " Run complete (exit code: $EXIT_CODE)"
 echo "============================================"
-echo "  Logs:       $RUN_DIR/$PROJECT_NAME/logs/"
-echo "  Builder:    $RUN_DIR/$PROJECT_NAME/builder/"
-echo "  Reviewer:   $RUN_DIR/$PROJECT_NAME/reviewer/"
-echo "  Tester:     $RUN_DIR/$PROJECT_NAME/tester/"
-echo "  Validator:  $RUN_DIR/$PROJECT_NAME/validator/"
-echo "  Bare repo:  $RUN_DIR/$PROJECT_NAME/remote.git/"
+echo "  Logs:       $PROJ_DIR/logs/"
+echo "  Builder:    $PROJ_DIR/builder/"
+echo "  Reviewer:   $PROJ_DIR/reviewer/"
+echo "  Tester:     $PROJ_DIR/tester/"
+echo "  Validator:  $PROJ_DIR/validator/"
+if [[ -d "$PROJ_DIR/remote.git" ]]; then
+    echo "  Bare repo:  $PROJ_DIR/remote.git/"
+fi
 echo "============================================"
 
 exit $EXIT_CODE
