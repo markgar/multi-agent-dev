@@ -1,6 +1,6 @@
 """Tests for milestone parsing, boundary tracking, and progress helpers."""
 
-from agent.milestone import (
+from agentic_dev.milestone import (
     count_unstarted_milestones,
     get_next_eligible_story,
     has_pending_backlog_stories,

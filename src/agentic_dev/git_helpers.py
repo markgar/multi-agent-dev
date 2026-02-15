@@ -2,7 +2,7 @@
 
 import time
 
-from agent.utils import log, run_cmd
+from agentic_dev.utils import log, run_cmd
 
 
 def git_push_with_retry(agent_name: str = "", max_attempts: int = 3, backoff: int = 5) -> bool:

@@ -3,7 +3,7 @@
 import os
 from datetime import datetime
 
-from agent.utils import resolve_logs_dir
+from agentic_dev.utils import resolve_logs_dir
 
 _BUILDER_DONE_FILE = "builder.done"
 _BUILDER_LOG_FILE = "builder.log"

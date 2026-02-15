@@ -15,7 +15,7 @@ dependencies = [
 ]
 
 [project.scripts]
-agentic-dev = "agent.cli:app"
+agentic-dev = "agentic_dev.cli:app"
 
 [tool.setuptools.packages.find]
 where = ["src"]

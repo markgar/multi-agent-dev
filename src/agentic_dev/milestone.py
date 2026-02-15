@@ -3,7 +3,7 @@
 import os
 import re
 
-from agent.utils import resolve_logs_dir, run_cmd
+from agentic_dev.utils import resolve_logs_dir, run_cmd
 
 _MILESTONE_CHECKPOINT_FILE = "reviewer.milestone"
 _MILESTONE_LOG_FILE = "milestones.log"

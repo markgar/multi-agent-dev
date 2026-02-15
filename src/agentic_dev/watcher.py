@@ -7,29 +7,29 @@ from typing import Annotated
 
 import typer
 
-from agent.git_helpers import (
+from agentic_dev.git_helpers import (
     git_push_with_retry,
     is_coordination_only_commit,
     is_merge_commit,
     is_reviewer_only_commit,
 )
-from agent.milestone import (
+from agentic_dev.milestone import (
     load_milestone_boundaries,
     load_reviewed_milestones,
     save_milestone_checkpoint,
 )
-from agent.legacy_watchers import reviewoncommit, testoncommit
-from agent.prompts import (
+from agentic_dev.legacy_watchers import reviewoncommit, testoncommit
+from agentic_dev.prompts import (
     REVIEWER_BATCH_PROMPT,
     REVIEWER_COMMIT_PROMPT,
     REVIEWER_MILESTONE_PROMPT,
 )
-from agent.sentinel import (
+from agentic_dev.sentinel import (
     is_builder_done,
     load_reviewer_checkpoint,
     save_reviewer_checkpoint,
 )
-from agent.utils import log, run_cmd, run_copilot
+from agentic_dev.utils import log, run_cmd, run_copilot
 
 
 def register(app: typer.Typer) -> None:

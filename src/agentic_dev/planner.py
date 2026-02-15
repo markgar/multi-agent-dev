@@ -4,14 +4,14 @@ import os
 
 import typer
 
-from agent.milestone import get_tasks_per_milestone
-from agent.prompts import (
+from agentic_dev.milestone import get_tasks_per_milestone
+from agentic_dev.prompts import (
     PLANNER_COMPLETENESS_PROMPT,
     PLANNER_INITIAL_PROMPT,
     PLANNER_PROMPT,
     PLANNER_SPLIT_PROMPT,
 )
-from agent.utils import log, run_copilot
+from agentic_dev.utils import log, run_copilot
 
 
 _MAX_TASKS_PER_MILESTONE = 10

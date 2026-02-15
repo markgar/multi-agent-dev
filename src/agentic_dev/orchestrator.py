@@ -7,16 +7,16 @@ from typing import Annotated
 
 import typer
 
-from agent.bootstrap import run_bootstrap, write_workspace_readme
-from agent.builder import build
-from agent.planner import check_milestone_sizes, plan
-from agent.prompts import (
+from agentic_dev.bootstrap import run_bootstrap, write_workspace_readme
+from agentic_dev.builder import build
+from agentic_dev.planner import check_milestone_sizes, plan
+from agentic_dev.prompts import (
     COPILOT_INSTRUCTIONS_PROMPT,
     COPILOT_INSTRUCTIONS_TEMPLATE,
 )
-from agent.sentinel import clear_builder_done
-from agent.terminal import spawn_agent_in_terminal
-from agent.utils import console, log, pushd, run_cmd, run_copilot
+from agentic_dev.sentinel import clear_builder_done
+from agentic_dev.terminal import spawn_agent_in_terminal
+from agentic_dev.utils import console, log, pushd, run_cmd, run_copilot
 
 
 def register(app: typer.Typer) -> None:

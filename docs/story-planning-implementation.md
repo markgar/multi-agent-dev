@@ -48,7 +48,7 @@ Technical decisions only (~40-60 lines): stack, architecture, cross-cutting conc
 
 ## Prompt Locations
 
-All prompts and key functions are in `src/agent/`. See the source files directly for current line numbers — they shift as prompts are edited.
+All prompts and key functions are in `src/agentic_dev/`. See the source files directly for current line numbers — they shift as prompts are edited.
 
 | Constant / Function | File |
 |----------|------|
@@ -78,7 +78,7 @@ All prompts and key functions are in `src/agent/`. See the source files directly
 
 ### Phase 4 — Backlog Parsing Helpers (do first, zero risk)
 
-**Files:** `src/agent/milestone.py`, `tests/test_milestone.py`
+**Files:** `src/agentic_dev/milestone.py`, `tests/test_milestone.py`
 
 **4.1** Add to `milestone.py`:
 
@@ -122,7 +122,7 @@ Existing `parse_milestones_from_text` tests must still pass unchanged.
 
 ### Phase 1 — Lean Bootstrap Prompts
 
-**Files:** `src/agent/prompts.py` (lines 8–44)
+**Files:** `src/agentic_dev/prompts.py` (lines 8–44)
 
 **1.1** Rewrite `BOOTSTRAP_PROMPT`: SPEC.md instruction becomes "technical decisions document (~40-60 lines). Include: (1) high-level summary, (2) tech stack, (3) architecture — layers, dependency rules, project structure, (4) cross-cutting concerns — auth, multi-tenancy, error handling, (5) acceptance criteria at feature level. Do NOT include entity fields, API routes, page layouts, DTO shapes." README.md becomes "~15 lines — what it is, how to build/run, how to develop." Keep placeholders `{description}`, `{gh_user}`, `{name}`.
 

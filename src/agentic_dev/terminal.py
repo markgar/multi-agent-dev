@@ -6,7 +6,7 @@ import subprocess
 import sys
 import tempfile
 
-from agent.utils import check_command, console, is_macos, is_windows
+from agentic_dev.utils import check_command, console, is_macos, is_windows
 
 
 def build_agent_script(working_dir: str, command: str, platform: str) -> str:
@@ -44,7 +44,7 @@ def _resolve_windows_command(command: str) -> list[str]:
     path_exe = shutil.which("agentic-dev")
     if path_exe:
         return [path_exe, command]
-    return [sys.executable, "-m", "agent", command]
+    return [sys.executable, "-m", "agentic_dev", command]
 
 
 def _spawn_windows(working_dir: str, command: str) -> None:

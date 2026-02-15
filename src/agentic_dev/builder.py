@@ -7,7 +7,7 @@ from typing import Annotated
 
 import typer
 
-from agent.milestone import (
+from agentic_dev.milestone import (
     count_unstarted_milestones_in_file,
     get_completed_milestones,
     get_current_milestone_progress,
@@ -18,9 +18,9 @@ from agent.milestone import (
     parse_milestones_from_text,
     record_milestone_boundary,
 )
-from agent.prompts import BUILDER_PROMPT
-from agent.sentinel import are_agents_idle, write_builder_done
-from agent.utils import has_unchecked_items, log, run_cmd, run_copilot
+from agentic_dev.prompts import BUILDER_PROMPT
+from agentic_dev.sentinel import are_agents_idle, write_builder_done
+from agentic_dev.utils import has_unchecked_items, log, run_cmd, run_copilot
 
 
 def register(app: typer.Typer) -> None:
@@ -168,7 +168,7 @@ def _handle_fix_only_replan(state: BuildState) -> bool:
 
 def _try_expand_backlog(state: BuildState) -> bool:
     """Expand the next eligible backlog story into a milestone. Returns True if a milestone was created."""
-    from agent.planner import check_milestone_sizes, plan
+    from agentic_dev.planner import check_milestone_sizes, plan
 
     next_story = get_next_eligible_story_in_file("BACKLOG.md")
     if not next_story:
@@ -186,7 +186,7 @@ def _try_expand_backlog(state: BuildState) -> bool:
 
 def _try_expand_legacy_roadmap(state: BuildState) -> bool:
     """Expand the next story from a legacy TASKS.md roadmap. Returns True if a milestone was created."""
-    from agent.planner import check_milestone_sizes, plan
+    from agentic_dev.planner import check_milestone_sizes, plan
 
     log("builder", "")
     log("builder", "[Milestone Planner] Expanding next story (legacy roadmap)...", style="magenta")
@@ -224,7 +224,7 @@ def _handle_backlog_expansion(state: BuildState) -> bool:
 
 def _handle_loop_replan(state: BuildState, progress: dict | None) -> bool:
     """Handle the re-plan decision when in loop mode after cycle 1. Returns True if work remains."""
-    from agent.planner import check_milestone_sizes, plan
+    from agentic_dev.planner import check_milestone_sizes, plan
 
     if state.fix_only_cycles > 0:
         return _handle_fix_only_replan(state)

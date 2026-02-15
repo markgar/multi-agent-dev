@@ -1,13 +1,13 @@
 """Tests for build loop decision logic and stuck detection."""
 
-from agent.builder import (
+from agentic_dev.builder import (
     BuildState,
     _MAX_FIX_ONLY_CYCLES,
     _MAX_POST_COMPLETION_REPLANS,
     classify_remaining_work,
     update_milestone_retry_state,
 )
-from agent.sentinel import check_agent_idle
+from agentic_dev.sentinel import check_agent_idle
 
 
 def test_all_work_done_when_agents_idle():

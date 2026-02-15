@@ -8,15 +8,15 @@ from typing import Annotated
 
 import typer
 
-from agent.git_helpers import git_push_with_retry
-from agent.milestone import (
+from agentic_dev.git_helpers import git_push_with_retry
+from agentic_dev.milestone import (
     load_milestone_boundaries,
     load_reviewed_milestones,
     save_milestone_checkpoint,
 )
-from agent.prompts import VALIDATOR_MILESTONE_PROMPT
-from agent.sentinel import is_builder_done
-from agent.utils import log, run_cmd, run_copilot, resolve_logs_dir
+from agentic_dev.prompts import VALIDATOR_MILESTONE_PROMPT
+from agentic_dev.sentinel import is_builder_done
+from agentic_dev.utils import log, run_cmd, run_copilot, resolve_logs_dir
 
 
 _VALIDATOR_MILESTONE_CHECKPOINT = "validator.milestone"

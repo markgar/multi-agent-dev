@@ -6,8 +6,8 @@ from typing import Annotated
 
 import typer
 
-from agent.utils import console
-from agent.version import get_version
+from agentic_dev.utils import console
+from agentic_dev.version import get_version
 
 
 def _version_callback(value: bool):
@@ -32,13 +32,13 @@ def main(
     """Multi-agent autonomous development orchestrator."""
 
 # Register commands from submodules
-from agent import bootstrap as _bootstrap_mod
-from agent import builder as _builder_mod
-from agent import orchestrator as _orchestrator_mod
-from agent import planner as _planner_mod
-from agent import watcher as _watcher_mod
-from agent import tester as _tester_mod
-from agent import validator as _validator_mod
+from agentic_dev import bootstrap as _bootstrap_mod
+from agentic_dev import builder as _builder_mod
+from agentic_dev import orchestrator as _orchestrator_mod
+from agentic_dev import planner as _planner_mod
+from agentic_dev import watcher as _watcher_mod
+from agentic_dev import tester as _tester_mod
+from agentic_dev import validator as _validator_mod
 
 _bootstrap_mod.register(app)
 _builder_mod.register(app)

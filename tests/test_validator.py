@@ -1,8 +1,8 @@
 """Tests for validator milestone filtering and sentinel integration."""
 
-from agent.validator import find_unvalidated_milestones
-from agent.sentinel import check_agent_idle
-from agent.utils import find_project_root
+from agentic_dev.validator import find_unvalidated_milestones
+from agentic_dev.sentinel import check_agent_idle
+from agentic_dev.utils import find_project_root
 
 
 # --- validator milestone filtering ---

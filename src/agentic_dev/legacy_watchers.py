@@ -7,8 +7,8 @@ They are not launched by 'go' or 'resume' but remain available for manual use.
 import time
 from datetime import datetime
 
-from agent.prompts import REVIEWER_PROMPT, TESTER_PROMPT
-from agent.utils import log, run_cmd, run_copilot
+from agentic_dev.prompts import REVIEWER_PROMPT, TESTER_PROMPT
+from agentic_dev.utils import log, run_cmd, run_copilot
 
 
 def _watch_loop(agent_name: str, prompt: str, label: str) -> None:

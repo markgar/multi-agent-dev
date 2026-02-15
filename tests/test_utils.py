@@ -1,11 +1,11 @@
 """Tests for sentinel logic, unchecked item counting, path resolution, and commit filtering."""
 
-from agent.sentinel import check_builder_done_status
-from agent.utils import count_unchecked_items, find_project_root
-from agent.git_helpers import is_reviewer_only_files, is_coordination_only_files
-from agent.terminal import build_agent_script
-from agent.watcher import find_unreviewed_milestones
-from agent.tester import find_untested_milestones
+from agentic_dev.sentinel import check_builder_done_status
+from agentic_dev.utils import count_unchecked_items, find_project_root
+from agentic_dev.git_helpers import is_reviewer_only_files, is_coordination_only_files
+from agentic_dev.terminal import build_agent_script
+from agentic_dev.watcher import find_unreviewed_milestones
+from agentic_dev.tester import find_untested_milestones
 
 
 # --- sentinel ---

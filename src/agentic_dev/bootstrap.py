@@ -5,8 +5,8 @@ from typing import Annotated
 
 import typer
 
-from agent.prompts import BOOTSTRAP_PROMPT, LOCAL_BOOTSTRAP_PROMPT
-from agent.utils import (
+from agentic_dev.prompts import BOOTSTRAP_PROMPT, LOCAL_BOOTSTRAP_PROMPT
+from agentic_dev.utils import (
     check_command,
     console,
     is_macos,

@@ -20,29 +20,29 @@ This software is entirely written by GitHub Copilot. The code is structured to b
 
 ## Project structure
 
-- **Source code lives in `src/agent/`** — this is the only directory to edit.
+- **Source code lives in `src/agentic_dev/`** — this is the only directory to edit.
 - **`tests/`** contains unit tests and the end-to-end test harness (`tests/harness/`).
 - **`build/`** is a stale setuptools artifact. Delete it if present; use `pip install -e .` for development.
-- **`pyproject.toml`** defines the package. The project uses a `src/` layout with the package name `agent`.
+- **`pyproject.toml`** defines the package. The project uses a `src/` layout with the package name `agentic_dev`.
 
 ## Key files
 
-- `src/agent/cli.py` — App definition and command registration: `status`.
-- `src/agent/orchestrator.py` — The `go` command: project detection, agent launching, copilot-instructions generation.
-- `src/agent/bootstrap.py` — Project scaffolding: repo creation, cloning reviewer/tester/validator copies.
-- `src/agent/planner.py` — Backlog planner and milestone planner: `plan`, `check_milestone_sizes`.
-- `src/agent/builder.py` — Build loop: milestone completion, retry logic.
-- `src/agent/watcher.py` — Commit watcher: per-commit reviews, milestone-level reviews.
-- `src/agent/tester.py` — Test loop: milestone-triggered testing.
-- `src/agent/validator.py` — Validator loop: milestone-triggered container build and acceptance testing.
-- `src/agent/terminal.py` — Terminal spawning helper for launching agents in new windows.
-- `src/agent/prompts.py` — All LLM prompt templates. Constants only, no logic.
-- `src/agent/utils.py` — Core helpers: logging, command execution, platform detection.
-- `src/agent/git_helpers.py` — Git operations: push with retry, commit classification.
-- `src/agent/sentinel.py` — Builder-done sentinel, agent-idle detection, and reviewer checkpoint persistence.
-- `src/agent/milestone.py` — Milestone parsing, boundary tracking, and per-agent milestone checkpoints.
-- `src/agent/config.py` — Language/stack configurations and prerequisites.
-- `src/agent/legacy_watchers.py` — Deprecated `reviewoncommit` and `testoncommit` commands (not used by `go`).
+- `src/agentic_dev/cli.py` — App definition and command registration: `status`.
+- `src/agentic_dev/orchestrator.py` — The `go` command: project detection, agent launching, copilot-instructions generation.
+- `src/agentic_dev/bootstrap.py` — Project scaffolding: repo creation, cloning reviewer/tester/validator copies.
+- `src/agentic_dev/planner.py` — Backlog planner and milestone planner: `plan`, `check_milestone_sizes`.
+- `src/agentic_dev/builder.py` — Build loop: milestone completion, retry logic.
+- `src/agentic_dev/watcher.py` — Commit watcher: per-commit reviews, milestone-level reviews.
+- `src/agentic_dev/tester.py` — Test loop: milestone-triggered testing.
+- `src/agentic_dev/validator.py` — Validator loop: milestone-triggered container build and acceptance testing.
+- `src/agentic_dev/terminal.py` — Terminal spawning helper for launching agents in new windows.
+- `src/agentic_dev/prompts.py` — All LLM prompt templates. Constants only, no logic.
+- `src/agentic_dev/utils.py` — Core helpers: logging, command execution, platform detection.
+- `src/agentic_dev/git_helpers.py` — Git operations: push with retry, commit classification.
+- `src/agentic_dev/sentinel.py` — Builder-done sentinel, agent-idle detection, and reviewer checkpoint persistence.
+- `src/agentic_dev/milestone.py` — Milestone parsing, boundary tracking, and per-agent milestone checkpoints.
+- `src/agentic_dev/config.py` — Language/stack configurations and prerequisites.
+- `src/agentic_dev/legacy_watchers.py` — Deprecated `reviewoncommit` and `testoncommit` commands (not used by `go`).
 
 ## Architecture
 
@@ -55,7 +55,7 @@ The build loop (Python code in `builder.py`) handles deterministic orchestration
 
 ## Testing conventions
 
-- **Tests live in `tests/`** mirroring `src/agent/` — e.g. `tests/test_milestone.py` tests `agent.milestone`.
+- **Tests live in `tests/`** mirroring `src/agentic_dev/` — e.g. `tests/test_milestone.py` tests `agentic_dev.milestone`.
 - **Use pytest.** No unittest classes. Plain functions with descriptive names.
 - **Test the contract, not the implementation.** A test should describe expected behavior in terms a user would understand — not mirror the code's internal branching. If the test would break when you refactor internals without changing behavior, it's too tightly coupled.
 - **Name tests as behavioral expectations.** `test_stuck_milestone_stops_after_three_retries` not `test_update_milestone_retry_state_returns_true`. The test name should read like a requirement.

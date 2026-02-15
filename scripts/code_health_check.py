@@ -28,7 +28,7 @@ import json
 import os
 import sys
 
-DEFAULT_SRC_DIR = "src/agent"
+DEFAULT_SRC_DIR = "src/agentic_dev"
 DEFAULT_WARN_FUNC_LINES = 40
 DEFAULT_HARD_FUNC_LINES = 60
 DEFAULT_WARN_FILE_LINES = 300
