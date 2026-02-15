@@ -21,13 +21,13 @@ Runs once internally when you call `go`. Do not run `bootstrap` directly — it 
 
 ## Planner
 
-Runs on demand via `plan`. Called automatically by `go` before the first build cycle, and called again by the build loop between milestones to expand the next backlog story.
+Runs on demand via `plan`. Called automatically by `go` before the first build cycle (as the **Backlog Planner**), and called again by the build loop between milestones (as the **Milestone Planner**) to expand the next backlog story.
 
 The planner manages three files: **BACKLOG.md** (ordered story queue), **TASKS.md** (current and completed milestones), and **SPEC.md** (technical decisions). It plans **one milestone at a time** — never multiple milestones in a single run.
 
 The planner uses different prompts depending on the project state:
 
-### Initial Planning (fresh project)
+### Backlog Planning (fresh project)
 
 When no BACKLOG.md exists, the planner runs two focused Copilot calls:
 
@@ -36,7 +36,7 @@ When no BACKLOG.md exists, the planner runs two focused Copilot calls:
 
 This two-step approach prevents the LLM from self-validating — the completeness pass reviews with fresh eyes.
 
-### Continuing Planning (between milestones)
+### Milestone Planning (between milestones)
 
 When BACKLOG.md already exists, the planner determines which situation applies:
 
@@ -70,15 +70,15 @@ N. [x] Story name <!-- depends: 1, 2 -->
 - **Milestone acceptance context.** Each `## Milestone:` heading must be followed by a `> **Validates:**` blockquote describing what the validator should test — endpoint paths, HTTP methods, expected status codes, pages that should render, CLI commands. This is the validator's primary test plan.
 - **Read the codebase first (cases B/C).** Match existing patterns — if a BaseRepository<T> exists, use it; if DTOs are records, make new DTOs records.
 
-> **Initial planning prompt:** You are a planning-only orchestrator. Your job is to decompose a project's requirements into a complete backlog of stories, then plan the first milestone. [...story decomposition rules, task sizing, milestone sizing, detail requirements, containerization/testing exclusions...]
+> **Backlog planning prompt:** You are a planning-only orchestrator. Your job is to decompose a project's requirements into a complete backlog of stories, then plan the first milestone. [...story decomposition rules, task sizing, milestone sizing, detail requirements, containerization/testing exclusions...]
 
 > **Completeness check prompt:** You are a planning quality reviewer. Your ONLY job is to verify that BACKLOG.md completely covers REQUIREMENTS.md and SPEC.md. Walk through every ## and ### heading in REQUIREMENTS.md. For each section, verify at least one story covers it. Also check SPEC.md for technical decisions that require setup work. If gaps exist, add stories. [...gap identification, renumbering rules...]
 
-> **Continuing planning prompt:** You are a planning-only orchestrator. Your job is to manage BACKLOG.md, SPEC.md, and TASKS.md. ASSESS THE PROJECT STATE. Determine: (B) Continuing — find next eligible story, expand into milestone. (C) Evolving — update SPEC.md, add new stories, then do Case B. [...task sizing, milestone sizing, detail requirements, codebase reading...]
+> **Milestone planning prompt:** You are a planning-only orchestrator. Your job is to manage BACKLOG.md, SPEC.md, and TASKS.md. ASSESS THE PROJECT STATE. Determine: (B) Continuing — find next eligible story, expand into milestone. (C) Evolving — update SPEC.md, add new stories, then do Case B. [...task sizing, milestone sizing, detail requirements, codebase reading...]
 
 **Post-plan enforcement:** After the planner runs, the build loop checks milestone sizes. If any uncompleted milestone exceeds 10 tasks, the planner is re-invoked with a targeted split prompt. If still oversized after one retry, a warning is logged and the build proceeds.
 
-**Between-milestone re-planning:** After each milestone completes, the build loop calls the planner again to expand the next backlog story. If no eligible story exists (all remaining stories have unmet dependencies), a dependency deadlock warning is logged. If the backlog is empty, the build is done.
+**Between-milestone re-planning:** After each milestone completes, the build loop calls the milestone planner again to expand the next backlog story. If no eligible story exists (all remaining stories have unmet dependencies), a dependency deadlock warning is logged. If the backlog is empty, the build is done.
 
 **Creates:** BACKLOG.md (first run), TASKS.md (first run)  
 **Updates:** BACKLOG.md (checks off stories), TASKS.md (appends milestones), SPEC.md (when new requirements are detected — case C)  
@@ -107,7 +107,7 @@ The generated file includes:
 
 ## Builder
 
-Runs via `build`. Completes one milestone per cycle, then stops. Between milestones the build loop calls the planner to expand the next backlog story. After all stories are done, waits for the reviewer, tester, and validator to go idle and verifies that all checklists are clean before writing `logs/builder.done` to signal shutdown.
+Runs via `build`. Completes one milestone per cycle, then stops. Between milestones the build loop calls the milestone planner to expand the next backlog story. After all stories are done, waits for the reviewer, tester, and validator to go idle and verifies that all checklists are clean before writing `logs/builder.done` to signal shutdown.
 
 > Before starting, review README.md, SPEC.md, and TASKS.md to understand the project's purpose and plan. Read .github/copilot-instructions.md if it exists — follow its coding guidelines and conventions in all code you write. Read DEPLOY.md if it exists — it contains deployment configuration and lessons learned from the validator agent. If it mentions required env vars, ports, or startup requirements, ensure your code is compatible. Do NOT modify DEPLOY.md — only the validator agent manages that file. Only build, fix, or keep code that serves that purpose. Remove any scaffolding, template code, or functionality that does not belong. After any refactoring — including review fixes — check for dead code left behind and remove it. Before your first commit in each session, review .gitignore and ensure it covers the project's current tech stack; update it when you introduce a new framework or build tool. When completing a task that changes the project structure, key files, architecture, or conventions, update .github/copilot-instructions.md to reflect the change (it is a style guide — describe file roles and coding patterns, not implementation details). Now look at BUGS.md first. Fix ALL unfixed bugs — bugs are never deferred. Then look at REVIEWS.md. Address unchecked review items one at a time. Once all bugs and review items are fixed, move to TASKS.md. Find the first milestone that has unchecked tasks — this is your current milestone. Complete every task in this milestone, then STOP IMMEDIATELY. Do not continue to the next milestone. For each task: write the code AND mark it complete in TASKS.md, then commit BOTH together in a single commit with a meaningful message. After each commit, run git pull --rebase and push. When every task in the current milestone is checked, verify the application still builds and runs. Once verified, you are done for this session.
 

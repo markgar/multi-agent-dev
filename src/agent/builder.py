@@ -13,56 +13,19 @@ from agent.milestone import (
     get_current_milestone_progress,
     get_last_milestone_end_sha,
     get_next_eligible_story_in_file,
-    get_tasks_per_milestone,
     has_pending_backlog_stories_in_file,
     has_unexpanded_stories_in_file,
     parse_milestones_from_text,
     record_milestone_boundary,
 )
-from agent.prompts import BUILDER_PROMPT, PLANNER_SPLIT_PROMPT
+from agent.prompts import BUILDER_PROMPT
 from agent.sentinel import are_agents_idle, write_builder_done
 from agent.utils import has_unchecked_items, log, run_cmd, run_copilot
-
-
-_MAX_TASKS_PER_MILESTONE = 10
 
 
 def register(app: typer.Typer) -> None:
     """Register builder commands on the shared app."""
     app.command()(build)
-
-
-def check_milestone_sizes() -> None:
-    """If any uncompleted milestone exceeds the task limit, ask the planner to split it."""
-    oversized = [
-        ms for ms in get_tasks_per_milestone("TASKS.md")
-        if ms["task_count"] > _MAX_TASKS_PER_MILESTONE
-    ]
-    for ms in oversized:
-        log(
-            "planner",
-            f"Milestone '{ms['name']}' has {ms['task_count']} tasks (max {_MAX_TASKS_PER_MILESTONE}). "
-            f"Asking planner to split it...",
-            style="yellow",
-        )
-        prompt = PLANNER_SPLIT_PROMPT.format(
-            milestone_name=ms["name"],
-            task_count=ms["task_count"],
-        )
-        run_copilot("planner", prompt)
-
-    # Verify once — if still oversized after one attempt, log a warning and proceed
-    if oversized:
-        still_oversized = [
-            ms for ms in get_tasks_per_milestone("TASKS.md")
-            if ms["task_count"] > _MAX_TASKS_PER_MILESTONE
-        ]
-        for ms in still_oversized:
-            log(
-                "planner",
-                f"WARNING: Milestone '{ms['name']}' still has {ms['task_count']} tasks after split attempt.",
-                style="red",
-            )
 
 
 def build(
@@ -183,8 +146,8 @@ def update_milestone_retry_state(
 
 def _detect_milestone_progress(state: BuildState, loop: bool) -> bool:
     """Check milestone progress, re-plan if needed. Return False when stuck."""
-    # Import here to avoid circular import — plan lives in cli.py
-    from agent.cli import plan
+    # Import here to avoid circular import — plan and check_milestone_sizes live in planner.py
+    from agent.planner import check_milestone_sizes, plan
 
     progress = get_current_milestone_progress("TASKS.md")
     current_name = progress["name"] if progress else None
@@ -233,13 +196,13 @@ def _detect_milestone_progress(state: BuildState, loop: bool) -> bool:
                 progress = get_current_milestone_progress("TASKS.md")
                 if progress:
                     log("builder", "")
-                    log("builder", "[Planner] New milestone detected — exiting fix-only mode.", style="magenta")
+                    log("builder", "[Milestone Planner] New milestone detected — exiting fix-only mode.", style="magenta")
                     state.fix_only_cycles = 0
                     state.last_milestone_done_count = progress["done"]
                     state.last_milestone_name = progress["name"]
                     return True
                 log("builder", "")
-                log("builder", "[Planner] Skipping re-plan (already in fix-only mode).", style="dim")
+                log("builder", "[Milestone Planner] Skipping re-plan (already in fix-only mode).", style="dim")
                 return False
             elif not progress and state.post_completion_replans >= _MAX_POST_COMPLETION_REPLANS:
                 # All milestones done — check backlog for pending stories
@@ -247,48 +210,48 @@ def _detect_milestone_progress(state: BuildState, loop: bool) -> bool:
                     next_story = get_next_eligible_story_in_file("BACKLOG.md")
                     if next_story:
                         log("builder", "")
-                        log("builder", f"[Planner] Planning next story: {next_story['name']}...", style="magenta")
+                        log("builder", f"[Milestone Planner] Planning next story: {next_story['name']}...", style="magenta")
                         state.post_completion_replans = 0  # Reset — this is productive re-planning
                         plan()
                         check_milestone_sizes()
                         progress = get_current_milestone_progress("TASKS.md")
                         if not progress:
                             log("builder", "")
-                            log("builder", "[Planner] WARNING: Story expansion produced no new milestones.", style="bold yellow")
+                            log("builder", "[Milestone Planner] WARNING: Story expansion produced no new milestones.", style="bold yellow")
                             return False
                         state.last_milestone_done_count = progress["done"]
                         state.last_milestone_name = progress["name"]
                         unstarted = count_unstarted_milestones_in_file("TASKS.md")
                         if unstarted > 1:
-                            log("builder", f"[Planner] WARNING: {unstarted} unstarted milestones queued (expected 1).", style="bold yellow")
+                            log("builder", f"[Milestone Planner] WARNING: {unstarted} unstarted milestones queued (expected 1).", style="bold yellow")
                     else:
                         log("builder", "")
-                        log("builder", "[Planner] WARNING: Backlog has pending stories but none are eligible (dependency deadlock).", style="bold yellow")
+                        log("builder", "[Milestone Planner] WARNING: Backlog has pending stories but none are eligible (dependency deadlock).", style="bold yellow")
                         return False
                 elif has_unexpanded_stories_in_file("TASKS.md"):
                     # Legacy fallback: old-format TASKS.md with ## Roadmap section
                     log("builder", "")
-                    log("builder", "[Planner] Expanding next story (legacy roadmap)...", style="magenta")
+                    log("builder", "[Milestone Planner] Expanding next story (legacy roadmap)...", style="magenta")
                     state.post_completion_replans = 0
                     plan()
                     check_milestone_sizes()
                     progress = get_current_milestone_progress("TASKS.md")
                     if not progress:
                         log("builder", "")
-                        log("builder", "[Planner] WARNING: Story expansion produced no new milestones.", style="bold yellow")
+                        log("builder", "[Milestone Planner] WARNING: Story expansion produced no new milestones.", style="bold yellow")
                         return False
                     state.last_milestone_done_count = progress["done"]
                     state.last_milestone_name = progress["name"]
                 else:
                     # No stories left — apply existing tail-chasing guard
                     log("builder", "")
-                    log("builder", "[Planner] Skipping re-plan (backlog empty, replan limit reached).", style="dim")
+                    log("builder", "[Milestone Planner] Skipping re-plan (backlog empty, replan limit reached).", style="dim")
                     return False
             else:
                 if not progress:
                     state.post_completion_replans += 1
                 log("builder", "")
-                log("builder", f"[Planner] Re-evaluating task plan (cycle {state.cycle_count})...", style="magenta")
+                log("builder", f"[Milestone Planner] Re-evaluating task plan (cycle {state.cycle_count})...", style="magenta")
                 plan()
                 check_milestone_sizes()
 

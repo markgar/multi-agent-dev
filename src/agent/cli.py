@@ -10,9 +10,6 @@ import typer
 from agent.prompts import (
     COPILOT_INSTRUCTIONS_PROMPT,
     COPILOT_INSTRUCTIONS_TEMPLATE,
-    PLANNER_COMPLETENESS_PROMPT,
-    PLANNER_INITIAL_PROMPT,
-    PLANNER_PROMPT,
 )
 from agent.sentinel import clear_builder_done
 from agent.utils import console, log, pushd, run_cmd, run_copilot
@@ -43,19 +40,22 @@ def main(
 # Register commands from submodules
 from agent import bootstrap as _bootstrap_mod
 from agent import builder as _builder_mod
+from agent import planner as _planner_mod
 from agent import watcher as _watcher_mod
 from agent import tester as _tester_mod
 from agent import validator as _validator_mod
 
 _bootstrap_mod.register(app)
 _builder_mod.register(app)
+_planner_mod.register(app)
 _watcher_mod.register(app)
 _tester_mod.register(app)
 _validator_mod.register(app)
 
-# Re-export for internal use by builder (which calls plan() in its loop)
+# Re-export for internal use by builder and orchestrator
 from agent.bootstrap import run_bootstrap, write_workspace_readme
-from agent.builder import build, check_milestone_sizes
+from agent.builder import build
+from agent.planner import check_milestone_sizes, plan
 from agent.terminal import spawn_agent_in_terminal
 
 
@@ -195,60 +195,6 @@ def status():
     console.print()
 
 
-@app.command()
-def plan(requirements_changed: bool = False):
-    """Run the planner to create or update TASKS.md based on SPEC.md."""
-    log("planner", "")
-    log("planner", "[Planner] Evaluating project state...", style="magenta")
-    log("planner", "")
-
-    is_fresh = not os.path.exists("BACKLOG.md")
-
-    if is_fresh:
-        # Case A: fresh project — create backlog and first milestone
-        log("planner", "[Planner] Fresh project — creating backlog and first milestone...", style="magenta")
-        exit_code = run_copilot("planner", PLANNER_INITIAL_PROMPT)
-        if exit_code != 0:
-            log("planner", "")
-            log("planner", "======================================", style="bold red")
-            log("planner", " Planner failed! Check errors above", style="bold red")
-            log("planner", "======================================", style="bold red")
-            return
-
-        # Completeness pass: validate backlog covers all requirements
-        log("planner", "")
-        log("planner", "[Planner] Running completeness check on backlog...", style="magenta")
-        exit_code = run_copilot("planner", PLANNER_COMPLETENESS_PROMPT)
-        if exit_code != 0:
-            log("planner", "[Planner] WARNING: Completeness check failed. Continuing with existing backlog.", style="bold yellow")
-    else:
-        # Case B/C: continuing or evolving project
-        prompt = PLANNER_PROMPT
-        if requirements_changed:
-            prefix = (
-                "IMPORTANT: REQUIREMENTS.md was JUST updated with new requirements this session. "
-                "This is almost certainly Case C — new features or changes were added. "
-                "Compare REQUIREMENTS.md against the BACKLOG.md story list and SPEC.md technical "
-                "decisions to identify new stories that need adding. Do NOT conclude that "
-                "'everything is already covered' without checking each requirement against "
-                "the backlog and existing milestones.\n\n"
-            )
-            prompt = prefix + PLANNER_PROMPT
-
-        exit_code = run_copilot("planner", prompt)
-        if exit_code != 0:
-            log("planner", "")
-            log("planner", "======================================", style="bold red")
-            log("planner", " Planner failed! Check errors above", style="bold red")
-            log("planner", "======================================", style="bold red")
-            return
-
-    log("planner", "")
-    log("planner", "======================================", style="bold magenta")
-    log("planner", " Plan updated!", style="bold magenta")
-    log("planner", "======================================", style="bold magenta")
-
-
 def _generate_copilot_instructions() -> None:
     """Generate .github/copilot-instructions.md from SPEC.md and TASKS.md."""
     if os.path.exists(os.path.join(".github", "copilot-instructions.md")):
@@ -363,7 +309,7 @@ def go(
             return
 
         os.chdir(os.path.join(parent_dir, "builder"))
-        _launch_agents_and_build(parent_dir, "Running planner...")
+        _launch_agents_and_build(parent_dir, "Running backlog planner...")
 
     else:
         # --- Existing repo: ensure agent clones exist and are current ---
@@ -384,7 +330,7 @@ def go(
         if new_description:
             _update_requirements(os.path.join(parent_dir, "builder"), new_description)
 
-        _launch_agents_and_build(parent_dir, "Evaluating plan...", requirements_changed=bool(new_description))
+        _launch_agents_and_build(parent_dir, "Running milestone planner...", requirements_changed=bool(new_description))
 
     os.chdir(start_dir)
 
