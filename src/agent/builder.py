@@ -30,7 +30,7 @@ def register(app: typer.Typer) -> None:
 
 def build(
     loop: Annotated[bool, typer.Option(help="Run continuously until all work is done")] = False,
-):
+) -> None:
     """Fix bugs, address reviews, then complete the current milestone. One milestone per cycle."""
     if not os.path.exists("TASKS.md"):
         log("builder", "No TASKS.md found. Run 'plan' first to generate tasks.", style="yellow")

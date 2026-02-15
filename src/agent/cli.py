@@ -28,7 +28,7 @@ def main(
         bool,
         typer.Option("--version", "-v", help="Show version and exit.", callback=_version_callback, is_eager=True),
     ] = False,
-):
+) -> None:
     """Multi-agent autonomous development orchestrator."""
 
 # Register commands from submodules
@@ -55,7 +55,7 @@ _validator_mod.register(app)
 
 
 @app.command()
-def status():
+def status() -> None:
     """Quick view of where things stand — shows SPEC, TASKS, REVIEWS, BUGS."""
     console.print()
 

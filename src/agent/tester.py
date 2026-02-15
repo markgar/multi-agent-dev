@@ -72,7 +72,7 @@ def testloop(
     tester_dir: Annotated[
         str, typer.Option(help="Path to the tester git clone")
     ] = "",
-):
+) -> None:
     """Watch for completed milestones and run scoped tests against each one.
 
     Polls logs/milestones.log for newly completed milestones. When one appears,

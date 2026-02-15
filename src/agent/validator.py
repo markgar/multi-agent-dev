@@ -117,7 +117,7 @@ def validateloop(
     validator_dir: Annotated[
         str, typer.Option(help="Path to the validator git clone")
     ] = "",
-):
+) -> None:
     """Watch for completed milestones, build containers, and run acceptance tests.
 
     Polls logs/milestones.log for newly completed milestones. When one appears,

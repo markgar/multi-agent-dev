@@ -6,6 +6,7 @@ import re
 import shutil
 import subprocess
 import sys
+from collections.abc import Generator
 from datetime import datetime
 
 from rich.console import Console
@@ -14,7 +15,7 @@ console = Console()
 
 
 @contextlib.contextmanager
-def pushd(path: str):
+def pushd(path: str) -> Generator[None, None, None]:
     """Context manager that changes to a directory and restores on exit."""
     prev = os.getcwd()
     os.chdir(path)

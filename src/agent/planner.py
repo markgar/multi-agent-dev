@@ -22,7 +22,7 @@ def register(app: typer.Typer) -> None:
     app.command()(plan)
 
 
-def plan(requirements_changed: bool = False):
+def plan(requirements_changed: bool = False) -> None:
     """Run the planner to create or update TASKS.md based on SPEC.md."""
     log("planner", "")
     log("planner", "[Planner] Evaluating project state...", style="magenta")

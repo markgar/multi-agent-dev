@@ -251,7 +251,7 @@ def commitwatch(
     reviewer_dir: Annotated[
         str, typer.Option(help="Path to the reviewer git clone")
     ] = "",
-):
+) -> None:
     """Watch for new commits and spawn a per-commit code reviewer.
 
     Runs from the reviewer clone directory. For each new commit detected,

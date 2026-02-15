@@ -272,7 +272,7 @@ def go(
     spec_file: Annotated[str, typer.Option(help="Path to a markdown file containing the project requirements")] = None,
     local: Annotated[bool, typer.Option(help="Use a local bare git repo instead of GitHub")] = False,
     name: Annotated[str, typer.Option(help="GitHub repo name (defaults to directory basename)")] = None,
-):
+) -> None:
     """Start or continue a project. Detects whether the project already exists.
 
     New project:      bootstraps, plans, and launches all agents.

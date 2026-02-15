@@ -25,7 +25,7 @@ def bootstrap(
     name: Annotated[str, typer.Option(help="Project name (used for directory and GitHub repo)")],
     description: Annotated[str, typer.Option(help="What the project should do")] = None,
     spec_file: Annotated[str, typer.Option(help="Path to a markdown file containing the project requirements")] = None,
-):
+) -> None:
     """Deprecated: use 'go' instead. Bootstrap only scaffolds — it does NOT launch the planner, builder, or watchers."""
     console.print()
     console.print("======================================", style="bold red")
@@ -275,7 +275,7 @@ def run_bootstrap(
     description: str = None,
     spec_file: str = None,
     local: bool = False,
-):
+) -> None:
     """Internal: scaffold a new project — git repo, GitHub remote (or local bare repo), clone reviewer/tester copies.
 
     directory: absolute path to the project parent directory.

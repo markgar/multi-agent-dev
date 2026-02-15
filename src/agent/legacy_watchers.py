@@ -52,11 +52,11 @@ def _watch_loop(agent_name: str, prompt: str, label: str) -> None:
         time.sleep(10)
 
 
-def reviewoncommit():
+def reviewoncommit() -> None:
     """Watch for new commits and review code quality (runs in a loop)."""
     _watch_loop("reviewer", REVIEWER_PROMPT, "Review")
 
 
-def testoncommit():
+def testoncommit() -> None:
     """Watch for new commits and auto-test (runs in a loop)."""
     _watch_loop("tester", TESTER_PROMPT, "Test run")
