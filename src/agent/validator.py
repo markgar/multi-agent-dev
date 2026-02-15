@@ -67,6 +67,44 @@ def _copy_validation_results(milestone_name: str) -> None:
         pass
 
 
+def _validate_milestone(boundary: dict) -> None:
+    """Build a container, validate at the milestone's end SHA, and checkpoint."""
+    now = datetime.now().strftime("%H:%M:%S")
+    log(
+        "validator",
+        f"[{now}] Milestone completed: {boundary['name']}! "
+        "Building container and validating...",
+        style="bold cyan",
+    )
+
+    run_cmd(["git", "pull", "--rebase", "-q"], quiet=True)
+    run_cmd(["git", "checkout", boundary["end_sha"]], quiet=True)
+    _cleanup_containers()
+
+    prompt = VALIDATOR_MILESTONE_PROMPT.format(
+        milestone_name=boundary["name"],
+        milestone_start_sha=boundary["start_sha"],
+        milestone_end_sha=boundary["end_sha"],
+    )
+    exit_code = run_copilot("validator", prompt)
+
+    _copy_validation_results(boundary["name"])
+    _cleanup_containers()
+    git_push_with_retry("validator")
+
+    now = datetime.now().strftime("%H:%M:%S")
+    if exit_code != 0:
+        log("validator", f"[{now}] WARNING: Validation run exited with errors", style="red")
+    else:
+        log("validator", f"[{now}] Milestone validated: {boundary['name']}", style="blue")
+
+    save_milestone_checkpoint(
+        boundary["name"],
+        checkpoint_file=_VALIDATOR_MILESTONE_CHECKPOINT,
+    )
+    run_cmd(["git", "checkout", "-"], quiet=True)
+
+
 def register(app: typer.Typer) -> None:
     """Register validator commands on the shared app."""
     app.command()(validateloop)
@@ -108,50 +146,7 @@ def validateloop(
         validated = load_reviewed_milestones(checkpoint_file=_VALIDATOR_MILESTONE_CHECKPOINT)
 
         for boundary in find_unvalidated_milestones(boundaries, validated):
-                now = datetime.now().strftime("%H:%M:%S")
-                log(
-                    "validator",
-                    f"[{now}] Milestone completed: {boundary['name']}! Building container and validating...",
-                    style="bold cyan",
-                )
-
-                run_cmd(["git", "pull", "--rebase", "-q"], quiet=True)
-
-                # Check out the exact milestone end SHA so we validate
-                # exactly what was built at that point, not later code.
-                run_cmd(["git", "checkout", boundary["end_sha"]], quiet=True)
-
-                # Clean up any leftover containers before starting
-                _cleanup_containers()
-
-                prompt = VALIDATOR_MILESTONE_PROMPT.format(
-                    milestone_name=boundary["name"],
-                    milestone_start_sha=boundary["start_sha"],
-                    milestone_end_sha=boundary["end_sha"],
-                )
-                exit_code = run_copilot("validator", prompt)
-
-                # Copy validation results to logs if the file was created
-                _copy_validation_results(boundary["name"])
-
-                # Clean up containers after the run regardless of outcome
-                _cleanup_containers()
-
-                git_push_with_retry("validator")
-
-                now = datetime.now().strftime("%H:%M:%S")
-                if exit_code != 0:
-                    log("validator", f"[{now}] WARNING: Validation run exited with errors", style="red")
-                else:
-                    log("validator", f"[{now}] Milestone validated: {boundary['name']}", style="blue")
-
-                save_milestone_checkpoint(
-                    boundary["name"],
-                    checkpoint_file=_VALIDATOR_MILESTONE_CHECKPOINT,
-                )
-
-                # Return to the main branch after validating at a pinned SHA.
-                run_cmd(["git", "checkout", "-"], quiet=True)
+            _validate_milestone(boundary)
 
         if builder_done:
             now = datetime.now().strftime("%H:%M:%S")

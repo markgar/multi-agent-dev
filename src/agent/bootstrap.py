@@ -180,6 +180,30 @@ def write_workspace_readme(directory: str) -> None:
         pass
 
 
+def _write_requirements_file(builder_dir: str, description: str) -> None:
+    """Create builder/REQUIREMENTS.md with the user's project description."""
+    req_path = os.path.join(builder_dir, "REQUIREMENTS.md")
+    with open(req_path, "w", encoding="utf-8") as f:
+        f.write("# Project Requirements\n\n")
+        f.write("> This document contains the project requirements as provided by the user.\n")
+        f.write("> It may be updated with new requirements in later sessions.\n\n")
+        f.write(description)
+        f.write("\n")
+    console.print("✓ Saved original requirements to REQUIREMENTS.md", style="green")
+
+
+def _clone_agent_copies(local: bool, gh_user: str, name: str) -> None:
+    """Clone reviewer, tester, and validator copies from the repo."""
+    if local:
+        clone_source = os.path.join(os.getcwd(), "remote.git")
+    else:
+        clone_source = f"https://github.com/{gh_user}/{name}"
+    log("bootstrap", "")
+    for agent_name in ("reviewer", "tester", "validator"):
+        log("bootstrap", f"Cloning {agent_name} copy...", style="cyan")
+        run_cmd(["git", "clone", clone_source, agent_name])
+
+
 def _scaffold_project(directory, name, description, gh_user, local=False):
     """Create repo, write REQUIREMENTS.md, run Copilot bootstrap, clone reviewer/tester.
 
@@ -211,14 +235,7 @@ def _scaffold_project(directory, name, description, gh_user, local=False):
 
     builder_dir = os.path.join(os.getcwd(), "builder")
     os.makedirs(builder_dir, exist_ok=True)
-    req_path = os.path.join(builder_dir, "REQUIREMENTS.md")
-    with open(req_path, "w", encoding="utf-8") as f:
-        f.write("# Project Requirements\n\n")
-        f.write("> This document contains the project requirements as provided by the user.\n")
-        f.write("> It may be updated with new requirements in later sessions.\n\n")
-        f.write(description)
-        f.write("\n")
-    console.print("✓ Saved original requirements to REQUIREMENTS.md", style="green")
+    _write_requirements_file(builder_dir, description)
 
     if local:
         remote_path = os.path.join(os.getcwd(), "remote.git")
@@ -234,20 +251,7 @@ def _scaffold_project(directory, name, description, gh_user, local=False):
         log("bootstrap", "======================================", style="bold red")
         return False
 
-    if local:
-        clone_source = os.path.join(os.getcwd(), "remote.git")
-    else:
-        clone_source = f"https://github.com/{gh_user}/{name}"
-
-    log("bootstrap", "")
-    log("bootstrap", "Cloning reviewer copy...", style="cyan")
-    run_cmd(["git", "clone", clone_source, "reviewer"])
-
-    log("bootstrap", "Cloning tester copy...", style="cyan")
-    run_cmd(["git", "clone", clone_source, "tester"])
-
-    log("bootstrap", "Cloning validator copy...", style="cyan")
-    run_cmd(["git", "clone", clone_source, "validator"])
+    _clone_agent_copies(local, gh_user, name)
 
     write_workspace_readme(os.getcwd())
 

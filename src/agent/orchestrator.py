@@ -224,6 +224,48 @@ def _resolve_directory(directory: str) -> str | None:
 # ============================================
 
 
+def _bootstrap_new_project(
+    parent_dir: str, project_name: str, description: str, spec_file: str, local: bool, start_dir: str,
+) -> None:
+    """Bootstrap a brand-new project: create repo, plan, and launch agents."""
+    if not description and not spec_file:
+        console.print("ERROR: New project requires --description or --spec-file.", style="bold red")
+        return
+
+    run_bootstrap(directory=parent_dir, name=project_name, description=description, spec_file=spec_file, local=local)
+    if not os.path.exists(os.path.join(parent_dir, "builder")):
+        log("orchestrator", "ERROR: Bootstrap did not create the expected directory structure.", style="bold red")
+        os.chdir(start_dir)
+        return
+
+    os.chdir(os.path.join(parent_dir, "builder"))
+    _launch_agents_and_build(parent_dir, "Running backlog planner...")
+
+
+def _resume_existing_project(
+    parent_dir: str, project_name: str, repo_source: str, description: str, spec_file: str,
+) -> None:
+    """Resume an existing project: clone agents, update requirements if needed, and build."""
+    new_description = _resolve_description_optional(description, spec_file)
+
+    log("orchestrator", "")
+    log("orchestrator", "======================================", style="bold cyan")
+    if new_description:
+        log("orchestrator", f" Continuing project '{project_name}' with new requirements", style="bold cyan")
+    else:
+        log("orchestrator", f" Continuing project '{project_name}'", style="bold cyan")
+    log("orchestrator", "======================================", style="bold cyan")
+
+    _clone_all_agents(parent_dir, repo_source)
+    _pull_all_clones(parent_dir)
+    os.chdir(os.path.join(parent_dir, "builder"))
+
+    if new_description:
+        _update_requirements(os.path.join(parent_dir, "builder"), new_description)
+
+    _launch_agents_and_build(parent_dir, "Running milestone planner...", requirements_changed=bool(new_description))
+
+
 def go(
     directory: Annotated[str, typer.Option(help="Project directory path (created if new, resumed if existing)")],
     description: Annotated[str, typer.Option(help="What the project should do")] = None,
@@ -252,39 +294,8 @@ def go(
     repo_source = _find_existing_repo(parent_dir, project_name, local)
 
     if not repo_source:
-        # --- New project: full bootstrap ---
-        if not description and not spec_file:
-            console.print("ERROR: New project requires --description or --spec-file.", style="bold red")
-            return
-
-        run_bootstrap(directory=parent_dir, name=project_name, description=description, spec_file=spec_file, local=local)
-        if not os.path.exists(os.path.join(parent_dir, "builder")):
-            log("orchestrator", "ERROR: Bootstrap did not create the expected directory structure.", style="bold red")
-            os.chdir(start_dir)
-            return
-
-        os.chdir(os.path.join(parent_dir, "builder"))
-        _launch_agents_and_build(parent_dir, "Running backlog planner...")
-
+        _bootstrap_new_project(parent_dir, project_name, description, spec_file, local, start_dir)
     else:
-        # --- Existing repo: ensure agent clones exist and are current ---
-        new_description = _resolve_description_optional(description, spec_file)
-
-        log("orchestrator", "")
-        log("orchestrator", "======================================", style="bold cyan")
-        if new_description:
-            log("orchestrator", f" Continuing project '{project_name}' with new requirements", style="bold cyan")
-        else:
-            log("orchestrator", f" Continuing project '{project_name}'", style="bold cyan")
-        log("orchestrator", "======================================", style="bold cyan")
-
-        _clone_all_agents(parent_dir, repo_source)
-        _pull_all_clones(parent_dir)
-        os.chdir(os.path.join(parent_dir, "builder"))
-
-        if new_description:
-            _update_requirements(os.path.join(parent_dir, "builder"), new_description)
-
-        _launch_agents_and_build(parent_dir, "Running milestone planner...", requirements_changed=bool(new_description))
+        _resume_existing_project(parent_dir, project_name, repo_source, description, spec_file)
 
     os.chdir(start_dir)

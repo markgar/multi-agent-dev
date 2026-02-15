@@ -44,28 +44,11 @@ def build(
 
         if not _detect_milestone_progress(state, loop):
             if loop:
-                # All milestones done — wait for agents to finish and check work lists
-                signal = _check_remaining_work(state)
-                if signal == "done":
+                action = _run_fix_only_cycle(state)
+                if action in ("done", "limit"):
                     write_builder_done()
                     return
-                # signal == "continue" → remaining work (bugs/reviews) but no milestones.
-                # Run the builder to fix them, but cap how many fix-only cycles we allow
-                # to prevent tail-chasing (reviewer files nitpick → builder fixes → repeat).
-                state.fix_only_cycles += 1
-                if state.fix_only_cycles > _MAX_FIX_ONLY_CYCLES:
-                    log("builder", "")
-                    log("builder", f"Fix-only cycle limit reached ({_MAX_FIX_ONLY_CYCLES}). "
-                        "Remaining items deferred. Shutting down.", style="bold yellow")
-                    write_builder_done()
-                    return
-                log("builder", "")
-                log("builder", f"[Builder] Fixing remaining bugs/reviews "
-                    f"(fix-only cycle {state.fix_only_cycles}/{_MAX_FIX_ONLY_CYCLES})...",
-                    style="green")
-                log("builder", "")
-                run_copilot("builder", BUILDER_PROMPT)
-                continue
+                continue  # action == "continue"
             write_builder_done()
             return
 
@@ -120,6 +103,30 @@ class BuildState:
 _MAX_MILESTONE_RETRIES = 3
 _MAX_FIX_ONLY_CYCLES = 4
 _MAX_POST_COMPLETION_REPLANS = 1
+
+
+def _run_fix_only_cycle(state: BuildState) -> str:
+    """Handle a fix-only cycle when no milestones remain.
+
+    Returns 'done' (agents idle, checklists clean), 'limit' (too many
+    fix-only cycles), or 'continue' (ran builder, loop again).
+    """
+    signal = _check_remaining_work(state)
+    if signal == "done":
+        return "done"
+    state.fix_only_cycles += 1
+    if state.fix_only_cycles > _MAX_FIX_ONLY_CYCLES:
+        log("builder", "")
+        log("builder", f"Fix-only cycle limit reached ({_MAX_FIX_ONLY_CYCLES}). "
+            "Remaining items deferred. Shutting down.", style="bold yellow")
+        return "limit"
+    log("builder", "")
+    log("builder", f"[Builder] Fixing remaining bugs/reviews "
+        f"(fix-only cycle {state.fix_only_cycles}/{_MAX_FIX_ONLY_CYCLES})...",
+        style="green")
+    log("builder", "")
+    run_copilot("builder", BUILDER_PROMPT)
+    return "continue"
 
 
 def update_milestone_retry_state(
@@ -417,12 +424,52 @@ _AGENT_WAIT_INTERVAL = 15
 _AGENT_WAIT_MAX_CYCLES = 40  # 15s * 40 = 10 minutes max wait
 
 
+def _log_work_remaining(bugs: int, reviews: int, tasks: int) -> None:
+    """Log which work items remain."""
+    log("builder", "")
+    log("builder", "Work remaining:", style="cyan")
+    if bugs:
+        log("builder", f" - Bugs: {bugs} unchecked", style="yellow")
+    if reviews:
+        log("builder", f" - Reviews: {reviews} unchecked", style="yellow")
+    if tasks:
+        log("builder", f" - Tasks: {tasks} unchecked", style="yellow")
+    log("builder", " Starting next build cycle in 5 seconds...", style="cyan")
+
+
+def _log_all_done() -> None:
+    """Log the all-work-complete banner."""
+    log("builder", "")
+    log("builder", "======================================", style="bold green")
+    log("builder", " All work complete!", style="bold green")
+    log("builder", " - Bugs: Done", style="bold green")
+    log("builder", " - Reviews: Done", style="bold green")
+    log("builder", " - Tasks: Done", style="bold green")
+    log("builder", " - Reviewer: Idle", style="bold green")
+    log("builder", " - Tester: Idle", style="bold green")
+    log("builder", " - Validator: Idle", style="bold green")
+    log("builder", "======================================", style="bold green")
+
+
+def _warn_unexpanded_stories(remaining_tasks: int) -> None:
+    """Warn if backlog/roadmap has stories but no milestone tasks exist."""
+    if remaining_tasks != 0:
+        return
+    if has_pending_backlog_stories_in_file("BACKLOG.md"):
+        log("builder", "")
+        log("builder", "[Planner] WARNING: Backlog has pending stories but no milestone "
+            "tasks exist. Planner may have failed to expand.", style="bold yellow")
+    elif has_unexpanded_stories_in_file("TASKS.md"):
+        log("builder", "")
+        log("builder", "[Planner] WARNING: Stories remain unexpanded but no milestone "
+            "tasks exist. Planner may have failed to expand.", style="bold yellow")
+
+
 def _check_remaining_work(state: BuildState) -> str:
     """Wait for agents to finish, then check work lists. Return 'done' or 'continue'."""
     wait_cycle = 0
 
     while wait_cycle < _AGENT_WAIT_MAX_CYCLES:
-        # Pull latest so we see any new BUGS.md / REVIEWS.md changes
         run_cmd(["git", "pull", "--rebase", "-q"], quiet=True)
 
         remaining_bugs = has_unchecked_items("BUGS.md")
@@ -435,15 +482,7 @@ def _check_remaining_work(state: BuildState) -> str:
         )
 
         if signal == "continue":
-            log("builder", "")
-            log("builder", "Work remaining:", style="cyan")
-            if remaining_bugs:
-                log("builder", f" - Bugs: {remaining_bugs} unchecked", style="yellow")
-            if remaining_reviews:
-                log("builder", f" - Reviews: {remaining_reviews} unchecked", style="yellow")
-            if remaining_tasks:
-                log("builder", f" - Tasks: {remaining_tasks} unchecked", style="yellow")
-            log("builder", " Starting next build cycle in 5 seconds...", style="cyan")
+            _log_work_remaining(remaining_bugs, remaining_reviews, remaining_tasks)
             time.sleep(5)
             return "continue"
 
@@ -454,26 +493,8 @@ def _check_remaining_work(state: BuildState) -> str:
             return "continue"
 
         if signal == "done":
-            # Check if there are pending backlog stories — distinguish "done" from
-            # "planner failed to expand remaining stories"
-            if has_pending_backlog_stories_in_file("BACKLOG.md") and remaining_tasks == 0:
-                log("builder", "")
-                log("builder", "[Planner] WARNING: Backlog has pending stories but no milestone "
-                    "tasks exist. Planner may have failed to expand.", style="bold yellow")
-            elif has_unexpanded_stories_in_file("TASKS.md") and remaining_tasks == 0:
-                log("builder", "")
-                log("builder", "[Planner] WARNING: Stories remain unexpanded but no milestone "
-                    "tasks exist. Planner may have failed to expand.", style="bold yellow")
-            log("builder", "")
-            log("builder", "======================================", style="bold green")
-            log("builder", " All work complete!", style="bold green")
-            log("builder", " - Bugs: Done", style="bold green")
-            log("builder", " - Reviews: Done", style="bold green")
-            log("builder", " - Tasks: Done", style="bold green")
-            log("builder", " - Reviewer: Idle", style="bold green")
-            log("builder", " - Tester: Idle", style="bold green")
-            log("builder", " - Validator: Idle", style="bold green")
-            log("builder", "======================================", style="bold green")
+            _warn_unexpanded_stories(remaining_tasks)
+            _log_all_done()
             return "done"
 
         # signal == "waiting" — no work yet, agents still active
@@ -484,7 +505,6 @@ def _check_remaining_work(state: BuildState) -> str:
             log("builder", "(Ctrl+C to stop)", style="dim")
         time.sleep(_AGENT_WAIT_INTERVAL)
 
-    # Timed out waiting for agents
     log("builder", "")
     log("builder", "Timed out waiting for agents. Exiting.", style="bold yellow")
     return "done"

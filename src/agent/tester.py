@@ -29,6 +29,37 @@ def find_untested_milestones(boundaries: list[dict], tested: set[str]) -> list[d
     return [b for b in boundaries if b["name"] not in tested]
 
 
+def _test_milestone(boundary: dict) -> None:
+    """Run scoped tests for a completed milestone and checkpoint."""
+    now = datetime.now().strftime("%H:%M:%S")
+    log(
+        "tester",
+        f"[{now}] Milestone completed: {boundary['name']}! Running scoped tests...",
+        style="bold cyan",
+    )
+
+    run_cmd(["git", "pull", "--rebase", "-q"], quiet=True)
+
+    prompt = TESTER_MILESTONE_PROMPT.format(
+        milestone_name=boundary["name"],
+        milestone_start_sha=boundary["start_sha"],
+        milestone_end_sha=boundary["end_sha"],
+    )
+    exit_code = run_copilot("tester", prompt)
+    git_push_with_retry("tester")
+
+    now = datetime.now().strftime("%H:%M:%S")
+    if exit_code != 0:
+        log("tester", f"[{now}] WARNING: Test run exited with errors", style="red")
+    else:
+        log("tester", f"[{now}] Milestone test complete: {boundary['name']}", style="yellow")
+
+    save_milestone_checkpoint(
+        boundary["name"],
+        checkpoint_file=_TESTER_MILESTONE_CHECKPOINT,
+    )
+
+
 def register(app: typer.Typer) -> None:
     """Register tester commands on the shared app."""
     app.command()(testloop)
@@ -69,34 +100,7 @@ def testloop(
         tested = load_reviewed_milestones(checkpoint_file=_TESTER_MILESTONE_CHECKPOINT)
 
         for boundary in find_untested_milestones(boundaries, tested):
-                now = datetime.now().strftime("%H:%M:%S")
-                log(
-                    "tester",
-                    f"[{now}] Milestone completed: {boundary['name']}! Running scoped tests...",
-                    style="bold cyan",
-                )
-
-                run_cmd(["git", "pull", "--rebase", "-q"], quiet=True)
-
-                prompt = TESTER_MILESTONE_PROMPT.format(
-                    milestone_name=boundary["name"],
-                    milestone_start_sha=boundary["start_sha"],
-                    milestone_end_sha=boundary["end_sha"],
-                )
-                exit_code = run_copilot("tester", prompt)
-
-                git_push_with_retry("tester")
-
-                now = datetime.now().strftime("%H:%M:%S")
-                if exit_code != 0:
-                    log("tester", f"[{now}] WARNING: Test run exited with errors", style="red")
-                else:
-                    log("tester", f"[{now}] Milestone test complete: {boundary['name']}", style="yellow")
-
-                save_milestone_checkpoint(
-                    boundary["name"],
-                    checkpoint_file=_TESTER_MILESTONE_CHECKPOINT,
-                )
+            _test_milestone(boundary)
 
         if builder_done:
             now = datetime.now().strftime("%H:%M:%S")
