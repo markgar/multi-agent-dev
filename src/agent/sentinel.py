@@ -7,7 +7,7 @@ from agent.utils import resolve_logs_dir
 
 _BUILDER_DONE_FILE = "builder.done"
 _BUILDER_LOG_FILE = "builder.log"
-_STALE_LOG_TIMEOUT_MINUTES = 10
+_STALE_LOG_TIMEOUT_MINUTES = 30
 _REVIEWER_CHECKPOINT_FILE = "reviewer.checkpoint"
 _REVIEWER_LOG_FILE = "reviewer.log"
 _TESTER_LOG_FILE = "tester.log"
@@ -56,7 +56,7 @@ def is_builder_done() -> bool:
 
     Returns True if:
       1. The sentinel file logs/builder.done exists, OR
-      2. logs/builder.log exists but hasn't been modified in 10+ minutes (crash fallback).
+      2. logs/builder.log exists but hasn't been modified in 30+ minutes (crash fallback).
     """
     try:
         logs_dir = resolve_logs_dir()

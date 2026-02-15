@@ -1,7 +1,9 @@
 """Terminal spawning helper for launching agent commands in new windows."""
 
 import os
+import shutil
 import subprocess
+import sys
 import tempfile
 
 from agent.utils import check_command, console, is_macos, is_windows
@@ -35,8 +37,17 @@ def spawn_agent_in_terminal(working_dir: str, command: str) -> None:
                 stdout=subprocess.DEVNULL,
             )
         elif is_windows():
+            # Prefer the agentic-dev next to the running Python (same venv),
+            # fall back to PATH, then to python -m agent.
+            venv_exe = os.path.join(os.path.dirname(sys.executable), "agentic-dev.exe")
+            if os.path.isfile(venv_exe):
+                cmd = [venv_exe, command]
+            elif shutil.which("agentic-dev"):
+                cmd = [shutil.which("agentic-dev"), command]
+            else:
+                cmd = [sys.executable, "-m", "agent", command]
             subprocess.Popen(
-                ["agentic-dev", command],
+                cmd,
                 cwd=working_dir,
                 creationflags=subprocess.CREATE_NEW_CONSOLE,
             )

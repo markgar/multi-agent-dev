@@ -246,6 +246,6 @@ The builder waits for all agents to finish before exiting:
 3. **Check work lists:** The builder pulls latest and checks `BUGS.md`, `REVIEWS.md`, and `TASKS.md` for unchecked items.
 4. **Fix or exit:** If new work was filed (bugs from tester/validator, reviews from reviewer), the builder fixes it (up to 4 fix-only cycles) and loops back to step 2. If checklists are clean and agents are idle, the builder writes `logs/builder.done` and exits.
 5. **Agents shut down:** The reviewer, tester, and validator see `logs/builder.done` on their next poll cycle. The reviewer completes any remaining milestone reviews before exiting. The tester and validator exit immediately.
-6. **Crash fallback:** If `logs/builder.log` hasn't been modified in 10+ minutes, agents assume the builder crashed and shut down.
+6. **Crash fallback:** If `logs/builder.log` hasn't been modified in 30+ minutes, agents assume the builder crashed and shut down.
 7. **Startup cleanup:** `go` clears any stale `builder.done` sentinel before launching agents.
 8. **Timeout safety:** If agents don't go idle within 10 minutes, the builder writes `builder.done` and exits anyway.

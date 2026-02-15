@@ -22,6 +22,51 @@ set -euo pipefail
 HARNESS_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_ROOT="$(cd "$HARNESS_DIR/../.." && pwd)"
 
+resolve_python_cmd() {
+    if [[ -x "$PROJECT_ROOT/.venv/Scripts/python.exe" ]]; then
+        echo "$PROJECT_ROOT/.venv/Scripts/python.exe"
+        return
+    fi
+    if [[ -x "$PROJECT_ROOT/.venv/bin/python" ]]; then
+        echo "$PROJECT_ROOT/.venv/bin/python"
+        return
+    fi
+    if command -v python >/dev/null 2>&1; then
+        echo "python"
+        return
+    fi
+    if command -v python3 >/dev/null 2>&1; then
+        echo "python3"
+        return
+    fi
+    echo ""
+}
+
+resolve_agentic_dev_cmd() {
+    if command -v agentic-dev >/dev/null 2>&1; then
+        echo "agentic-dev"
+        return
+    fi
+    if [[ -x "$PROJECT_ROOT/.venv/Scripts/agentic-dev.exe" ]]; then
+        echo "$PROJECT_ROOT/.venv/Scripts/agentic-dev.exe"
+        return
+    fi
+    if [[ -x "$PROJECT_ROOT/.venv/bin/agentic-dev" ]]; then
+        echo "$PROJECT_ROOT/.venv/bin/agentic-dev"
+        return
+    fi
+    echo ""
+}
+
+to_python_path() {
+    local input_path="$1"
+    if [[ "$PYTHON_CMD" == *.exe ]] && command -v cygpath >/dev/null 2>&1; then
+        cygpath -w "$input_path"
+        return
+    fi
+    echo "$input_path"
+}
+
 # Defaults
 SPEC_FILE="$HARNESS_DIR/sample_spec_cli_calculator.md"
 PROJECT_NAME="test-run"
@@ -64,6 +109,16 @@ echo "============================================"
 echo " Pre-flight setup"
 echo "============================================"
 
+PYTHON_CMD="$(resolve_python_cmd)"
+if [[ -z "$PYTHON_CMD" ]]; then
+    echo "ERROR: Could not find Python."
+    echo "Install Python or create a .venv in $PROJECT_ROOT"
+    exit 1
+fi
+
+PROJECT_ROOT_FOR_PYTHON="$(to_python_path "$PROJECT_ROOT")"
+TESTS_DIR_FOR_PYTHON="$(to_python_path "$PROJECT_ROOT/tests/")"
+
 # Clean stale build artifacts
 if [[ -d "$PROJECT_ROOT/build" ]]; then
     echo "  Removing stale build/ directory..."
@@ -72,19 +127,20 @@ fi
 
 # Install package in editable mode
 echo "  Installing package (pip install -e .)..."
-pip install -e "$PROJECT_ROOT" --quiet 2>&1 | tail -1
+"$PYTHON_CMD" -m pip install -e "$PROJECT_ROOT_FOR_PYTHON" --quiet 2>&1 | tail -1
 
 # Verify the CLI is available
-if ! command -v agentic-dev &> /dev/null; then
+AGENTIC_DEV_CMD="$(resolve_agentic_dev_cmd)"
+if [[ -z "$AGENTIC_DEV_CMD" ]]; then
     echo "ERROR: agentic-dev not found on PATH after install."
-    echo "Try: pip install -e $PROJECT_ROOT"
+    echo "Try: $PYTHON_CMD -m pip install -e $PROJECT_ROOT"
     exit 1
 fi
 echo "  ✓ agentic-dev is available"
 
 # Run existing tests
 echo "  Running unit tests..."
-if ! python -m pytest "$PROJECT_ROOT/tests/" -q 2>&1 | tail -3; then
+if ! "$PYTHON_CMD" -m pytest "$TESTS_DIR_FOR_PYTHON" -q 2>&1 | tail -3; then
     echo ""
     echo "ERROR: Unit tests failed. Fix them before running the harness."
     exit 1
@@ -166,7 +222,7 @@ if [[ "$RESUME" == true ]]; then
         GO_ARGS+=(--spec-file "$SPEC_FILE")
     fi
 
-    agentic-dev go "${GO_ARGS[@]}"
+    "$AGENTIC_DEV_CMD" go "${GO_ARGS[@]}"
     EXIT_CODE=$?
 else
     # Fresh run: create new timestamped directory
@@ -191,7 +247,7 @@ else
 
     mkdir -p "$RUN_DIR"
 
-    agentic-dev go \
+    "$AGENTIC_DEV_CMD" go \
         --directory "$PROJ_DIR" \
         --spec-file "$SPEC_FILE" \
         --local

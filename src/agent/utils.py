@@ -87,6 +87,33 @@ def _stream_process_output(proc: subprocess.Popen, log_file: str) -> None:
         pass
 
 
+def _resolve_copilot_cmd() -> list[str]:
+    """Resolve the copilot CLI command for the current platform.
+
+    On Windows, the VS Code Copilot CLI installs a .BAT wrapper that chains
+    through PowerShell before launching the real .EXE. Piping stdout through
+    cmd→powershell→exe breaks subprocess output capture. We bypass the wrapper
+    by resolving copilot.exe directly first.
+    """
+    if sys.platform == "win32":
+        # Prefer the real .exe — avoids BAT→PowerShell→EXE chain that breaks
+        # stdout piping in subprocess.Popen(stdout=PIPE).
+        exe = shutil.which("copilot.exe")
+        if exe and exe.lower().endswith(".exe"):
+            return [exe]
+        # Fallback: resolve bare "copilot" and handle .bat/.cmd wrappers.
+        exe = shutil.which("copilot")
+        if exe and exe.lower().endswith((".bat", ".cmd")):
+            return ["cmd", "/c", exe]
+        if exe:
+            return [exe]
+    else:
+        exe = shutil.which("copilot")
+        if exe:
+            return [exe]
+    return ["copilot"]
+
+
 def run_copilot(agent_name: str, prompt: str) -> int:
     """Run 'copilot --yolo -p <prompt>' with streaming output to both console and log.
 
@@ -105,7 +132,7 @@ def run_copilot(agent_name: str, prompt: str) -> int:
     _write_log_entry(log_file, header)
 
     proc = subprocess.Popen(
-        ["copilot", "--yolo", "-p", prompt],
+        _resolve_copilot_cmd() + ["--yolo", "-p", prompt],
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
         text=True,

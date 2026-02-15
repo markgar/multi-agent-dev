@@ -273,7 +273,10 @@ def run_bootstrap(
     description = _resolve_description(description, spec_file)
 
     current_dir = os.path.basename(os.getcwd())
-    if current_dir == "multi-agent-dev":
+    abs_directory = os.path.normcase(os.path.abspath(directory))
+    abs_cwd = os.path.normcase(os.path.abspath(os.getcwd()))
+    directory_is_subdirectory = abs_directory.startswith(abs_cwd + os.sep)
+    if current_dir == "multi-agent-dev" and not directory_is_subdirectory:
         console.print()
         console.print("WARNING: You are in the multi-agent-dev directory.", style="yellow")
         console.print("Project will be created at:", style="yellow")
