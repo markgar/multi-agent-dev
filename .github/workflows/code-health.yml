@@ -28,13 +28,10 @@ jobs:
           fi
           python scripts/code_health_check.py \
             --src-dir src/agent \
-            --max-func 40 \
-            --max-file 300 \
-            --max-depth 4 \
             $BASELINE_FLAG \
             --format markdown > report.md 2>&1 || true
-          # Check if violations were found (script exits 1 when there are violations)
-          if grep -q "violations found" report.md; then
+          # Check if violations were found (header says "N issues found" or "hard violation")
+          if grep -q "issues found" report.md; then
             echo "has_violations=true" >> "$GITHUB_OUTPUT"
           else
             echo "has_violations=false" >> "$GITHUB_OUTPUT"
@@ -49,9 +46,6 @@ jobs:
           fi
           python scripts/code_health_check.py \
             --src-dir src/agent \
-            --max-func 40 \
-            --max-file 300 \
-            --max-depth 4 \
             $BASELINE_FLAG \
             --format json > report.json 2>&1 || true
 
