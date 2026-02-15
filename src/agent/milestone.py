@@ -112,12 +112,11 @@ def load_reviewed_milestones(checkpoint_file: str = None) -> set[str]:
     try:
         logs_dir = resolve_logs_dir()
         path = os.path.join(logs_dir, checkpoint_file)
-        if os.path.exists(path):
-            with open(path, "r", encoding="utf-8") as f:
-                for line in f:
-                    name = line.strip()
-                    if name:
-                        reviewed.add(name)
+        with open(path, "r", encoding="utf-8") as f:
+            for line in f:
+                name = line.strip()
+                if name:
+                    reviewed.add(name)
     except Exception:
         pass
     return reviewed

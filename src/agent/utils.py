@@ -71,6 +71,15 @@ def _write_log_entry(log_file: str, text: str) -> None:
         pass
 
 
+def _write_line_to_log(f, line: str) -> None:
+    """Write a single line to a log file handle, silently ignoring errors."""
+    try:
+        f.write(line)
+        f.flush()
+    except Exception:
+        pass
+
+
 def _stream_process_output(proc: subprocess.Popen, log_file: str) -> None:
     """Stream subprocess stdout to both the console and a log file."""
     try:
@@ -78,11 +87,7 @@ def _stream_process_output(proc: subprocess.Popen, log_file: str) -> None:
             for line in proc.stdout:
                 sys.stdout.write(line)
                 sys.stdout.flush()
-                try:
-                    f.write(line)
-                    f.flush()
-                except Exception:
-                    pass
+                _write_line_to_log(f, line)
     except Exception:
         pass
 
