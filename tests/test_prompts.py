@@ -39,7 +39,7 @@ PROMPT_FORMAT_CASES = [
     ("REVIEWER_PROMPT", REVIEWER_PROMPT, {}),
     ("REVIEWER_COMMIT_PROMPT", REVIEWER_COMMIT_PROMPT, {"prev_sha": "aaa", "commit_sha": "bbb"}),
     ("REVIEWER_BATCH_PROMPT", REVIEWER_BATCH_PROMPT, {"commit_count": 3, "base_sha": "aaa", "head_sha": "bbb"}),
-    ("REVIEWER_MILESTONE_PROMPT", REVIEWER_MILESTONE_PROMPT, {"milestone_name": "M1", "milestone_start_sha": "aaa", "milestone_end_sha": "bbb"}),
+    ("REVIEWER_MILESTONE_PROMPT", REVIEWER_MILESTONE_PROMPT, {"milestone_name": "M1", "milestone_start_sha": "aaa", "milestone_end_sha": "bbb", "code_analysis_findings": "No structural issues detected."}),
     ("TESTER_PROMPT", TESTER_PROMPT, {}),
     ("TESTER_MILESTONE_PROMPT", TESTER_MILESTONE_PROMPT, {"milestone_name": "M1", "milestone_start_sha": "aaa", "milestone_end_sha": "bbb"}),
     ("VALIDATOR_MILESTONE_PROMPT", VALIDATOR_MILESTONE_PROMPT, {"milestone_name": "M1", "milestone_start_sha": "aaa", "milestone_end_sha": "bbb"}),

@@ -12,6 +12,11 @@ license = {text = "MIT"}
 dependencies = [
     "typer[all]",
     "rich",
+    "tree-sitter",
+    "tree-sitter-python",
+    "tree-sitter-javascript",
+    "tree-sitter-typescript",
+    "tree-sitter-c-sharp",
 ]
 
 [project.scripts]

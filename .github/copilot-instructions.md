@@ -41,7 +41,8 @@ This software is entirely written by GitHub Copilot. The code is structured to b
 - `src/agentic_dev/git_helpers.py` — Git operations: push with retry, commit classification.
 - `src/agentic_dev/sentinel.py` — Builder-done sentinel, agent-idle detection, and reviewer checkpoint persistence.
 - `src/agentic_dev/milestone.py` — Milestone parsing, boundary tracking, and per-agent milestone checkpoints.
-- `src/agentic_dev/config.py` — Language/stack configurations and prerequisites.
+- `src/agentic_dev/config.py` — Language/stack configurations and thresholds for tree-sitter code analysis.
+- `src/agentic_dev/code_analysis.py` — Tree-sitter code analysis for target projects: structural checks across Python, JS/TS, and C#.
 - `src/agentic_dev/legacy_watchers.py` — Deprecated `reviewoncommit` and `testoncommit` commands (not used by `go`).
 
 ## Architecture

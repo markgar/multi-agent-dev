@@ -7,6 +7,7 @@ from typing import Annotated
 
 import typer
 
+from agentic_dev.code_analysis import run_milestone_analysis
 from agentic_dev.git_helpers import (
     git_push_with_retry,
     is_coordination_only_commit,
@@ -29,7 +30,7 @@ from agentic_dev.sentinel import (
     load_reviewer_checkpoint,
     save_reviewer_checkpoint,
 )
-from agentic_dev.utils import log, run_cmd, run_copilot
+from agentic_dev.utils import log, resolve_logs_dir, run_cmd, run_copilot
 
 
 def register(app: typer.Typer) -> None:
@@ -202,6 +203,21 @@ def find_unreviewed_milestones(boundaries: list[dict], reviewed: set[str]) -> li
     return [b for b in boundaries if b["name"] not in reviewed]
 
 
+def _save_analysis_log(milestone_name: str, analysis_text: str) -> None:
+    """Write code analysis findings to logs/analysis-<milestone>.txt."""
+    safe_name = milestone_name.replace(" ", "-").replace("/", "-").lower()
+    try:
+        logs_dir = resolve_logs_dir()
+        filepath = os.path.join(logs_dir, f"analysis-{safe_name}.txt")
+        with open(filepath, "w", encoding="utf-8") as f:
+            f.write(f"Code analysis: {milestone_name}\n")
+            f.write(f"{'=' * 40}\n\n")
+            f.write(analysis_text)
+            f.write("\n")
+    except OSError:
+        pass
+
+
 def _check_milestone_reviews() -> None:
     """Run cross-cutting reviews for any newly completed milestones.
 
@@ -221,10 +237,20 @@ def _check_milestone_reviews() -> None:
             style="bold magenta",
         )
 
+        try:
+            analysis_text = run_milestone_analysis(
+                boundary["start_sha"], boundary["end_sha"]
+            )
+        except Exception:
+            analysis_text = "No structural issues detected by static analysis."
+
+        _save_analysis_log(boundary["name"], analysis_text)
+
         milestone_prompt = REVIEWER_MILESTONE_PROMPT.format(
             milestone_name=boundary["name"],
             milestone_start_sha=boundary["start_sha"],
             milestone_end_sha=boundary["end_sha"],
+            code_analysis_findings=analysis_text,
         )
         exit_code = run_copilot("reviewer", milestone_prompt)
 
