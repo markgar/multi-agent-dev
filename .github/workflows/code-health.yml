@@ -22,11 +22,16 @@ jobs:
       - name: Run code health check
         id: health
         run: |
+          BASELINE_FLAG=""
+          if [ -f .code-health-baseline.json ]; then
+            BASELINE_FLAG="--baseline .code-health-baseline.json"
+          fi
           python scripts/code_health_check.py \
             --src-dir src/agent \
             --max-func 40 \
             --max-file 300 \
             --max-depth 4 \
+            $BASELINE_FLAG \
             --format markdown > report.md 2>&1 || true
           # Check if violations were found (script exits 1 when there are violations)
           if grep -q "violations found" report.md; then
@@ -38,11 +43,16 @@ jobs:
       - name: Run code health check (JSON)
         if: steps.health.outputs.has_violations == 'true'
         run: |
+          BASELINE_FLAG=""
+          if [ -f .code-health-baseline.json ]; then
+            BASELINE_FLAG="--baseline .code-health-baseline.json"
+          fi
           python scripts/code_health_check.py \
             --src-dir src/agent \
             --max-func 40 \
             --max-file 300 \
             --max-depth 4 \
+            $BASELINE_FLAG \
             --format json > report.json 2>&1 || true
 
       - name: Create or update issue

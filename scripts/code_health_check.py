@@ -5,11 +5,17 @@ Analyzes Python source files for:
 - Files exceeding a maximum line count
 - Excessive nesting depth in functions
 
+Supports a baseline file to suppress known violations. Suppressed violations
+reappear if the code gets worse (function grows longer, nesting gets deeper,
+file grows larger). Run with --update-baseline to record current violations.
+
 Outputs a structured report suitable for GitHub Issues.
 
 Usage:
     python scripts/code_health_check.py [--src-dir src/agent] [--max-func 40] [--max-file 300] [--max-depth 4]
     python scripts/code_health_check.py --format json
+    python scripts/code_health_check.py --update-baseline          # record current violations as accepted
+    python scripts/code_health_check.py --baseline .code-health-baseline.json  # filter against baseline
 """
 import argparse
 import ast
@@ -21,6 +27,7 @@ DEFAULT_SRC_DIR = "src/agent"
 DEFAULT_MAX_FUNC_LINES = 40
 DEFAULT_MAX_FILE_LINES = 300
 DEFAULT_MAX_NESTING_DEPTH = 4
+DEFAULT_BASELINE_FILE = ".code-health-baseline.json"
 
 
 def measure_nesting_depth(node, current_depth=0):
@@ -119,7 +126,96 @@ def find_violations(analyses, max_func_lines, max_file_lines, max_nesting_depth)
     }
 
 
-def format_markdown_report(violations, max_func_lines, max_file_lines, max_nesting_depth):
+def load_baseline(path):
+    """Load a baseline file. Returns dict with suppressed violations, or empty structure."""
+    if not path or not os.path.exists(path):
+        return {"oversized_files": {}, "oversized_functions": {}, "deep_nesting": {}}
+    with open(path, encoding="utf-8") as f:
+        data = json.load(f)
+    return {
+        "oversized_files": {e["path"]: e for e in data.get("oversized_files", [])},
+        "oversized_functions": {e["key"]: e for e in data.get("oversized_functions", [])},
+        "deep_nesting": {e["key"]: e for e in data.get("deep_nesting", [])},
+    }
+
+
+def save_baseline(path, violations):
+    """Write current violations to a baseline file for future suppression."""
+    data = {
+        "oversized_files": [
+            {"path": v["path"], "lines": v["lines"]}
+            for v in violations["oversized_files"]
+        ],
+        "oversized_functions": [
+            {"key": "{}::{}".format(v["path"], v["function"]),
+             "path": v["path"], "function": v["function"], "length": v["length"]}
+            for v in violations["oversized_functions"]
+        ],
+        "deep_nesting": [
+            {"key": "{}::{}".format(v["path"], v["function"]),
+             "path": v["path"], "function": v["function"], "depth": v["depth"]}
+            for v in violations["deep_nesting"]
+        ],
+    }
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(data, f, indent=2)
+        f.write("\n")
+
+
+def filter_violations_against_baseline(violations, baseline):
+    """Remove violations that are in the baseline and haven't gotten worse.
+
+    A suppressed violation reappears if:
+    - oversized_function: length increased beyond baseline
+    - oversized_file: lines increased beyond baseline
+    - deep_nesting: depth increased beyond baseline
+    """
+    filtered_funcs = []
+    for v in violations["oversized_functions"]:
+        key = "{}::{}".format(v["path"], v["function"])
+        entry = baseline["oversized_functions"].get(key)
+        if entry and v["length"] <= entry["length"]:
+            continue  # suppressed — same or better
+        filtered_funcs.append(v)
+
+    filtered_files = []
+    for v in violations["oversized_files"]:
+        entry = baseline["oversized_files"].get(v["path"])
+        if entry and v["lines"] <= entry["lines"]:
+            continue
+        filtered_files.append(v)
+
+    filtered_nesting = []
+    for v in violations["deep_nesting"]:
+        key = "{}::{}".format(v["path"], v["function"])
+        entry = baseline["deep_nesting"].get(key)
+        if entry and v["depth"] <= entry["depth"]:
+            continue
+        filtered_nesting.append(v)
+
+    return {
+        "oversized_files": filtered_files,
+        "oversized_functions": filtered_funcs,
+        "deep_nesting": filtered_nesting,
+    }
+
+
+def count_baselined(violations, filtered):
+    """Count how many violations were suppressed by the baseline."""
+    original = (
+        len(violations["oversized_files"])
+        + len(violations["oversized_functions"])
+        + len(violations["deep_nesting"])
+    )
+    after = (
+        len(filtered["oversized_files"])
+        + len(filtered["oversized_functions"])
+        + len(filtered["deep_nesting"])
+    )
+    return original - after
+
+
+def format_markdown_report(violations, max_func_lines, max_file_lines, max_nesting_depth, baselined_count=0):
     """Format violations as a GitHub Issue-friendly markdown report."""
     total = (
         len(violations["oversized_files"])
@@ -135,6 +231,10 @@ def format_markdown_report(violations, max_func_lines, max_file_lines, max_nesti
     lines.append("This is an automated report from the code health checker.")
     lines.append("The codebase guidelines recommend small, single-purpose functions ")
     lines.append("with flat control flow for agent-maintained code.\n")
+    if baselined_count > 0:
+        lines.append("_{} known violation{} suppressed by baseline. ".format(
+            baselined_count, "s" if baselined_count != 1 else ""))
+        lines.append("These will reappear if the code gets worse._\n")
 
     if violations["oversized_functions"]:
         lines.append("### Oversized Functions (limit: {} lines)\n".format(max_func_lines))
@@ -182,6 +282,10 @@ def main():
     parser.add_argument("--max-file", type=int, default=DEFAULT_MAX_FILE_LINES, help="Max file lines")
     parser.add_argument("--max-depth", type=int, default=DEFAULT_MAX_NESTING_DEPTH, help="Max nesting depth")
     parser.add_argument("--format", choices=["markdown", "json"], default="markdown", help="Output format")
+    parser.add_argument("--baseline", default=None,
+                        help="Path to baseline JSON file. Suppresses known violations unless they get worse.")
+    parser.add_argument("--update-baseline", action="store_true",
+                        help="Write current violations to the baseline file and exit.")
     args = parser.parse_args()
 
     files = collect_files(args.src_dir)
@@ -191,6 +295,26 @@ def main():
 
     analyses = [analyze_file(f) for f in files]
     violations = find_violations(analyses, args.max_func, args.max_file, args.max_depth)
+
+    # Update baseline mode: write current violations and exit
+    if args.update_baseline:
+        baseline_path = args.baseline or DEFAULT_BASELINE_FILE
+        save_baseline(baseline_path, violations)
+        total = (
+            len(violations["oversized_files"])
+            + len(violations["oversized_functions"])
+            + len(violations["deep_nesting"])
+        )
+        print("Baseline written to {} ({} violations recorded)".format(baseline_path, total))
+        sys.exit(0)
+
+    # Filter against baseline if provided
+    baselined_count = 0
+    if args.baseline:
+        baseline = load_baseline(args.baseline)
+        filtered = filter_violations_against_baseline(violations, baseline)
+        baselined_count = count_baselined(violations, filtered)
+        violations = filtered
 
     total = (
         len(violations["oversized_files"])
@@ -203,6 +327,7 @@ def main():
             "violations": violations,
             "summary": {
                 "total_violations": total,
+                "baselined_violations": baselined_count,
                 "files_analyzed": len(files),
                 "limits": {
                     "max_function_lines": args.max_func,
@@ -213,7 +338,7 @@ def main():
         }
         print(json.dumps(output, indent=2))
     else:
-        print(format_markdown_report(violations, args.max_func, args.max_file, args.max_depth))
+        print(format_markdown_report(violations, args.max_func, args.max_file, args.max_depth, baselined_count))
 
     # Exit with non-zero if violations found (useful for CI)
     if total > 0:
