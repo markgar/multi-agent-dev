@@ -21,18 +21,22 @@ jobs:
 
       - name: Run code health check
         id: health
-        continue-on-error: true
         run: |
           python scripts/code_health_check.py \
             --src-dir src/agent \
             --max-func 40 \
             --max-file 300 \
             --max-depth 4 \
-            --format markdown > report.md 2>&1
-          echo "exit_code=$?" >> "$GITHUB_OUTPUT"
+            --format markdown > report.md 2>&1 || true
+          # Check if violations were found (script exits 1 when there are violations)
+          if grep -q "violations found" report.md; then
+            echo "has_violations=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "has_violations=false" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Run code health check (JSON)
-        if: steps.health.outcome == 'failure'
+        if: steps.health.outputs.has_violations == 'true'
         run: |
           python scripts/code_health_check.py \
             --src-dir src/agent \
@@ -42,7 +46,7 @@ jobs:
             --format json > report.json 2>&1 || true
 
       - name: Create or update issue
-        if: steps.health.outcome == 'failure'
+        if: steps.health.outputs.has_violations == 'true'
         uses: actions/github-script@v7
         with:
           script: |
@@ -101,7 +105,7 @@ jobs:
             }
 
       - name: Close issue if clean
-        if: steps.health.outcome == 'success'
+        if: steps.health.outputs.has_violations == 'false'
         uses: actions/github-script@v7
         with:
           script: |
