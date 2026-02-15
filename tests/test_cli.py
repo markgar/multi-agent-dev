@@ -2,7 +2,7 @@
 
 import os
 
-from agent.cli import _resolve_directory
+from agent.orchestrator import _resolve_directory
 
 
 # --- _resolve_directory ---

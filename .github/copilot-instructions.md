@@ -27,8 +27,10 @@ This software is entirely written by GitHub Copilot. The code is structured to b
 
 ## Key files
 
-- `src/agent/cli.py` — App definition, top-level orchestration commands: `go`, `plan`, `status`.
+- `src/agent/cli.py` — App definition and command registration: `status`.
+- `src/agent/orchestrator.py` — The `go` command: project detection, agent launching, copilot-instructions generation.
 - `src/agent/bootstrap.py` — Project scaffolding: repo creation, cloning reviewer/tester/validator copies.
+- `src/agent/planner.py` — Backlog planner and milestone planner: `plan`, `check_milestone_sizes`.
 - `src/agent/builder.py` — Build loop: milestone completion, retry logic.
 - `src/agent/watcher.py` — Commit watcher: per-commit reviews, milestone-level reviews.
 - `src/agent/tester.py` — Test loop: milestone-triggered testing.
