@@ -129,8 +129,9 @@ They coordinate through git push/pull and shared markdown files.
 
 | File | Purpose |
 |---|---|
-| `SPEC.md` | Source of truth — defines the desired end state of the project |
-| `TASKS.md` | Milestones and tasks — checked off as work is completed |
+| `SPEC.md` | Technical decisions — architecture, tech stack, cross-cutting concerns |
+| `BACKLOG.md` | Ordered story queue with dependency tracking (planner-managed) |
+| `TASKS.md` | Current and completed milestones — checked off as work is completed |
 | `REQUIREMENTS.md` | Original user requirements (may be updated between sessions) |
 | `BUGS.md` | Bugs found by the tester and validator |
 | `REVIEWS.md` | Code review findings from the reviewer |
@@ -156,12 +157,13 @@ They coordinate through git push/pull and shared markdown files.
 
 ## How It Works
 
-1. The **planner** reads SPEC.md and creates milestones in TASKS.md
+1. The **planner** reads SPEC.md and REQUIREMENTS.md, creates BACKLOG.md (story queue) and one milestone in TASKS.md
 2. The **builder** completes one milestone at a time, committing after each task
 3. The **reviewer** watches for new commits and reviews them for quality
 4. The **tester** runs scoped tests when a milestone completes
 5. The **validator** builds the app in Docker and tests against SPEC.md acceptance criteria
-6. When all milestones are done and all agents are idle, the builder writes `logs/builder.done` and everyone shuts down
+6. After each milestone, the **planner** expands the next backlog story into a new milestone
+7. When the backlog is empty and all agents are idle, the builder writes `logs/builder.done` and everyone shuts down
 
 Agent directories are disposable — they can be deleted and re-cloned from the repo at any time.
 The repo and `logs/` directory are the persistent state.

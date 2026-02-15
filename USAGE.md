@@ -26,7 +26,7 @@ Come back later and add new features to the same project:
 agentic-dev go --directory my-project --spec-file new-features.md
 ```
 
-The planner detects what's already built, updates the spec, and plans new milestones.
+The planner detects what's already built, updates the spec, adds new stories to the backlog, and plans the next milestone.
 
 ## Resuming Where You Left Off
 
@@ -78,9 +78,9 @@ agentic-dev validateloop
 | `go --directory D ... --name N` | Same, but overrides the GitHub repo name (defaults to dirname) | Once, from anywhere |
 | `go --directory D --spec-file F` (existing) | Updates requirements, re-plans, launches agents, builds | From anywhere |
 | `go --directory D` (existing) | Re-plans, launches agents, resumes building | From anywhere |
-| `plan` | Creates or updates TASKS.md from SPEC.md (with milestones) | builder/, on demand |
+| `plan` | Creates or updates BACKLOG.md and TASKS.md (one milestone at a time) | builder/, on demand |
 | `build` | Fixes bugs + reviews, then completes the current milestone | builder/, repeatedly |
-| `build --loop` | Loops through all milestones automatically (re-plans between each) | builder/, once |
+| `build --loop` | Loops through all milestones automatically (re-plans between each from backlog) | builder/, once |
 | `commitwatch` | Polls for commits, reviews each one + milestone-level reviews | reviewer/, once |
 | `testloop` | Watches for completed milestones, runs scoped tests | tester/, once |
 | `validateloop` | Watches for completed milestones, builds containers, validates against spec | validator/, once |

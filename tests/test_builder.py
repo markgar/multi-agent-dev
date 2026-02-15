@@ -124,7 +124,9 @@ def test_post_completion_replan_limit_is_at_least_one():
     assert _MAX_POST_COMPLETION_REPLANS >= 1
 
 
-def test_post_completion_replan_limit_prevents_unlimited_cleanup_milestones():
-    """After all milestones are done, the planner should only get a limited number
-    of chances to create new cleanup milestones before the builder stops re-planning."""
+def test_post_completion_replan_limit_only_applies_when_backlog_empty():
+    """After all milestones are done and no backlog stories remain, the planner
+    should only get a limited number of chances to create new cleanup milestones
+    before the builder stops re-planning. When backlog stories exist, the limit
+    is reset and story expansion takes precedence."""
     assert _MAX_POST_COMPLETION_REPLANS <= 3

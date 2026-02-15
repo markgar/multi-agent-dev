@@ -8,10 +8,14 @@ from typing import Annotated
 import typer
 
 from agent.milestone import (
+    count_unstarted_milestones_in_file,
     get_completed_milestones,
     get_current_milestone_progress,
     get_last_milestone_end_sha,
+    get_next_eligible_story_in_file,
     get_tasks_per_milestone,
+    has_pending_backlog_stories_in_file,
+    has_unexpanded_stories_in_file,
     parse_milestones_from_text,
     record_milestone_boundary,
 )
@@ -20,7 +24,7 @@ from agent.sentinel import are_agents_idle, write_builder_done
 from agent.utils import has_unchecked_items, log, run_cmd, run_copilot
 
 
-_MAX_TASKS_PER_MILESTONE = 5
+_MAX_TASKS_PER_MILESTONE = 10
 
 
 def register(app: typer.Typer) -> None:
@@ -238,12 +242,48 @@ def _detect_milestone_progress(state: BuildState, loop: bool) -> bool:
                 log("builder", "[Planner] Skipping re-plan (already in fix-only mode).", style="dim")
                 return False
             elif not progress and state.post_completion_replans >= _MAX_POST_COMPLETION_REPLANS:
-                # All milestones done and we've already re-planned once.
-                # Don't let the planner keep manufacturing cleanup milestones
-                # from review items — that causes tail-chasing.
-                log("builder", "")
-                log("builder", "[Planner] Skipping re-plan (post-completion replan limit reached).", style="dim")
-                return False
+                # All milestones done — check backlog for pending stories
+                if has_pending_backlog_stories_in_file("BACKLOG.md"):
+                    next_story = get_next_eligible_story_in_file("BACKLOG.md")
+                    if next_story:
+                        log("builder", "")
+                        log("builder", f"[Planner] Planning next story: {next_story['name']}...", style="magenta")
+                        state.post_completion_replans = 0  # Reset — this is productive re-planning
+                        plan()
+                        check_milestone_sizes()
+                        progress = get_current_milestone_progress("TASKS.md")
+                        if not progress:
+                            log("builder", "")
+                            log("builder", "[Planner] WARNING: Story expansion produced no new milestones.", style="bold yellow")
+                            return False
+                        state.last_milestone_done_count = progress["done"]
+                        state.last_milestone_name = progress["name"]
+                        unstarted = count_unstarted_milestones_in_file("TASKS.md")
+                        if unstarted > 1:
+                            log("builder", f"[Planner] WARNING: {unstarted} unstarted milestones queued (expected 1).", style="bold yellow")
+                    else:
+                        log("builder", "")
+                        log("builder", "[Planner] WARNING: Backlog has pending stories but none are eligible (dependency deadlock).", style="bold yellow")
+                        return False
+                elif has_unexpanded_stories_in_file("TASKS.md"):
+                    # Legacy fallback: old-format TASKS.md with ## Roadmap section
+                    log("builder", "")
+                    log("builder", "[Planner] Expanding next story (legacy roadmap)...", style="magenta")
+                    state.post_completion_replans = 0
+                    plan()
+                    check_milestone_sizes()
+                    progress = get_current_milestone_progress("TASKS.md")
+                    if not progress:
+                        log("builder", "")
+                        log("builder", "[Planner] WARNING: Story expansion produced no new milestones.", style="bold yellow")
+                        return False
+                    state.last_milestone_done_count = progress["done"]
+                    state.last_milestone_name = progress["name"]
+                else:
+                    # No stories left — apply existing tail-chasing guard
+                    log("builder", "")
+                    log("builder", "[Planner] Skipping re-plan (backlog empty, replan limit reached).", style="dim")
+                    return False
             else:
                 if not progress:
                     state.post_completion_replans += 1
@@ -256,6 +296,9 @@ def _detect_milestone_progress(state: BuildState, loop: bool) -> bool:
                 progress = get_current_milestone_progress("TASKS.md")
                 if not progress:
                     return False
+
+                state.last_milestone_done_count = progress["done"]
+                state.last_milestone_name = progress["name"]
 
     return True
 
@@ -433,6 +476,16 @@ def _check_remaining_work(state: BuildState) -> str:
             return "continue"
 
         if signal == "done":
+            # Check if there are pending backlog stories — distinguish "done" from
+            # "planner failed to expand remaining stories"
+            if has_pending_backlog_stories_in_file("BACKLOG.md") and remaining_tasks == 0:
+                log("builder", "")
+                log("builder", "[Planner] WARNING: Backlog has pending stories but no milestone "
+                    "tasks exist. Planner may have failed to expand.", style="bold yellow")
+            elif has_unexpanded_stories_in_file("TASKS.md") and remaining_tasks == 0:
+                log("builder", "")
+                log("builder", "[Planner] WARNING: Stories remain unexpanded but no milestone "
+                    "tasks exist. Planner may have failed to expand.", style="bold yellow")
             log("builder", "")
             log("builder", "======================================", style="bold green")
             log("builder", " All work complete!", style="bold green")

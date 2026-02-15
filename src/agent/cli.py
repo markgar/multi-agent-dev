@@ -7,7 +7,13 @@ from typing import Annotated
 
 import typer
 
-from agent.prompts import COPILOT_INSTRUCTIONS_PROMPT, COPILOT_INSTRUCTIONS_TEMPLATE, PLANNER_PROMPT
+from agent.prompts import (
+    COPILOT_INSTRUCTIONS_PROMPT,
+    COPILOT_INSTRUCTIONS_TEMPLATE,
+    PLANNER_COMPLETENESS_PROMPT,
+    PLANNER_INITIAL_PROMPT,
+    PLANNER_PROMPT,
+)
 from agent.sentinel import clear_builder_done
 from agent.utils import console, log, pushd, run_cmd, run_copilot
 from agent.version import get_version
@@ -196,25 +202,46 @@ def plan(requirements_changed: bool = False):
     log("planner", "[Planner] Evaluating project state...", style="magenta")
     log("planner", "")
 
-    prompt = PLANNER_PROMPT
-    if requirements_changed:
-        prefix = (
-            "IMPORTANT: REQUIREMENTS.md was JUST updated with new requirements this session. "
-            "This is almost certainly Case C — new features or changes were added. "
-            "Compare REQUIREMENTS.md against SPEC.md carefully and identify everything "
-            "that is new or changed. Do NOT conclude that 'everything is already covered' "
-            "without verifying each requirement against SPEC.md line by line.\n\n"
-        )
-        prompt = prefix + PLANNER_PROMPT
+    is_fresh = not os.path.exists("BACKLOG.md")
 
-    exit_code = run_copilot("planner", prompt)
+    if is_fresh:
+        # Case A: fresh project — create backlog and first milestone
+        log("planner", "[Planner] Fresh project — creating backlog and first milestone...", style="magenta")
+        exit_code = run_copilot("planner", PLANNER_INITIAL_PROMPT)
+        if exit_code != 0:
+            log("planner", "")
+            log("planner", "======================================", style="bold red")
+            log("planner", " Planner failed! Check errors above", style="bold red")
+            log("planner", "======================================", style="bold red")
+            return
 
-    if exit_code != 0:
+        # Completeness pass: validate backlog covers all requirements
         log("planner", "")
-        log("planner", "======================================", style="bold red")
-        log("planner", " Planner failed! Check errors above", style="bold red")
-        log("planner", "======================================", style="bold red")
-        return
+        log("planner", "[Planner] Running completeness check on backlog...", style="magenta")
+        exit_code = run_copilot("planner", PLANNER_COMPLETENESS_PROMPT)
+        if exit_code != 0:
+            log("planner", "[Planner] WARNING: Completeness check failed. Continuing with existing backlog.", style="bold yellow")
+    else:
+        # Case B/C: continuing or evolving project
+        prompt = PLANNER_PROMPT
+        if requirements_changed:
+            prefix = (
+                "IMPORTANT: REQUIREMENTS.md was JUST updated with new requirements this session. "
+                "This is almost certainly Case C — new features or changes were added. "
+                "Compare REQUIREMENTS.md against the BACKLOG.md story list and SPEC.md technical "
+                "decisions to identify new stories that need adding. Do NOT conclude that "
+                "'everything is already covered' without checking each requirement against "
+                "the backlog and existing milestones.\n\n"
+            )
+            prompt = prefix + PLANNER_PROMPT
+
+        exit_code = run_copilot("planner", prompt)
+        if exit_code != 0:
+            log("planner", "")
+            log("planner", "======================================", style="bold red")
+            log("planner", " Planner failed! Check errors above", style="bold red")
+            log("planner", "======================================", style="bold red")
+            return
 
     log("planner", "")
     log("planner", "======================================", style="bold magenta")

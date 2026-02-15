@@ -8,7 +8,7 @@ Each agent is a `copilot --yolo` call with a specific prompt. Here's exactly wha
 
 Runs once internally when you call `go`. Do not run `bootstrap` directly — it is deprecated and will error.
 
-> Create a directory called builder. cd into it. Initialize a git repo. Create an appropriate .gitignore for the project. Create a README.md that describes the project: `{description}`. A file called REQUIREMENTS.md already exists in this directory — it contains the original project requirements exactly as provided by the user. Do NOT modify or overwrite REQUIREMENTS.md. Use it as the primary input when writing SPEC.md. Create a SPEC.md that defines the desired end state of the project. SPEC.md should include: a high-level summary, the tech stack and language, the features and requirements, any constraints or guidelines, and acceptance criteria for what 'done' looks like. Be specific and thorough in SPEC.md — it is the source of truth that all future planning is based on. Every feature and requirement in REQUIREMENTS.md must be addressed in SPEC.md. Do NOT create a TASKS.md — task planning happens later. Commit with message 'Initial commit: project spec'. Run 'gh repo create `{user/name}` --public --source .' and push.
+> Create a directory called builder. cd into it. Initialize a git repo. Create an appropriate .gitignore for the project. Create a brief README.md (~15 lines) — what the project is, how to build and run it, and how to develop. Do not describe features in detail — REQUIREMENTS.md and SPEC.md cover that. A file called REQUIREMENTS.md already exists in this directory — it contains the original project requirements exactly as provided by the user. Do NOT modify or overwrite REQUIREMENTS.md. Use it as the primary input when writing SPEC.md. Create a SPEC.md that captures TECHNICAL DECISIONS only (~40-60 lines). SPEC.md should include: (1) a high-level summary, (2) the tech stack and language choices, (3) the architecture approach — layers, dependency rules, project structure, (4) cross-cutting concerns — authentication strategy, multi-tenancy approach, error handling conventions, (5) acceptance criteria at the feature level (e.g. 'members can be managed') not the field level. Do NOT include entity field definitions, API route tables, page layouts, or DTO shapes in SPEC.md — those details will be planned progressively as features are built. REQUIREMENTS.md is the authoritative source for feature details — SPEC.md captures the technical decisions for how to build them. Do NOT create a TASKS.md — task planning happens later. Commit with message '[bootstrap] Initial commit: project spec'. Run 'gh repo create `{user/name}` --public --source .' and push.
 
 **Creates:** README.md, SPEC.md, REQUIREMENTS.md, git repo, GitHub remote  
 **Writes code:** No
@@ -21,23 +21,68 @@ Runs once internally when you call `go`. Do not run `bootstrap` directly — it 
 
 ## Planner
 
-Runs on demand via `plan`. Called automatically by `go` before each build session.
+Runs on demand via `plan`. Called automatically by `go` before the first build cycle, and called again by the build loop between milestones to expand the next backlog story.
 
-The planner first assesses the project state to determine which situation applies:
+The planner manages three files: **BACKLOG.md** (ordered story queue), **TASKS.md** (current and completed milestones), and **SPEC.md** (technical decisions). It plans **one milestone at a time** — never multiple milestones in a single run.
 
-- **(A) Fresh project** — no TASKS.md, no code. SPEC.md exists from bootstrap. Creates TASKS.md with milestones.
-- **(B) Continuing project** — TASKS.md exists with completed milestones, SPEC.md covers everything in REQUIREMENTS.md. Evaluates whether the existing plan needs adjustment.
-- **(C) Evolving project** — REQUIREMENTS.md contains features not covered in SPEC.md (new requirements added since last session). Updates SPEC.md to incorporate the new requirements, then plans new milestones for the unimplemented work. The default is additive — existing features stay in SPEC.md unless REQUIREMENTS.md explicitly asks to remove or replace them. Silence about an existing feature is not a removal request.
+The planner uses different prompts depending on the project state:
 
-In cases B and C, the planner looks at the actual codebase to understand what is already built — it does not rely only on checked tasks.
+### Initial Planning (fresh project)
 
-> FIRST — ASSESS THE PROJECT STATE. Read REQUIREMENTS.md, then read SPEC.md if it exists, then look at the codebase and TASKS.md if they exist. Determine which situation applies: (A) Fresh project, (B) Continuing project, or (C) Evolving project with new requirements. In case C, update SPEC.md to incorporate the new requirements. Then proceed to planning. [...milestone sizing rules, containerization/testing exclusions, preserve completed tasks...]
+When no BACKLOG.md exists, the planner runs two focused Copilot calls:
 
-**Post-plan enforcement:** After the planner runs, the build loop checks milestone sizes. If any uncompleted milestone exceeds 5 tasks, the planner is re-invoked with a targeted split prompt. If still oversized after one retry, a warning is logged and the build proceeds.
+1. **Backlog creation** — Reads REQUIREMENTS.md and SPEC.md, decomposes all requirements into an ordered story queue (BACKLOG.md) with dependency annotations, checks off the first story, and writes the first milestone in TASKS.md.
+2. **Completeness check** — A separate Copilot call reviews the backlog against REQUIREMENTS.md and SPEC.md. It walks through every section and subsection to verify coverage. Any gaps (missing feature stories, uncovered technical concerns like API client generation, seed data, navigation structure) are added as new stories.
 
-**Creates:** TASKS.md (first run), updates it on subsequent runs  
-**Updates:** SPEC.md (when new requirements are detected — case C)  
-**Reads:** SPEC.md, README.md, REQUIREMENTS.md, codebase, TASKS.md, BUGS.md, REVIEWS.md  
+This two-step approach prevents the LLM from self-validating — the completeness pass reviews with fresh eyes.
+
+### Continuing Planning (between milestones)
+
+When BACKLOG.md already exists, the planner determines which situation applies:
+
+- **(B) Continuing project** — a milestone was just completed. BACKLOG.md and TASKS.md exist. Reads the codebase to understand what patterns emerged (base classes, naming conventions, dependency injection wiring). Finds the next eligible unchecked story in BACKLOG.md (all dependencies checked), checks it off, and appends one new `## Milestone:` to TASKS.md.
+- **(C) Evolving project** — REQUIREMENTS.md contains features or requirements not reflected in BACKLOG.md stories or SPEC.md technical decisions. This means new requirements have been added. Updates SPEC.md to incorporate any new technical decisions. Adds new stories to BACKLOG.md for the new features. The default is additive — existing features stay in SPEC.md unless REQUIREMENTS.md explicitly asks to remove or replace them. Silence about an existing feature is not a removal request. Then proceeds to Case B logic.
+
+In both cases, the planner looks at the actual codebase to understand what is already built — it does not rely only on checked tasks.
+
+### BACKLOG.md
+
+BACKLOG.md is a planner-owned, numbered, ordered story queue. Each entry:
+
+```
+N. [x] Story name <!-- depends: 1, 2 -->
+```
+
+- `[ ]` = in backlog (not yet planned), `[x]` = planned into TASKS.md
+- `<!-- depends: N -->` = HTML comment listing story numbers this depends on
+- The first story is always scaffolding (project structure, entry point, health endpoint)
+- Stories are ordered so each builds on predecessors, preferring vertical feature slices — each story delivers one feature through all layers (entity → repository → service → API → frontend) rather than building one layer across all features.
+- The builder never reads or writes BACKLOG.md — only the planner and orchestrator touch it.
+
+### Planning Rules
+
+- **One milestone per run.** The planner writes exactly one new `## Milestone:` section in TASKS.md each time it runs. It does not plan ahead or create multiple milestones at once.
+- **Detail in task descriptions.** Instead of "Create Member entity", write "Create Member entity (Id, FirstName, LastName, Email, Role enum, IsActive, OrganizationId)". The builder should not need to cross-reference SPEC.md or REQUIREMENTS.md.
+- **Task sizing.** Each task describes one logical change — one concept, one concern, one commit. If a task contains "and", "with", or a comma connecting distinct work, it is too big — split it.
+- **Milestone sizing.** A well-sized milestone typically has 3-7 tasks. Under 3 suggests tasks might be too coarse. Over 8 suggests a natural split point exists.
+- **Runnable after every milestone.** Each milestone must leave the app in a buildable, startable state.
+- **No test or container tasks.** The tester and validator agents handle those separately.
+- **Milestone acceptance context.** Each `## Milestone:` heading must be followed by a `> **Validates:**` blockquote describing what the validator should test — endpoint paths, HTTP methods, expected status codes, pages that should render, CLI commands. This is the validator's primary test plan.
+- **Read the codebase first (cases B/C).** Match existing patterns — if a BaseRepository<T> exists, use it; if DTOs are records, make new DTOs records.
+
+> **Initial planning prompt:** You are a planning-only orchestrator. Your job is to decompose a project's requirements into a complete backlog of stories, then plan the first milestone. [...story decomposition rules, task sizing, milestone sizing, detail requirements, containerization/testing exclusions...]
+
+> **Completeness check prompt:** You are a planning quality reviewer. Your ONLY job is to verify that BACKLOG.md completely covers REQUIREMENTS.md and SPEC.md. Walk through every ## and ### heading in REQUIREMENTS.md. For each section, verify at least one story covers it. Also check SPEC.md for technical decisions that require setup work. If gaps exist, add stories. [...gap identification, renumbering rules...]
+
+> **Continuing planning prompt:** You are a planning-only orchestrator. Your job is to manage BACKLOG.md, SPEC.md, and TASKS.md. ASSESS THE PROJECT STATE. Determine: (B) Continuing — find next eligible story, expand into milestone. (C) Evolving — update SPEC.md, add new stories, then do Case B. [...task sizing, milestone sizing, detail requirements, codebase reading...]
+
+**Post-plan enforcement:** After the planner runs, the build loop checks milestone sizes. If any uncompleted milestone exceeds 10 tasks, the planner is re-invoked with a targeted split prompt. If still oversized after one retry, a warning is logged and the build proceeds.
+
+**Between-milestone re-planning:** After each milestone completes, the build loop calls the planner again to expand the next backlog story. If no eligible story exists (all remaining stories have unmet dependencies), a dependency deadlock warning is logged. If the backlog is empty, the build is done.
+
+**Creates:** BACKLOG.md (first run), TASKS.md (first run)  
+**Updates:** BACKLOG.md (checks off stories), TASKS.md (appends milestones), SPEC.md (when new requirements are detected — case C)  
+**Reads:** SPEC.md, REQUIREMENTS.md, BACKLOG.md, TASKS.md, codebase  
 **Writes code:** No
 
 ---
@@ -62,14 +107,14 @@ The generated file includes:
 
 ## Builder
 
-Runs via `build`. Completes one milestone per cycle. Between milestones the planner re-evaluates the task list. After all milestones are done, waits for the reviewer, tester, and validator to go idle and verifies that all checklists are clean before writing `logs/builder.done` to signal shutdown.
+Runs via `build`. Completes one milestone per cycle, then stops. Between milestones the build loop calls the planner to expand the next backlog story. After all stories are done, waits for the reviewer, tester, and validator to go idle and verifies that all checklists are clean before writing `logs/builder.done` to signal shutdown.
 
-> Before starting, review README.md, SPEC.md, and TASKS.md to understand the project's purpose and plan. Read .github/copilot-instructions.md if it exists — follow its coding guidelines and conventions in all code you write. Read DEPLOY.md if it exists — it contains deployment configuration and lessons learned from the validator agent. If it mentions required env vars, ports, or startup requirements, ensure your code is compatible. Do NOT modify DEPLOY.md — only the validator agent manages that file. Only build, fix, or keep code that serves that purpose. Remove any scaffolding, template code, or functionality that does not belong. When completing a task that changes the project structure, key files, architecture, or conventions, update .github/copilot-instructions.md to reflect the change. Now look at BUGS.md first. Fix ALL unfixed bugs — bugs are never deferred. Fix them one at a time — fix a bug, mark it fixed in BUGS.md, commit with a meaningful message, run git pull --rebase, and push. Then look at REVIEWS.md. Address unchecked review items one at a time — fix the issue, mark it done in REVIEWS.md, commit, pull --rebase, and push. Once all bugs and review items are fixed (or if there are none), move to TASKS.md. TASKS.md is organized into milestones (sections headed with `## Milestone: <name>`). Find the first milestone that has unchecked tasks — this is your current milestone. Complete every task in this milestone, then stop. Do not start the next milestone. Do tasks one at a time. For each task: write the code AND mark it complete in TASKS.md, then commit both together in a single commit with a meaningful message. Do not make separate commits for the code and the checkbox update. After each commit, run git pull --rebase and push. When every task in the current milestone is checked, verify the application still builds and runs successfully. For a server or web app, start it, confirm it responds (e.g. curl a health or root endpoint), then stop it. For a CLI tool, run it with a basic command (e.g. --help) and confirm it exits cleanly. For a library, confirm the main module imports without errors. If the app does not build or start, fix it before finishing the milestone — commit the fix with a descriptive message, pull, and push. Once the app is verified runnable, you are done for this session.
+> Before starting, review README.md, SPEC.md, and TASKS.md to understand the project's purpose and plan. Read .github/copilot-instructions.md if it exists — follow its coding guidelines and conventions in all code you write. Read DEPLOY.md if it exists — it contains deployment configuration and lessons learned from the validator agent. If it mentions required env vars, ports, or startup requirements, ensure your code is compatible. Do NOT modify DEPLOY.md — only the validator agent manages that file. Only build, fix, or keep code that serves that purpose. Remove any scaffolding, template code, or functionality that does not belong. After any refactoring — including review fixes — check for dead code left behind and remove it. Before your first commit in each session, review .gitignore and ensure it covers the project's current tech stack; update it when you introduce a new framework or build tool. When completing a task that changes the project structure, key files, architecture, or conventions, update .github/copilot-instructions.md to reflect the change (it is a style guide — describe file roles and coding patterns, not implementation details). Now look at BUGS.md first. Fix ALL unfixed bugs — bugs are never deferred. Then look at REVIEWS.md. Address unchecked review items one at a time. Once all bugs and review items are fixed, move to TASKS.md. Find the first milestone that has unchecked tasks — this is your current milestone. Complete every task in this milestone, then STOP IMMEDIATELY. Do not continue to the next milestone. For each task: write the code AND mark it complete in TASKS.md, then commit BOTH together in a single commit with a meaningful message. After each commit, run git pull --rebase and push. When every task in the current milestone is checked, verify the application still builds and runs. Once verified, you are done for this session.
 
 **Reads:** README.md, SPEC.md, TASKS.md, BUGS.md, REVIEWS.md, DEPLOY.md, .github/copilot-instructions.md  
 **Writes code:** Yes  
-**Updates:** .github/copilot-instructions.md (when project structure changes)  
-**Commits:** After each bug fix, review fix, and task  
+**Updates:** .github/copilot-instructions.md (when project structure changes), .gitignore (when tech stack changes)  
+**Commits:** After each bug fix, review fix, and task (prefixed with `[builder]`)  
 **Shutdown signal:** Waits for agents to idle, then writes `logs/builder.done`
 
 ---
@@ -112,7 +157,7 @@ Milestone-triggered via `testloop`, launched automatically by `go`. Watches `log
 
 For each newly completed milestone:
 
-> Read SPEC.md and TASKS.md to understand the project. A milestone — '{milestone_name}' — has just been completed. Pull the latest code with `git pull --rebase`. Run `git diff {milestone_start_sha} {milestone_end_sha} --name-only` to see which files changed in this milestone. Focus your testing on those files and the features they implement. Build the project. Run all existing tests. If there is a runnable API, start it, test the endpoints related to the changed files with curl, then stop it. Evaluate test coverage for the changed files and their related functionality. If there are major gaps — like no tests at all for a feature, or completely missing error handling tests — write focused tests to cover the most important gaps. Prioritize integration tests over unit tests. Each test should verify a distinct user-facing behavior. Do not test internal implementation details, getters/setters, or trivially obvious code. Write at most 10 new tests per run. For any test that fails, write each failure to BUGS.md. Only append new lines — never edit, reorder, or remove existing lines in BUGS.md. Commit new tests and BUGS.md changes, run git pull --rebase, and push. If the push fails, run git pull --rebase and push again (retry up to 3 times). If everything passes and no new tests are needed, do nothing.
+> Read SPEC.md and TASKS.md to understand the project. A milestone — '{milestone_name}' — has just been completed. Pull the latest code with `git pull --rebase`. Run `git diff {milestone_start_sha} {milestone_end_sha} --name-only` to see which files changed in this milestone. Focus your testing on those files and the features they implement. Build the project. Run all existing tests. Evaluate test coverage for the changed files and their related functionality. If there are major gaps — like no tests at all for a feature, or completely missing error handling tests — write focused tests to cover the most important gaps. Prioritize integration tests over unit tests. Each test should verify a distinct user-facing behavior. Do not test internal implementation details, getters/setters, or trivially obvious code. Write at most 10 new tests per run. Do NOT start the application, start servers, or test live endpoints — a separate validator agent handles runtime testing in containers. Focus exclusively on running the test suite. For any test that fails, write each failure to BUGS.md. Only append new lines — never edit, reorder, or remove existing lines in BUGS.md. Commit new tests and BUGS.md changes, run git pull --rebase, and push. If the push fails, run git pull --rebase and push again (retry up to 3 times). If everything passes and no new tests are needed, do nothing.
 
 When the builder finishes, the tester sees `logs/builder.done` and exits.
 
@@ -155,14 +200,14 @@ When the builder finishes, the validator sees `logs/builder.done` and exits.
 ## Agent Coordination Rules
 
 - **Commit message tagging:** Every agent prefixes its commit messages with its name in brackets — `[builder]`, `[reviewer]`, `[tester]`, `[validator]`, `[planner]`, `[bootstrap]`. This makes it easy to see who did what in `git log`.
-- The **Planner** runs on demand via `plan`. It assesses project state (fresh / continuing / evolving), updates SPEC.md if new requirements are detected, then creates or updates the task list. It never writes application code.
-- The **Builder** checks `BUGS.md` first (all bugs are fixed before any tasks), then `REVIEWS.md`, then completes the current milestone. One milestone per cycle, then the planner re-evaluates.
+- The **Planner** runs on demand via `plan`. It assesses project state (fresh / continuing / evolving), manages BACKLOG.md (story queue with dependency tracking), updates SPEC.md if new requirements are detected, then creates or updates the task list one milestone at a time. It never writes application code.
+- The **Builder** checks `BUGS.md` first (all bugs are fixed before any tasks), then `REVIEWS.md`, then completes the current milestone. One milestone per cycle, then the planner expands the next backlog story.
 - The **Reviewer** reviews each commit individually, plus a cross-cutting review when a milestone completes. Non-code issues ([doc]: stale docs, misleading comments) are fixed directly by the reviewer. Code-level issues ([code]) are filed to REVIEWS.md for the builder. Milestone reviews clean up stale/already-resolved review items.
 - The **Tester** runs scoped tests when a milestone completes, focusing on changed files. It runs the test suite only — it does not start the app or test live endpoints. Exits when the builder finishes.
 - The **Validator** builds the app in a Docker container after each milestone, starts it, and tests it against SPEC.md acceptance criteria. Persists deployment knowledge in DEPLOY.md. Exits when the builder finishes.
 - Neither the Reviewer nor Tester duplicate items already in their respective files.
 - All agents run `git pull --rebase` before pushing to avoid merge conflicts. If rebase fails with conflicts (e.g. two agents edited DEPLOY.md or BUGS.md concurrently), agents recover automatically: abort the rebase, stash local changes, pull fresh, pop the stash, and keep the local version for any conflicted files.
-- `SPEC.md` is the source of truth. Edit it anytime to steer the project — run `plan` to adapt the task list.
+- `SPEC.md` is the source of truth for technical decisions. `BACKLOG.md` is the story queue. Edit either anytime to steer the project — run `plan` to adapt the task list.
 
 ---
 

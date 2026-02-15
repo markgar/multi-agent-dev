@@ -2,7 +2,7 @@
 
 An autonomous development workflow using GitHub Copilot CLI. Five agents collaborate through files in a shared GitHub repo to build projects in **.NET/C#**, **Python**, or **Node.js**:
 
-- **Planner** — creates and updates the task list from the spec, organized into milestones
+- **Planner** — creates a backlog of stories and expands them into milestones one at a time
 - **Builder** — fixes bugs, addresses review items, completes one milestone per cycle
 - **Reviewer** — reviews each commit for quality, fixes doc issues directly, files code issues to REVIEWS.md, plus cross-cutting milestone reviews with stale-item cleanup
 - **Tester** — runs scoped tests when milestones complete, files bugs
@@ -51,7 +51,7 @@ agentic-dev go --directory hello-world --description "a C# console app that prin
 
 That's it. `go` will:
 1. **Bootstrap** — create the project, SPEC.md, git repo, GitHub remote, and four clones (builder/, reviewer/, tester/, validator/)
-2. **Plan** — generate TASKS.md from the spec
+2. **Plan** — generate BACKLOG.md (story queue) and the first milestone in TASKS.md
 3. **Launch reviewer** — in a new terminal window, reviewing each commit and completed milestones
 4. **Launch tester** — in a new terminal window, testing each completed milestone
 5. **Launch validator** — in a new terminal window, building containers and validating against the spec
@@ -119,8 +119,8 @@ Planner ──TASKS.md──→ Builder ──git push──→ Reviewer ──R
 
 | From | To | Mechanism | What it says |
 |---|---|---|---|
-| Bootstrap | Planner | `SPEC.md` | Here's what the project should look like when it's done |
-| Planner | Builder | `TASKS.md` | Here's what to do next |
+| Bootstrap | Planner | `SPEC.md` | Here's the technical decisions for how to build the project |
+| Planner | Builder | `BACKLOG.md`, `TASKS.md` | Here's the next milestone to build |
 | Builder | Reviewer | `git push` | I finished a commit or milestone, review it |
 | Builder | Tester | `milestones.log` | A milestone is complete, test it |
 | Builder | Validator | `milestones.log` | A milestone is complete, validate it in a container |

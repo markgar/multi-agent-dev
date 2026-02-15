@@ -191,6 +191,42 @@ def get_current_milestone_progress(tasks_path: str) -> dict | None:
     return None
 
 
+def has_unexpanded_stories(content: str) -> bool:
+    """Return True if the ## Roadmap section has any non-strikethrough story bullets."""
+    in_roadmap = False
+    for line in content.split("\n"):
+        if re.match(r"^##\s+Roadmap", line, re.IGNORECASE):
+            in_roadmap = True
+            continue
+        if in_roadmap and line.startswith("## "):
+            break
+        if in_roadmap and re.match(r"^\d+\.\s+", line):
+            if "~~" not in line:
+                return True
+    return False
+
+
+def has_unexpanded_stories_in_file(tasks_path: str) -> bool:
+    """I/O wrapper for has_unexpanded_stories."""
+    if not os.path.exists(tasks_path):
+        return False
+    with open(tasks_path, "r", encoding="utf-8") as f:
+        return has_unexpanded_stories(f.read())
+
+
+def count_unstarted_milestones(content: str) -> int:
+    """Count milestones where no tasks are completed (done == 0)."""
+    return sum(1 for ms in parse_milestones_from_text(content) if ms["done"] == 0)
+
+
+def count_unstarted_milestones_in_file(tasks_path: str) -> int:
+    """I/O wrapper for count_unstarted_milestones."""
+    if not os.path.exists(tasks_path):
+        return 0
+    with open(tasks_path, "r", encoding="utf-8") as f:
+        return count_unstarted_milestones(f.read())
+
+
 def get_tasks_per_milestone(tasks_path: str) -> list[dict]:
     """Return task counts for each uncompleted milestone.
 
@@ -201,3 +237,82 @@ def get_tasks_per_milestone(tasks_path: str) -> list[dict]:
         for ms in _parse_milestones(tasks_path)
         if ms["done"] < ms["total"]
     ]
+
+
+# ============================================
+# Backlog parsing
+# ============================================
+
+_BACKLOG_RE = re.compile(
+    r"^(\d+)\.\s+\[([ xX])\]\s+(.+?)(?:\s*<!--\s*depends:\s*([\d,\s]+)\s*-->)?$"
+)
+
+
+def parse_backlog(content: str) -> list[dict]:
+    """Parse BACKLOG.md content into structured story dicts.
+
+    Each line: ``N. [x] Story name <!-- depends: 1, 2 -->``
+    Returns: [{"number": int, "name": str, "checked": bool, "depends": list[int]}]
+    """
+    stories = []
+    for line in content.split("\n"):
+        m = _BACKLOG_RE.match(line.strip())
+        if not m:
+            continue
+        number = int(m.group(1))
+        checked = m.group(2).strip().lower() == "x"
+        name = m.group(3).strip()
+        deps_raw = m.group(4)
+        depends = []
+        if deps_raw:
+            depends = [int(d.strip()) for d in deps_raw.split(",") if d.strip()]
+        stories.append({
+            "number": number,
+            "name": name,
+            "checked": checked,
+            "depends": depends,
+        })
+    return stories
+
+
+def has_pending_backlog_stories(content: str) -> bool:
+    """Return True if there is at least one unchecked story in the backlog."""
+    return any(not s["checked"] for s in parse_backlog(content))
+
+
+def get_next_eligible_story(content: str) -> dict | None:
+    """Return the first unchecked story whose dependencies are all checked.
+
+    Returns None if all stories are done or if remaining stories have unmet
+    dependencies (deadlock).
+    """
+    stories = parse_backlog(content)
+    checked_numbers = {s["number"] for s in stories if s["checked"]}
+    for story in stories:
+        if story["checked"]:
+            continue
+        if all(dep in checked_numbers for dep in story["depends"]):
+            return story
+    return None
+
+
+def has_pending_backlog_stories_in_file(path: str) -> bool:
+    """I/O wrapper for has_pending_backlog_stories. Returns False if file missing."""
+    try:
+        if not os.path.exists(path):
+            return False
+        with open(path, "r", encoding="utf-8") as f:
+            return has_pending_backlog_stories(f.read())
+    except Exception:
+        return False
+
+
+def get_next_eligible_story_in_file(path: str) -> dict | None:
+    """I/O wrapper for get_next_eligible_story. Returns None if file missing."""
+    try:
+        if not os.path.exists(path):
+            return None
+        with open(path, "r", encoding="utf-8") as f:
+            return get_next_eligible_story(f.read())
+    except Exception:
+        return None
