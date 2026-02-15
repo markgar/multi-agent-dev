@@ -39,6 +39,21 @@ def register(app: typer.Typer) -> None:
     app.command()(testoncommit)
 
 
+def _pull_with_warning() -> None:
+    """Run git pull and log a warning if it fails."""
+    pull_result = run_cmd(["git", "pull", "-q"], capture=True)
+    if pull_result.returncode != 0:
+        now = datetime.now().strftime("%H:%M:%S")
+        log("commit-watcher", f"[{now}] WARNING: git pull failed", style="red")
+        if pull_result.stderr:
+            log("commit-watcher", pull_result.stderr.strip(), style="red")
+
+
+def _has_new_commits(current_head: str, last_sha: str) -> bool:
+    """Return True when HEAD has advanced past the last reviewed SHA."""
+    return bool(current_head and current_head != last_sha and last_sha)
+
+
 def _initialize_watcher_checkpoint() -> str:
     """Restore or seed the reviewer checkpoint.
 
@@ -260,7 +275,6 @@ def commitwatch(
     while True:
         if is_builder_done():
             # Builder is done — but finish any remaining milestone reviews first.
-            # Pull latest to pick up final milestones.log entries.
             run_cmd(["git", "pull", "-q"], capture=True)
             _check_milestone_reviews()
             now = datetime.now().strftime("%H:%M:%S")
@@ -268,17 +282,12 @@ def commitwatch(
             log("commit-watcher", f"[{now}] Builder finished. Shutting down.", style="bold green")
             break
 
-        pull_result = run_cmd(["git", "pull", "-q"], capture=True)
-        if pull_result.returncode != 0:
-            now = datetime.now().strftime("%H:%M:%S")
-            log("commit-watcher", f"[{now}] WARNING: git pull failed", style="red")
-            if pull_result.stderr:
-                log("commit-watcher", pull_result.stderr.strip(), style="red")
+        _pull_with_warning()
 
         head_result = run_cmd(["git", "rev-parse", "HEAD"], capture=True)
         current_head = head_result.stdout.strip() if head_result.returncode == 0 else ""
 
-        if current_head and current_head != last_sha and last_sha:
+        if _has_new_commits(current_head, last_sha):
             builder_finished = _review_new_commits(last_sha, current_head)
             if builder_finished:
                 # Builder finished mid-review — still do final milestone reviews.

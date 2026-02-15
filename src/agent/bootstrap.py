@@ -69,6 +69,23 @@ def _resolve_description(description, spec_file):
     return description
 
 
+def _check_required_tools(local: bool) -> bool:
+    """Verify required CLI tools are installed. Returns True if all present."""
+    tools = [("git", "brew install git", "winget install Git.Git"), ("docker", "brew install --cask docker", "winget install Docker.DockerDesktop"), ("copilot", None, None)]
+    if not local:
+        tools.insert(1, ("gh", "brew install gh", "winget install GitHub.cli"))
+    for tool, install_mac, install_win in tools:
+        if not check_command(tool):
+            console.print(f"ERROR: {tool} is not installed.", style="bold red")
+            install = install_mac if is_macos() else install_win
+            if install:
+                console.print(f"Run: {install}", style="yellow")
+            console.print("Then close and reopen your terminal.", style="yellow")
+            return False
+        console.print(f"✓ {tool:<8} - OK", style="green")
+    return True
+
+
 def _check_prerequisites(local=False):
     """Check all prerequisites (GitHub user, core tools, auth). Returns gh_user or None."""
     if local:
@@ -81,18 +98,8 @@ def _check_prerequisites(local=False):
             console.print("Run: gh auth login", style="yellow")
             return None
 
-    tools = [("git", "brew install git", "winget install Git.Git"), ("docker", "brew install --cask docker", "winget install Docker.DockerDesktop"), ("copilot", None, None)]
-    if not local:
-        tools.insert(1, ("gh", "brew install gh", "winget install GitHub.cli"))
-    for tool, install_mac, install_win in tools:
-        if not check_command(tool):
-            console.print(f"ERROR: {tool} is not installed.", style="bold red")
-            install = install_mac if is_macos() else install_win
-            if install:
-                console.print(f"Run: {install}", style="yellow")
-            console.print("Then close and reopen your terminal.", style="yellow")
-            return None
-        console.print(f"✓ {tool:<8} - OK", style="green")
+    if not _check_required_tools(local):
+        return None
 
     if not local:
         auth_result = run_cmd(["gh", "auth", "status"], quiet=True)

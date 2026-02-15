@@ -29,11 +29,16 @@ import os
 import sys
 
 DEFAULT_SRC_DIR = "src/agent"
-DEFAULT_MAX_FUNC_LINES = 40
-DEFAULT_MAX_FILE_LINES = 300
-DEFAULT_MAX_NESTING_DEPTH = 4
-DEFAULT_MAX_COMPLEXITY = 10
-DEFAULT_MAX_PARAMS = 7
+DEFAULT_WARN_FUNC_LINES = 40
+DEFAULT_HARD_FUNC_LINES = 60
+DEFAULT_WARN_FILE_LINES = 300
+DEFAULT_HARD_FILE_LINES = 500
+DEFAULT_WARN_NESTING_DEPTH = 4
+DEFAULT_HARD_NESTING_DEPTH = 6
+DEFAULT_WARN_COMPLEXITY = 10
+DEFAULT_HARD_COMPLEXITY = 15
+DEFAULT_WARN_PARAMS = 7
+DEFAULT_HARD_PARAMS = 10
 DEFAULT_MAX_DIR_DEPTH = 5
 DEFAULT_BASELINE_FILE = ".code-health-baseline.json"
 
@@ -326,56 +331,128 @@ def measure_directory_depth(src_dir):
 
 
 # ---------------------------------------------------------------------------
+# Severity classification
+# ---------------------------------------------------------------------------
+
+def classify_severity(value, warn_threshold, hard_threshold):
+    """Classify a measured value into a severity level.
+
+    Returns 'violation' if value exceeds the hard threshold,
+    'advisory' if it exceeds the warn threshold but not the hard,
+    or None if it's within acceptable range.
+    """
+    if value > hard_threshold:
+        return "violation"
+    if value > warn_threshold:
+        return "advisory"
+    return None
+
+
+def split_by_severity(violations):
+    """Split a violations dict into (hard, advisory) dicts by severity field.
+
+    Hard violations have severity='violation' or no severity field (binary rules).
+    Advisory violations have severity='advisory'.
+    Returns (hard_dict, advisory_dict) with the same category keys.
+    """
+    hard = {cat: [] for cat in VIOLATION_CATEGORIES}
+    advisory = {cat: [] for cat in VIOLATION_CATEGORIES}
+    for cat in VIOLATION_CATEGORIES:
+        for v in violations.get(cat, []):
+            if v.get("severity") == "advisory":
+                advisory[cat].append(v)
+            else:
+                hard[cat].append(v)
+    return hard, advisory
+
+
+# ---------------------------------------------------------------------------
 # Violation detection
 # ---------------------------------------------------------------------------
 
 def find_violations(analyses, limits, src_dir):
-    """Find all violations across analyses. Returns a dict keyed by category."""
+    """Find all violations across analyses. Returns a dict keyed by category.
+
+    Each violation includes a 'severity' field: 'advisory' for values between
+    warn and hard thresholds (LLM reviewer decides), 'violation' for values
+    exceeding the hard threshold (always filed). Binary rules (dead code,
+    missing annotations, directory depth) are always 'violation'.
+    """
     violations = {cat: [] for cat in VIOLATION_CATEGORIES}
 
     for analysis in analyses:
         path = analysis["path"]
 
-        if analysis["file_lines"] > limits["max_file"]:
+        file_severity = classify_severity(
+            analysis["file_lines"], limits["warn_file"], limits["hard_file"]
+        )
+        if file_severity:
             violations["oversized_files"].append({
                 "path": path,
                 "lines": analysis["file_lines"],
-                "limit": limits["max_file"],
+                "limit": limits["hard_file"],
+                "warn_limit": limits["warn_file"],
+                "severity": file_severity,
             })
 
         for func in analysis["functions"]:
-            if func["length"] > limits["max_func"]:
+            func_severity = classify_severity(
+                func["length"], limits["warn_func"], limits["hard_func"]
+            )
+            if func_severity:
                 violations["oversized_functions"].append({
                     "path": path,
                     "function": func["name"],
                     "line": func["line"],
                     "length": func["length"],
-                    "limit": limits["max_func"],
+                    "limit": limits["hard_func"],
+                    "warn_limit": limits["warn_func"],
+                    "severity": func_severity,
                 })
-            if func["nesting_depth"] > limits["max_depth"]:
+
+            depth_severity = classify_severity(
+                func["nesting_depth"], limits["warn_depth"], limits["hard_depth"]
+            )
+            if depth_severity:
                 violations["deep_nesting"].append({
                     "path": path,
                     "function": func["name"],
                     "line": func["line"],
                     "depth": func["nesting_depth"],
-                    "limit": limits["max_depth"],
+                    "limit": limits["hard_depth"],
+                    "warn_limit": limits["warn_depth"],
+                    "severity": depth_severity,
                 })
-            if func["complexity"] > limits["max_complexity"]:
+
+            complexity_severity = classify_severity(
+                func["complexity"], limits["warn_complexity"], limits["hard_complexity"]
+            )
+            if complexity_severity:
                 violations["high_complexity"].append({
                     "path": path,
                     "function": func["name"],
                     "line": func["line"],
                     "complexity": func["complexity"],
-                    "limit": limits["max_complexity"],
+                    "limit": limits["hard_complexity"],
+                    "warn_limit": limits["warn_complexity"],
+                    "severity": complexity_severity,
                 })
-            if func["param_count"] > limits["max_params"]:
+
+            params_severity = classify_severity(
+                func["param_count"], limits["warn_params"], limits["hard_params"]
+            )
+            if params_severity:
                 violations["too_many_params"].append({
                     "path": path,
                     "function": func["name"],
                     "line": func["line"],
                     "param_count": func["param_count"],
-                    "limit": limits["max_params"],
+                    "limit": limits["hard_params"],
+                    "warn_limit": limits["warn_params"],
+                    "severity": params_severity,
                 })
+
+            # Binary rule — no range, always 'violation'
             missing_count = len(func["missing_param_annotations"])
             if func["missing_return_annotation"]:
                 missing_count += 1
@@ -387,22 +464,26 @@ def find_violations(analyses, limits, src_dir):
                     "missing_return": func["missing_return_annotation"],
                     "missing_params": func["missing_param_annotations"],
                     "missing_count": missing_count,
+                    "severity": "violation",
                 })
 
+        # Binary rule — no range, always 'violation'
         for dead in analysis.get("dead_code", []):
             violations["dead_code"].append({
                 "path": path,
                 "name": dead["name"],
                 "line": dead["line"],
+                "severity": "violation",
             })
 
-    # Directory depth
+    # Binary rule — no range, always 'violation'
     for dirpath, depth in measure_directory_depth(src_dir):
         if depth > limits["max_dir_depth"]:
             violations["deep_directories"].append({
                 "path": dirpath,
                 "depth": depth,
                 "limit": limits["max_dir_depth"],
+                "severity": "violation",
             })
 
     # Sort for consistent output
@@ -510,67 +591,95 @@ def count_baselined(violations, filtered):
 # Markdown report
 # ---------------------------------------------------------------------------
 
+def _severity_label(severity):
+    """Return a display label for a severity level."""
+    if severity == "advisory":
+        return "advisory"
+    return "VIOLATION"
+
+
 def format_markdown_report(violations, limits, baselined_count=0):
-    """Format violations as a GitHub Issue-friendly markdown report."""
+    """Format violations as a GitHub Issue-friendly markdown report.
+
+    Separates hard violations (must fix) from advisory items (LLM reviewer
+    decides). Each table row shows a Severity column.
+    """
     total = count_all_violations(violations)
+    hard, advisory = split_by_severity(violations)
+    hard_count = count_all_violations(hard)
+    advisory_count = count_all_violations(advisory)
 
     if total == 0:
         return "## Code Health Check: All Clear\n\nNo violations found. All files and functions are within limits."
 
     lines = []
-    lines.append("## Code Health Check: {} violation{} found\n".format(total, "s" if total != 1 else ""))
+    lines.append("## Code Health Check: {} issue{} found\n".format(total, "s" if total != 1 else ""))
     lines.append("This is an automated report from the code health checker.")
     lines.append("The codebase guidelines recommend small, single-purpose functions ")
     lines.append("with flat control flow for agent-maintained code.\n")
+    if hard_count:
+        lines.append("**{} hard violation{}** (must fix) and **{} advisory** (reviewer judgment).\n".format(
+            hard_count, "s" if hard_count != 1 else "", advisory_count))
+    elif advisory_count:
+        lines.append("**{} advisory item{}** for reviewer judgment (no hard violations).\n".format(
+            advisory_count, "s" if advisory_count != 1 else ""))
     if baselined_count > 0:
         lines.append("_{} known violation{} suppressed by baseline. ".format(
             baselined_count, "s" if baselined_count != 1 else ""))
         lines.append("These will reappear if the code gets worse._\n")
 
     if violations.get("oversized_functions"):
-        lines.append("### Oversized Functions (limit: {} lines)\n".format(limits["max_func"]))
-        lines.append("| Function | File | Line | Length | Over by |")
-        lines.append("|----------|------|------|--------|---------|")
+        lines.append("### Oversized Functions (advisory: >{} lines, hard: >{} lines)\n".format(
+            limits["warn_func"], limits["hard_func"]))
+        lines.append("| Severity | Function | File | Line | Length | Over by |")
+        lines.append("|----------|----------|------|------|--------|---------|")
         for v in violations["oversized_functions"]:
-            over = v["length"] - v["limit"]
-            lines.append("| `{}` | {} | L{} | **{}** | +{} |".format(
-                v["function"], v["path"], v["line"], v["length"], over))
+            threshold = v["limit"] if v["severity"] == "violation" else v.get("warn_limit", v["limit"])
+            over = v["length"] - threshold
+            lines.append("| {} | `{}` | {} | L{} | **{}** | +{} |".format(
+                _severity_label(v["severity"]), v["function"], v["path"], v["line"], v["length"], over))
         lines.append("")
 
     if violations.get("oversized_files"):
-        lines.append("### Oversized Files (limit: {} lines)\n".format(limits["max_file"]))
-        lines.append("| File | Lines | Over by |")
-        lines.append("|------|-------|---------|")
+        lines.append("### Oversized Files (advisory: >{} lines, hard: >{} lines)\n".format(
+            limits["warn_file"], limits["hard_file"]))
+        lines.append("| Severity | File | Lines | Over by |")
+        lines.append("|----------|------|-------|---------|")
         for v in violations["oversized_files"]:
-            over = v["lines"] - v["limit"]
-            lines.append("| {} | **{}** | +{} |".format(v["path"], v["lines"], over))
+            threshold = v["limit"] if v["severity"] == "violation" else v.get("warn_limit", v["limit"])
+            over = v["lines"] - threshold
+            lines.append("| {} | {} | **{}** | +{} |".format(
+                _severity_label(v["severity"]), v["path"], v["lines"], over))
         lines.append("")
 
     if violations.get("deep_nesting"):
-        lines.append("### Excessive Nesting (limit: {} levels)\n".format(limits["max_depth"]))
-        lines.append("| Function | File | Line | Depth |")
-        lines.append("|----------|------|------|-------|")
+        lines.append("### Excessive Nesting (advisory: >{} levels, hard: >{} levels)\n".format(
+            limits["warn_depth"], limits["hard_depth"]))
+        lines.append("| Severity | Function | File | Line | Depth |")
+        lines.append("|----------|----------|------|------|-------|")
         for v in violations["deep_nesting"]:
-            lines.append("| `{}` | {} | L{} | **{}** |".format(
-                v["function"], v["path"], v["line"], v["depth"]))
+            lines.append("| {} | `{}` | {} | L{} | **{}** |".format(
+                _severity_label(v["severity"]), v["function"], v["path"], v["line"], v["depth"]))
         lines.append("")
 
     if violations.get("high_complexity"):
-        lines.append("### High Cyclomatic Complexity (limit: {})\n".format(limits["max_complexity"]))
-        lines.append("| Function | File | Line | Complexity |")
-        lines.append("|----------|------|------|------------|")
+        lines.append("### High Cyclomatic Complexity (advisory: >{}, hard: >{})\n".format(
+            limits["warn_complexity"], limits["hard_complexity"]))
+        lines.append("| Severity | Function | File | Line | Complexity |")
+        lines.append("|----------|----------|------|------|------------|")
         for v in violations["high_complexity"]:
-            lines.append("| `{}` | {} | L{} | **{}** |".format(
-                v["function"], v["path"], v["line"], v["complexity"]))
+            lines.append("| {} | `{}` | {} | L{} | **{}** |".format(
+                _severity_label(v["severity"]), v["function"], v["path"], v["line"], v["complexity"]))
         lines.append("")
 
     if violations.get("too_many_params"):
-        lines.append("### Too Many Parameters (limit: {})\n".format(limits["max_params"]))
-        lines.append("| Function | File | Line | Params |")
-        lines.append("|----------|------|------|--------|")
+        lines.append("### Too Many Parameters (advisory: >{}, hard: >{})\n".format(
+            limits["warn_params"], limits["hard_params"]))
+        lines.append("| Severity | Function | File | Line | Params |")
+        lines.append("|----------|----------|------|------|--------|")
         for v in violations["too_many_params"]:
-            lines.append("| `{}` | {} | L{} | **{}** |".format(
-                v["function"], v["path"], v["line"], v["param_count"]))
+            lines.append("| {} | `{}` | {} | L{} | **{}** |".format(
+                _severity_label(v["severity"]), v["function"], v["path"], v["line"], v["param_count"]))
         lines.append("")
 
     if violations.get("missing_annotations"):
@@ -625,13 +734,29 @@ def format_markdown_report(violations, limits, baselined_count=0):
 def main():
     parser = argparse.ArgumentParser(description="Code health checker for agent-maintained codebases")
     parser.add_argument("--src-dir", default=DEFAULT_SRC_DIR, help="Source directory to analyze")
-    parser.add_argument("--max-func", type=int, default=DEFAULT_MAX_FUNC_LINES, help="Max function lines")
-    parser.add_argument("--max-file", type=int, default=DEFAULT_MAX_FILE_LINES, help="Max file lines")
-    parser.add_argument("--max-depth", type=int, default=DEFAULT_MAX_NESTING_DEPTH, help="Max nesting depth")
-    parser.add_argument("--max-complexity", type=int, default=DEFAULT_MAX_COMPLEXITY,
-                        help="Max cyclomatic complexity per function")
-    parser.add_argument("--max-params", type=int, default=DEFAULT_MAX_PARAMS,
-                        help="Max parameters per function")
+    # Warn thresholds (advisory range — LLM reviewer decides)
+    parser.add_argument("--warn-func", type=int, default=DEFAULT_WARN_FUNC_LINES,
+                        help="Advisory threshold for function lines (warn..hard = advisory)")
+    parser.add_argument("--warn-file", type=int, default=DEFAULT_WARN_FILE_LINES,
+                        help="Advisory threshold for file lines")
+    parser.add_argument("--warn-depth", type=int, default=DEFAULT_WARN_NESTING_DEPTH,
+                        help="Advisory threshold for nesting depth")
+    parser.add_argument("--warn-complexity", type=int, default=DEFAULT_WARN_COMPLEXITY,
+                        help="Advisory threshold for cyclomatic complexity")
+    parser.add_argument("--warn-params", type=int, default=DEFAULT_WARN_PARAMS,
+                        help="Advisory threshold for parameter count")
+    # Hard thresholds (always filed — no judgment needed)
+    parser.add_argument("--hard-func", type=int, default=DEFAULT_HARD_FUNC_LINES,
+                        help="Hard limit for function lines (always a violation)")
+    parser.add_argument("--hard-file", type=int, default=DEFAULT_HARD_FILE_LINES,
+                        help="Hard limit for file lines")
+    parser.add_argument("--hard-depth", type=int, default=DEFAULT_HARD_NESTING_DEPTH,
+                        help="Hard limit for nesting depth")
+    parser.add_argument("--hard-complexity", type=int, default=DEFAULT_HARD_COMPLEXITY,
+                        help="Hard limit for cyclomatic complexity")
+    parser.add_argument("--hard-params", type=int, default=DEFAULT_HARD_PARAMS,
+                        help="Hard limit for parameter count")
+    # Binary rules (no range)
     parser.add_argument("--max-dir-depth", type=int, default=DEFAULT_MAX_DIR_DEPTH,
                         help="Max directory nesting depth relative to src-dir")
     parser.add_argument("--format", choices=["markdown", "json"], default="markdown", help="Output format")
@@ -642,11 +767,16 @@ def main():
     args = parser.parse_args()
 
     limits = {
-        "max_func": args.max_func,
-        "max_file": args.max_file,
-        "max_depth": args.max_depth,
-        "max_complexity": args.max_complexity,
-        "max_params": args.max_params,
+        "warn_func": args.warn_func,
+        "hard_func": args.hard_func,
+        "warn_file": args.warn_file,
+        "hard_file": args.hard_file,
+        "warn_depth": args.warn_depth,
+        "hard_depth": args.hard_depth,
+        "warn_complexity": args.warn_complexity,
+        "hard_complexity": args.hard_complexity,
+        "warn_params": args.warn_params,
+        "hard_params": args.hard_params,
         "max_dir_depth": args.max_dir_depth,
     }
 
@@ -674,12 +804,19 @@ def main():
         violations = filtered
 
     total = count_all_violations(violations)
+    hard, advisory = split_by_severity(violations)
+    hard_count = count_all_violations(hard)
+    advisory_count = count_all_violations(advisory)
 
     if args.format == "json":
         output = {
             "violations": violations,
+            "hard_violations": hard,
+            "advisory_violations": advisory,
             "summary": {
                 "total_violations": total,
+                "hard_violations": hard_count,
+                "advisory_violations": advisory_count,
                 "baselined_violations": baselined_count,
                 "files_analyzed": len(files),
                 "limits": limits,
@@ -689,7 +826,8 @@ def main():
     else:
         print(format_markdown_report(violations, limits, baselined_count))
 
-    sys.exit(1 if total > 0 else 0)
+    # Exit code 1 only for hard violations — advisory items don't fail the check
+    sys.exit(1 if hard_count > 0 else 0)
 
 
 if __name__ == "__main__":

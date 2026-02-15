@@ -343,6 +343,22 @@ def _record_completed_milestones(milestones_before: set) -> tuple[set, str, set]
     return milestones_after, head_after, newly_completed
 
 
+def _completed_milestones_at_commit(commit_sha: str, remaining: set) -> set:
+    """Return the subset of remaining milestone names that are fully complete at commit_sha."""
+    show_result = run_cmd(
+        ["git", "show", f"{commit_sha}:TASKS.md"],
+        capture=True,
+    )
+    if show_result.returncode != 0:
+        return set()
+
+    completed = set()
+    for ms in parse_milestones_from_text(show_result.stdout):
+        if ms["name"] in remaining and ms["done"] == ms["total"]:
+            completed.add(ms["name"])
+    return completed
+
+
 def _find_per_milestone_boundaries(
     milestone_names: set, start_sha: str, end_sha: str,
 ) -> list[tuple[str, str, str]]:
@@ -361,7 +377,6 @@ def _find_per_milestone_boundaries(
         capture=True,
     )
     if result.returncode != 0 or not result.stdout.strip():
-        # Fallback: all milestones get the same range
         return [(name, start_sha, end_sha) for name in milestone_names]
 
     commits = [c.strip() for c in result.stdout.strip().split("\n") if c.strip()]
@@ -376,19 +391,7 @@ def _find_per_milestone_boundaries(
         if not remaining:
             break
 
-        # Check TASKS.md at this commit to see which milestones are complete
-        show_result = run_cmd(
-            ["git", "show", f"{commit_sha}:TASKS.md"],
-            capture=True,
-        )
-        if show_result.returncode != 0:
-            continue
-
-        completed_at_commit = set()
-        for ms in parse_milestones_from_text(show_result.stdout):
-            if ms["name"] in remaining and ms["done"] == ms["total"]:
-                completed_at_commit.add(ms["name"])
-
+        completed_at_commit = _completed_milestones_at_commit(commit_sha, remaining)
         for ms_name in completed_at_commit:
             boundaries.append((ms_name, current_start, commit_sha))
             current_start = commit_sha
