@@ -1,0 +1,182 @@
+{
+  "oversized_functions": [
+    {
+      "path": "src/agent/watcher.py",
+      "function": "_review_new_commits",
+      "line": 134,
+      "length": 61,
+      "limit": 60,
+      "warn_limit": 40,
+      "severity": "violation",
+      "key": "src/agent/watcher.py::_review_new_commits"
+    },
+    {
+      "path": "src/agent/builder.py",
+      "function": "build",
+      "line": 31,
+      "length": 57,
+      "limit": 60,
+      "warn_limit": 40,
+      "severity": "advisory",
+      "key": "src/agent/builder.py::build"
+    },
+    {
+      "path": "src/agent/bootstrap.py",
+      "function": "_scaffold_project",
+      "line": 214,
+      "length": 56,
+      "limit": 60,
+      "warn_limit": 40,
+      "severity": "advisory",
+      "key": "src/agent/bootstrap.py::_scaffold_project"
+    },
+    {
+      "path": "src/agent/builder.py",
+      "function": "_record_completed_milestones",
+      "line": 291,
+      "length": 53,
+      "limit": 60,
+      "warn_limit": 40,
+      "severity": "advisory",
+      "key": "src/agent/builder.py::_record_completed_milestones"
+    },
+    {
+      "path": "src/agent/watcher.py",
+      "function": "commitwatch",
+      "line": 250,
+      "length": 53,
+      "limit": 60,
+      "warn_limit": 40,
+      "severity": "advisory",
+      "key": "src/agent/watcher.py::commitwatch"
+    },
+    {
+      "path": "src/agent/planner.py",
+      "function": "plan",
+      "line": 25,
+      "length": 51,
+      "limit": 60,
+      "warn_limit": 40,
+      "severity": "advisory",
+      "key": "src/agent/planner.py::plan"
+    },
+    {
+      "path": "src/agent/builder.py",
+      "function": "_detect_milestone_progress",
+      "line": 245,
+      "length": 44,
+      "limit": 60,
+      "warn_limit": 40,
+      "severity": "advisory",
+      "key": "src/agent/builder.py::_detect_milestone_progress"
+    },
+    {
+      "path": "src/agent/validator.py",
+      "function": "validateloop",
+      "line": 113,
+      "length": 44,
+      "limit": 60,
+      "warn_limit": 40,
+      "severity": "advisory",
+      "key": "src/agent/validator.py::validateloop"
+    },
+    {
+      "path": "src/agent/builder.py",
+      "function": "_find_per_milestone_boundaries",
+      "line": 362,
+      "length": 43,
+      "limit": 60,
+      "warn_limit": 40,
+      "severity": "advisory",
+      "key": "src/agent/builder.py::_find_per_milestone_boundaries"
+    },
+    {
+      "path": "src/agent/builder.py",
+      "function": "_check_remaining_work",
+      "line": 471,
+      "length": 43,
+      "limit": 60,
+      "warn_limit": 40,
+      "severity": "advisory",
+      "key": "src/agent/builder.py::_check_remaining_work"
+    },
+    {
+      "path": "src/agent/tester.py",
+      "function": "testloop",
+      "line": 68,
+      "length": 43,
+      "limit": 60,
+      "warn_limit": 40,
+      "severity": "advisory",
+      "key": "src/agent/tester.py::testloop"
+    },
+    {
+      "path": "src/agent/watcher.py",
+      "function": "_check_milestone_reviews",
+      "line": 205,
+      "length": 43,
+      "limit": 60,
+      "warn_limit": 40,
+      "severity": "advisory",
+      "key": "src/agent/watcher.py::_check_milestone_reviews"
+    },
+    {
+      "path": "src/agent/git_helpers.py",
+      "function": "git_push_with_retry",
+      "line": 8,
+      "length": 42,
+      "limit": 60,
+      "warn_limit": 40,
+      "severity": "advisory",
+      "key": "src/agent/git_helpers.py::git_push_with_retry"
+    }
+  ],
+  "oversized_files": [
+    {
+      "path": "src/agent/builder.py",
+      "lines": 513,
+      "limit": 500,
+      "warn_limit": 300,
+      "severity": "violation",
+      "key": "src/agent/builder.py"
+    },
+    {
+      "path": "src/agent/milestone.py",
+      "lines": 317,
+      "limit": 500,
+      "warn_limit": 300,
+      "severity": "advisory",
+      "key": "src/agent/milestone.py"
+    },
+    {
+      "path": "src/agent/bootstrap.py",
+      "lines": 311,
+      "limit": 500,
+      "warn_limit": 300,
+      "severity": "advisory",
+      "key": "src/agent/bootstrap.py"
+    },
+    {
+      "path": "src/agent/watcher.py",
+      "lines": 302,
+      "limit": 500,
+      "warn_limit": 300,
+      "severity": "advisory",
+      "key": "src/agent/watcher.py"
+    },
+    {
+      "path": "src/agent/orchestrator.py",
+      "lines": 301,
+      "limit": 500,
+      "warn_limit": 300,
+      "severity": "advisory",
+      "key": "src/agent/orchestrator.py"
+    }
+  ],
+  "deep_nesting": [],
+  "high_complexity": [],
+  "too_many_params": [],
+  "missing_annotations": [],
+  "dead_code": [],
+  "deep_directories": []
+}
