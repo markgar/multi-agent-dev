@@ -192,8 +192,17 @@ When the builder finishes, the validator sees `logs/builder.done` and exits.
 **Checkpoint:** `logs/validator.milestone` (set of milestones already validated)  
 **Runs from:** `validator/` clone  
 **Shutdown:** Checks for `logs/builder.done`; exits when builder is done  
-**Writes code:** Dockerfile, docker-compose.yml (if needed), DEPLOY.md  
+**Writes code:** Dockerfile, docker-compose.yml (if needed), DEPLOY.md, Playwright tests (if frontend detected)  
 **Commits:** When it creates/updates deployment files, finds bugs, or updates DEPLOY.md
+
+**Playwright UI testing (automatic):** Before each validation run, the orchestration checks whether the repo contains a frontend (package.json, .tsx/.jsx/.vue/.svelte files, or frontend keywords in SPEC.md). When a frontend is detected, the validator prompt is extended with Playwright instructions that tell the Copilot agent to:
+- Add a `playwright` sidecar service to docker-compose.yml using `mcr.microsoft.com/playwright:v1.52.0-noble`
+- Write TypeScript tests in `e2e/` using `data-testid` selectors (with semantic selector fallbacks)
+- Test page rendering, navigation, form submission, and interactive elements in a real headless browser
+- Run tests via `docker compose run --rm playwright` and include `[UI]` results in `validation-results.txt`
+- Report UI failures to BUGS.md with a `[UI]` prefix
+
+For API-only projects, the Playwright section is omitted entirely — no extra prompt text, no browser overhead.
 
 ---
 

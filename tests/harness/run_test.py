@@ -87,6 +87,7 @@ def run_harness() -> int:
     parser = argparse.ArgumentParser(description="Run local test harness")
     parser.add_argument("--spec-file", default=None)
     parser.add_argument("--name", default="test-run")
+    parser.add_argument("--model", required=True, help="Copilot model to use (e.g. GPT-5.3-Codex, Claude Opus 4.6)")
     parser.add_argument("--resume", action="store_true")
     args = parser.parse_args()
 
@@ -134,7 +135,7 @@ def run_harness() -> int:
                 print(f"  Removing {agent_dir}/...")
                 shutil.rmtree(path)
 
-        command = [agentic_dev, "go", "--directory", str(project_dir), "--local"]
+        command = [agentic_dev, "go", "--directory", str(project_dir), "--model", args.model, "--local"]
         if spec_file_for_resume:
             command.extend(["--spec-file", str(spec_file_for_resume)])
         exit_code = run_command(command)
@@ -169,6 +170,8 @@ def run_harness() -> int:
                 "go",
                 "--directory",
                 str(project_dir),
+                "--model",
+                args.model,
                 "--spec-file",
                 str(spec_file),
                 "--local",

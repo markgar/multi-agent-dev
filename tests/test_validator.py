@@ -1,6 +1,8 @@
-"""Tests for validator milestone filtering and sentinel integration."""
+"""Tests for validator milestone filtering, sentinel integration, and frontend detection."""
 
-from agentic_dev.validator import find_unvalidated_milestones
+import os
+
+from agentic_dev.validator import find_unvalidated_milestones, detect_has_frontend
 from agentic_dev.sentinel import check_agent_idle
 from agentic_dev.utils import find_project_root
 
@@ -63,3 +65,56 @@ def test_validator_log_not_idle_when_fresh():
 
 def test_validator_log_idle_when_missing():
     assert check_agent_idle(log_exists=False, log_age_seconds=0, idle_threshold=30) is True
+
+
+# --- frontend detection ---
+
+def test_detect_has_frontend_true_when_package_json_at_root(tmp_path):
+    (tmp_path / "package.json").write_text('{"name": "app"}')
+    assert detect_has_frontend(str(tmp_path)) is True
+
+
+def test_detect_has_frontend_true_when_package_json_one_level_deep(tmp_path):
+    sub = tmp_path / "frontend"
+    sub.mkdir()
+    (sub / "package.json").write_text('{"name": "frontend"}')
+    assert detect_has_frontend(str(tmp_path)) is True
+
+
+def test_detect_has_frontend_true_when_tsx_files_exist(tmp_path):
+    src = tmp_path / "src" / "components"
+    src.mkdir(parents=True)
+    (src / "App.tsx").write_text("export default function App() {}")
+    assert detect_has_frontend(str(tmp_path)) is True
+
+
+def test_detect_has_frontend_true_when_vue_files_exist(tmp_path):
+    src = tmp_path / "src"
+    src.mkdir()
+    (src / "App.vue").write_text("<template><div/></template>")
+    assert detect_has_frontend(str(tmp_path)) is True
+
+
+def test_detect_has_frontend_true_when_spec_mentions_react(tmp_path):
+    (tmp_path / "SPEC.md").write_text("## Tech Stack\n- React frontend with TypeScript\n")
+    assert detect_has_frontend(str(tmp_path)) is True
+
+
+def test_detect_has_frontend_true_when_spec_mentions_frontend(tmp_path):
+    (tmp_path / "SPEC.md").write_text("## Architecture\nThe frontend serves a dashboard.\n")
+    assert detect_has_frontend(str(tmp_path)) is True
+
+
+def test_detect_has_frontend_false_for_api_only_project(tmp_path):
+    (tmp_path / "app.py").write_text("from flask import Flask")
+    (tmp_path / "SPEC.md").write_text("## Tech Stack\n- Python Flask REST API\n- PostgreSQL database\n")
+    assert detect_has_frontend(str(tmp_path)) is False
+
+
+def test_detect_has_frontend_false_for_empty_directory(tmp_path):
+    assert detect_has_frontend(str(tmp_path)) is False
+
+
+def test_detect_has_frontend_false_when_no_spec(tmp_path):
+    (tmp_path / "Program.cs").write_text("Console.WriteLine();")
+    assert detect_has_frontend(str(tmp_path)) is False

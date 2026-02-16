@@ -16,7 +16,7 @@ from agentic_dev.prompts import (
 )
 from agentic_dev.sentinel import clear_builder_done
 from agentic_dev.terminal import spawn_agent_in_terminal
-from agentic_dev.utils import console, log, pushd, run_cmd, run_copilot
+from agentic_dev.utils import console, log, pushd, run_cmd, run_copilot, validate_model
 
 
 def register(app: typer.Typer) -> None:
@@ -268,6 +268,7 @@ def _resume_existing_project(
 
 def go(
     directory: Annotated[str, typer.Option(help="Project directory path (created if new, resumed if existing)")],
+    model: Annotated[str, typer.Option(help="Copilot model to use (required). Allowed: GPT-5.3-Codex, Claude Opus 4.6")],
     description: Annotated[str, typer.Option(help="What the project should do")] = None,
     spec_file: Annotated[str, typer.Option(help="Path to a markdown file containing the project requirements")] = None,
     local: Annotated[bool, typer.Option(help="Use a local bare git repo instead of GitHub")] = False,
@@ -281,6 +282,10 @@ def go(
     --directory is the project working directory — relative or absolute.
     --name optionally overrides the GitHub repo name (defaults to basename of directory).
     """
+    validate_model(model)
+    os.environ["COPILOT_MODEL"] = model
+    console.print(f"Using model: {model}", style="bold green")
+
     start_dir = os.getcwd()
 
     # --- Resolve project directory ---

@@ -71,6 +71,7 @@ to_python_path() {
 SPEC_FILE="$HARNESS_DIR/sample_spec_cli_calculator.md"
 PROJECT_NAME="test-run"
 RESUME=false
+MODEL=""
 
 # Parse arguments
 while [[ $# -gt 0 ]]; do
@@ -83,17 +84,29 @@ while [[ $# -gt 0 ]]; do
             PROJECT_NAME="$2"
             shift 2
             ;;
+        --model)
+            MODEL="$2"
+            shift 2
+            ;;
         --resume)
             RESUME=true
             shift
             ;;
         *)
             echo "Unknown option: $1"
-            echo "Usage: $0 [--spec-file <path>] [--name <project>] [--resume]"
+            echo "Usage: $0 [--spec-file <path>] [--name <project>] [--model <model>] [--resume]"
             exit 1
             ;;
     esac
 done
+
+# --- Require --model ---
+if [[ -z "$MODEL" ]]; then
+    echo "ERROR: --model is required."
+    echo "Allowed models: Claude Opus 4.6, GPT-5.3-Codex"
+    echo "Usage: $0 --model 'GPT-5.3-Codex' [--spec-file <path>] [--name <project>] [--resume]"
+    exit 1
+fi
 
 # --- Resolve spec file (only required for new runs) ---
 if [[ "$RESUME" == false ]]; then
@@ -217,7 +230,7 @@ if [[ "$RESUME" == true ]]; then
     done
     echo ""
 
-    GO_ARGS=(--directory "$PROJ_DIR" --local)
+    GO_ARGS=(--directory "$PROJ_DIR" --model "$MODEL" --local)
     if [[ -n "${SPEC_FILE:-}" && -f "${SPEC_FILE:-}" ]]; then
         GO_ARGS+=(--spec-file "$SPEC_FILE")
     fi
@@ -249,6 +262,7 @@ else
 
     "$AGENTIC_DEV_CMD" go \
         --directory "$PROJ_DIR" \
+        --model "$MODEL" \
         --spec-file "$SPEC_FILE" \
         --local
 

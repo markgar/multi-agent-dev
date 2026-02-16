@@ -93,6 +93,21 @@ def _stream_process_output(proc: subprocess.Popen, log_file: str) -> None:
         pass
 
 
+ALLOWED_MODELS = {"GPT-5.3-Codex", "Claude Opus 4.6"}
+
+
+def validate_model(model: str) -> str:
+    """Validate that the model name is in the allowed set.
+
+    Returns the model string if valid. Raises SystemExit with a clear message
+    listing valid options if the model is not recognized.
+    """
+    if model not in ALLOWED_MODELS:
+        allowed = ", ".join(sorted(ALLOWED_MODELS))
+        raise SystemExit(f"Invalid model '{model}'. Allowed models: {allowed}")
+    return model
+
+
 def _resolve_copilot_cmd() -> list[str]:
     """Resolve the copilot CLI command for the current platform.
 
@@ -121,10 +136,15 @@ def _resolve_copilot_cmd() -> list[str]:
 
 
 def run_copilot(agent_name: str, prompt: str) -> int:
-    """Run 'copilot --yolo -p <prompt>' with streaming output to both console and log.
+    """Run 'copilot --allow-all-tools --model <model> -p <prompt>' with streaming output.
 
+    Reads the model from the COPILOT_MODEL environment variable (required).
     Returns the process exit code.
     """
+    model = os.environ.get("COPILOT_MODEL", "")
+    if not model:
+        raise SystemExit("COPILOT_MODEL environment variable is not set. Use --model on the go command.")
+
     logs_dir = resolve_logs_dir()
     log_file = os.path.join(logs_dir, f"{agent_name}.log")
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -132,13 +152,16 @@ def run_copilot(agent_name: str, prompt: str) -> int:
 
     header = (
         f"\n========== [{timestamp}] {agent_name} ==========\n"
+        f"Model: {model}\n"
         f"Prompt: {prompt_preview}...\n"
         f"--- output ---\n"
     )
     _write_log_entry(log_file, header)
 
+    cmd = _resolve_copilot_cmd() + ["--allow-all-tools", "--model", model, "-p", prompt]
+
     proc = subprocess.Popen(
-        _resolve_copilot_cmd() + ["--yolo", "-p", prompt],
+        cmd,
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
         text=True,

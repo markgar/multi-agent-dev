@@ -1,5 +1,6 @@
 """Validator command: watch for completed milestones, build containers, and run acceptance tests."""
 
+import glob
 import os
 import shutil
 import time
@@ -14,12 +15,55 @@ from agentic_dev.milestone import (
     load_reviewed_milestones,
     save_milestone_checkpoint,
 )
-from agentic_dev.prompts import VALIDATOR_MILESTONE_PROMPT
+from agentic_dev.prompts import VALIDATOR_MILESTONE_PROMPT, VALIDATOR_PLAYWRIGHT_SECTION
 from agentic_dev.sentinel import is_builder_done
 from agentic_dev.utils import log, run_cmd, run_copilot, resolve_logs_dir
 
 
 _VALIDATOR_MILESTONE_CHECKPOINT = "validator.milestone"
+
+_FRONTEND_EXTENSIONS = ("*.tsx", "*.jsx", "*.vue", "*.svelte")
+_FRONTEND_KEYWORDS = (
+    "frontend", "react", "vue", "angular", "svelte", "next.js", "nuxt",
+    "vite", "webpack", "tailwind", "UI ", "user interface", "single-page",
+    "SPA", "pages should render", "web app", "dashboard",
+)
+
+
+def detect_has_frontend(repo_dir: str) -> bool:
+    """Return True if the repo appears to contain a frontend/UI component.
+
+    Checks three signals:
+    1. A package.json exists (root or one level deep).
+    2. Frontend-framework source files exist (tsx, jsx, vue, svelte).
+    3. SPEC.md contains frontend-related keywords.
+
+    Pure-ish function: only reads the filesystem, no side effects.
+    """
+    # Signal 1: package.json at root or one directory deep
+    if os.path.isfile(os.path.join(repo_dir, "package.json")):
+        return True
+    if glob.glob(os.path.join(repo_dir, "*/package.json")):
+        return True
+
+    # Signal 2: frontend framework source files (search up to 4 levels deep)
+    for ext in _FRONTEND_EXTENSIONS:
+        pattern = os.path.join(repo_dir, "**", ext)
+        if glob.glob(pattern, recursive=True):
+            return True
+
+    # Signal 3: SPEC.md mentions frontend keywords
+    spec_path = os.path.join(repo_dir, "SPEC.md")
+    if os.path.isfile(spec_path):
+        try:
+            content = open(spec_path, encoding="utf-8").read().lower()
+            for keyword in _FRONTEND_KEYWORDS:
+                if keyword.lower() in content:
+                    return True
+        except OSError:
+            pass
+
+    return False
 
 
 def find_unvalidated_milestones(boundaries: list[dict], validated: set[str]) -> list[dict]:
@@ -81,10 +125,14 @@ def _validate_milestone(boundary: dict) -> None:
     run_cmd(["git", "checkout", boundary["end_sha"]], quiet=True)
     _cleanup_containers()
 
+    has_frontend = detect_has_frontend(".")
+    ui_instructions = VALIDATOR_PLAYWRIGHT_SECTION if has_frontend else ""
+
     prompt = VALIDATOR_MILESTONE_PROMPT.format(
         milestone_name=boundary["name"],
         milestone_start_sha=boundary["start_sha"],
         milestone_end_sha=boundary["end_sha"],
+        ui_testing_instructions=ui_instructions,
     )
     exit_code = run_copilot("validator", prompt)
 

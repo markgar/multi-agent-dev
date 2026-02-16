@@ -27,7 +27,7 @@ from agentic_dev.prompts.reviewer import (
     REVIEWER_PROMPT,
 )
 from agentic_dev.prompts.tester import TESTER_MILESTONE_PROMPT, TESTER_PROMPT
-from agentic_dev.prompts.validator import VALIDATOR_MILESTONE_PROMPT
+from agentic_dev.prompts.validator import VALIDATOR_MILESTONE_PROMPT, VALIDATOR_PLAYWRIGHT_SECTION
 
 __all__ = [
     "BOOTSTRAP_PROMPT",
@@ -46,4 +46,5 @@ __all__ = [
     "TESTER_MILESTONE_PROMPT",
     "TESTER_PROMPT",
     "VALIDATOR_MILESTONE_PROMPT",
+    "VALIDATOR_PLAYWRIGHT_SECTION",
 ]

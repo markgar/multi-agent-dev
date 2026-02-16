@@ -24,6 +24,7 @@ from agentic_dev.prompts import (
     TESTER_MILESTONE_PROMPT,
     TESTER_PROMPT,
     VALIDATOR_MILESTONE_PROMPT,
+    VALIDATOR_PLAYWRIGHT_SECTION,
 )
 
 
@@ -42,7 +43,7 @@ PROMPT_FORMAT_CASES = [
     ("REVIEWER_MILESTONE_PROMPT", REVIEWER_MILESTONE_PROMPT, {"milestone_name": "M1", "milestone_start_sha": "aaa", "milestone_end_sha": "bbb", "code_analysis_findings": "No structural issues detected."}),
     ("TESTER_PROMPT", TESTER_PROMPT, {}),
     ("TESTER_MILESTONE_PROMPT", TESTER_MILESTONE_PROMPT, {"milestone_name": "M1", "milestone_start_sha": "aaa", "milestone_end_sha": "bbb"}),
-    ("VALIDATOR_MILESTONE_PROMPT", VALIDATOR_MILESTONE_PROMPT, {"milestone_name": "M1", "milestone_start_sha": "aaa", "milestone_end_sha": "bbb"}),
+    ("VALIDATOR_MILESTONE_PROMPT", VALIDATOR_MILESTONE_PROMPT, {"milestone_name": "M1", "milestone_start_sha": "aaa", "milestone_end_sha": "bbb", "ui_testing_instructions": ""}),
     ("COPILOT_INSTRUCTIONS_TEMPLATE", COPILOT_INSTRUCTIONS_TEMPLATE, {"project_structure": "src/", "key_files": "app.py", "architecture": "monolith", "conventions": "PEP8"}),
     ("COPILOT_INSTRUCTIONS_PROMPT", COPILOT_INSTRUCTIONS_PROMPT, {"template": "...template..."}),
 ]
@@ -58,3 +59,37 @@ def test_prompt_format_does_not_raise(name, template, kwargs):
     result = template.format(**kwargs)
     assert isinstance(result, str)
     assert len(result) > 0
+
+
+def test_validator_prompt_includes_playwright_when_frontend():
+    """Formatting with VALIDATOR_PLAYWRIGHT_SECTION injects Playwright instructions."""
+    result = VALIDATOR_MILESTONE_PROMPT.format(
+        milestone_name="UI Shell",
+        milestone_start_sha="aaa",
+        milestone_end_sha="bbb",
+        ui_testing_instructions=VALIDATOR_PLAYWRIGHT_SECTION,
+    )
+    assert "Playwright" in result
+    assert "docker" in result.lower()
+    assert "data-testid" in result
+
+
+def test_validator_prompt_excludes_playwright_when_no_frontend():
+    """Formatting with empty ui_testing_instructions omits Playwright."""
+    result = VALIDATOR_MILESTONE_PROMPT.format(
+        milestone_name="API Endpoints",
+        milestone_start_sha="aaa",
+        milestone_end_sha="bbb",
+        ui_testing_instructions="",
+    )
+    assert "Playwright" not in result
+
+
+def test_playwright_section_is_well_formed():
+    """VALIDATOR_PLAYWRIGHT_SECTION is a non-empty string with key instructions."""
+    assert isinstance(VALIDATOR_PLAYWRIGHT_SECTION, str)
+    assert len(VALIDATOR_PLAYWRIGHT_SECTION) > 100
+    assert "Playwright" in VALIDATOR_PLAYWRIGHT_SECTION
+    assert "playwright.config" in VALIDATOR_PLAYWRIGHT_SECTION
+    assert "data-testid" in VALIDATOR_PLAYWRIGHT_SECTION
+    assert "[UI]" in VALIDATOR_PLAYWRIGHT_SECTION

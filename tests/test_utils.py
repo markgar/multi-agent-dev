@@ -1,7 +1,9 @@
 """Tests for sentinel logic, unchecked item counting, path resolution, and commit filtering."""
 
+import pytest
+
 from agentic_dev.sentinel import check_builder_done_status
-from agentic_dev.utils import count_unchecked_items, find_project_root
+from agentic_dev.utils import count_unchecked_items, find_project_root, validate_model, ALLOWED_MODELS
 from agentic_dev.git_helpers import is_reviewer_only_files, is_coordination_only_files
 from agentic_dev.terminal import build_agent_script
 from agentic_dev.watcher import find_unreviewed_milestones
@@ -154,3 +156,25 @@ def test_find_untested_milestones_excludes_already_tested():
     result = find_untested_milestones(boundaries, tested)
     assert len(result) == 1
     assert result[0]["name"] == "API"
+
+
+# --- model validation ---
+
+def test_validate_model_accepts_codex():
+    assert validate_model("GPT-5.3-Codex") == "GPT-5.3-Codex"
+
+
+def test_validate_model_accepts_opus():
+    assert validate_model("Claude Opus 4.6") == "Claude Opus 4.6"
+
+
+def test_validate_model_rejects_unknown_model():
+    with pytest.raises(SystemExit) as exc_info:
+        validate_model("GPT-4.1")
+    assert "Invalid model" in str(exc_info.value)
+    assert "GPT-5.3-Codex" in str(exc_info.value)
+    assert "Claude Opus 4.6" in str(exc_info.value)
+
+
+def test_allowed_models_contains_exactly_two():
+    assert ALLOWED_MODELS == {"GPT-5.3-Codex", "Claude Opus 4.6"}
