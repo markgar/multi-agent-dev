@@ -224,9 +224,9 @@ For API-only projects, the Playwright section is omitted entirely — no extra p
 
 `go` supports iterative sessions. You can build a project in phases:
 
-1. **Session 1:** `go --directory my-app --spec-file api-spec.md --local` — bootstraps project, builds API
-2. **Session 2:** `go --directory my-app --spec-file frontend-spec.md --local` — detects existing repo, clones agent directories, overwrites REQUIREMENTS.md with frontend spec, planner updates SPEC.md and creates new milestones, builder implements frontend
-3. **Session 3:** `go --directory my-app --local` — continues where it left off (no new requirements)
+1. **Session 1:** `go --directory my-app --model gpt-5.3-codex --spec-file api-spec.md --local` — bootstraps project, builds API
+2. **Session 2:** `go --directory my-app --model gpt-5.3-codex --spec-file frontend-spec.md --local` — detects existing repo, clones agent directories, overwrites REQUIREMENTS.md with frontend spec, planner updates SPEC.md and creates new milestones, builder implements frontend
+3. **Session 3:** `go --directory my-app --model gpt-5.3-codex --local` — continues where it left off (no new requirements)
 
 `go` uses repo-first detection: it checks whether the repo already exists (locally via `remote.git/`, or on GitHub via `gh repo view`) rather than checking for local clone directories. This means:
 

@@ -36,7 +36,7 @@ This software is entirely written by GitHub Copilot. The code is structured to b
 - `src/agentic_dev/tester.py` — Test loop: milestone-triggered testing.
 - `src/agentic_dev/validator.py` — Validator loop: milestone-triggered container build and acceptance testing.
 - `src/agentic_dev/terminal.py` — Terminal spawning helper for launching agents in new windows.
-- `src/agentic_dev/prompts.py` — All LLM prompt templates. Constants only, no logic.
+- `src/agentic_dev/prompts/` — All LLM prompt templates (one file per agent). Constants only, no logic.
 - `src/agentic_dev/utils.py` — Core helpers: logging, command execution, platform detection.
 - `src/agentic_dev/git_helpers.py` — Git operations: push with retry, commit classification.
 - `src/agentic_dev/sentinel.py` — Builder-done sentinel, agent-idle detection, and reviewer checkpoint persistence.
@@ -73,10 +73,10 @@ A test harness at `tests/harness/run_test.sh` runs the full orchestration end-to
 
 ```bash
 # Default: sample CLI calculator spec
-./tests/harness/run_test.sh
+./tests/harness/run_test.sh --model gpt-5.3-codex
 
 # Custom spec
-./tests/harness/run_test.sh --name hello-world --spec-file /path/to/spec.md
+./tests/harness/run_test.sh --model gpt-5.3-codex --name hello-world --spec-file /path/to/spec.md
 ```
 
 ### What it does (in order)
@@ -116,6 +116,7 @@ tests/harness/runs/<timestamp>/
 
 | Flag | Default | Description |
 |---|---|---|
+| `--model` | (required) | Copilot model to use (e.g. `gpt-5.3-codex`, `claude-opus-4.6`) |
 | `--name` | `test-run` | Project name (directory name) |
 | `--spec-file` | `tests/harness/sample_spec_cli_calculator.md` | Path to requirements spec |
 | `--resume` | `false` | Find the latest run with the given `--name`, delete agent clone directories, and resume from the repo |
@@ -124,10 +125,10 @@ tests/harness/runs/<timestamp>/
 
 ```bash
 # Resume with new requirements
-./tests/harness/run_test.sh --name hello-world --spec-file new-features.md --resume
+./tests/harness/run_test.sh --model gpt-5.3-codex --name hello-world --spec-file new-features.md --resume
 
 # Resume without new requirements
-./tests/harness/run_test.sh --name hello-world --resume
+./tests/harness/run_test.sh --model gpt-5.3-codex --name hello-world --resume
 ```
 
 On resume, the harness deletes `builder/`, `reviewer/`, `tester/`, `validator/` and keeps `remote.git/` and `logs/` intact. This simulates a fresh-machine resume where only the repo exists — matching production behavior against GitHub. `go` detects the existing repo, clones all agent directories from it, and continues.
@@ -137,6 +138,10 @@ On resume, the harness deletes `builder/`, `reviewer/`, `tester/`, `validator/` 
 Sample specs are included in `tests/harness/`:
 - `sample_spec_cli_calculator.md` — simple CLI calculator (single file, no dependencies)
 - `sample_spec_bookstore_api.md` — REST API with CRUD, validation, and tests
+- `sample_spec_bookstore_fullstack.md` — full-stack bookstore with web frontend
+- `sample_spec_fieldcraft.md` — complex domain app
+- `sample_spec_stretto.md` — large multi-feature application
+- `sample_specs_notes/` — iterative development example (base → add delete → add timestamps)
 
 Create your own spec files for different test scenarios.
 
@@ -146,7 +151,7 @@ When a user asks Copilot to help run the test harness, **do not run it in a back
 
 1. **Have the user run it themselves** in a visible terminal so they can watch the builder's Copilot output stream in real-time:
    ```bash
-   ./tests/harness/run_test.sh
+   ./tests/harness/run_test.sh --model gpt-5.3-codex
    ```
 2. **Monitor progress by reading log files** in the latest run directory (`tests/harness/runs/<timestamp>/`). The logs capture everything — full prompts, output, diffs, commands, and costs.
 3. **Check on demand** when the user asks "what's the builder doing?" or "how far along is it?" by reading `logs/builder.log`, `logs/orchestrator.log`, `logs/reviewer.log`, and `logs/tester.log`.
@@ -155,6 +160,6 @@ This gives the user visibility into the live Copilot session while Copilot retai
 
 ## Conventions
 
-- Agent prompts are append-only format strings in `prompts.py`. Use `.format()` for interpolation.
+- Agent prompts are append-only format strings in `prompts/`. Use `.format()` for interpolation.
 - All file I/O helpers in `utils.py` wrap operations in try/except and never crash the workflow over I/O errors.
 - `resolve_logs_dir()` finds the project-root `logs/` directory regardless of which clone (builder/reviewer/tester/validator) the code is running in.

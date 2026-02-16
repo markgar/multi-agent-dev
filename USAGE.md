@@ -3,19 +3,20 @@
 ## One Command
 
 ```bash
-agentic-dev go --directory my-project --description "description of what to build"
+agentic-dev go --directory my-project --model gpt-5.3-codex \
+  --description "description of what to build"
 ```
 
 Or use a requirements file:
 
 ```bash
-agentic-dev go --directory my-project --spec-file requirements.md
+agentic-dev go --directory my-project --model gpt-5.3-codex --spec-file requirements.md
 ```
 
 Or run without GitHub (local bare git repo):
 
 ```bash
-agentic-dev go --directory my-project --description "..." --local
+agentic-dev go --directory my-project --model gpt-5.3-codex --description "..." --local
 ```
 
 ## Continuing with New Requirements
@@ -23,7 +24,7 @@ agentic-dev go --directory my-project --description "..." --local
 Come back later and add new features to the same project:
 
 ```bash
-agentic-dev go --directory my-project --spec-file new-features.md
+agentic-dev go --directory my-project --model gpt-5.3-codex --spec-file new-features.md
 ```
 
 The planner detects what's already built, updates the spec, adds new stories to the backlog, and plans the next milestone.
@@ -31,7 +32,7 @@ The planner detects what's already built, updates the spec, adds new stories to 
 ## Resuming Where You Left Off
 
 ```bash
-agentic-dev go --directory my-project
+agentic-dev go --directory my-project --model gpt-5.3-codex
 ```
 
 No spec needed — just re-evaluates the plan and continues building.
@@ -41,7 +42,7 @@ No spec needed — just re-evaluates the plan and continues building.
 Point `--directory` at any existing project directory:
 
 ```bash
-agentic-dev go --directory /path/to/runs/20260213/my-app --local
+agentic-dev go --directory /path/to/runs/20260213/my-app --model gpt-5.3-codex --local
 ```
 
 `go` detects the existing repo (locally via `remote.git/`, or on GitHub via `gh repo view`) and automatically clones any missing agent directories. You can resume on a fresh machine with nothing but the repo.
@@ -72,12 +73,12 @@ agentic-dev validateloop
 
 | Command | What it does | Where |
 |---|---|---|
-| `go --directory D --description DESC` | Does everything: bootstrap, plan, launch agents, build | Once, from anywhere |
-| `go --directory D --spec-file F` | Same, but reads requirements from a markdown file | Once, from anywhere |
-| `go --directory D ... --local` | Same, but uses a local bare git repo instead of GitHub | Once, from anywhere |
-| `go --directory D ... --name N` | Same, but overrides the GitHub repo name (defaults to dirname) | Once, from anywhere |
-| `go --directory D --spec-file F` (existing) | Updates requirements, re-plans, launches agents, builds | From anywhere |
-| `go --directory D` (existing) | Re-plans, launches agents, resumes building | From anywhere |
+| `go --directory D --model M --description DESC` | Does everything: bootstrap, plan, launch agents, build | Once, from anywhere |
+| `go --directory D --model M --spec-file F` | Same, but reads requirements from a markdown file | Once, from anywhere |
+| `go --directory D --model M ... --local` | Same, but uses a local bare git repo instead of GitHub | Once, from anywhere |
+| `go --directory D --model M ... --name N` | Same, but overrides the GitHub repo name (defaults to dirname) | Once, from anywhere |
+| `go --directory D --model M --spec-file F` (existing) | Updates requirements, re-plans, launches agents, builds | From anywhere |
+| `go --directory D --model M` (existing) | Re-plans, launches agents, resumes building | From anywhere |
 | `plan` | Creates or updates BACKLOG.md and TASKS.md (one milestone at a time) | builder/, on demand |
 | `build` | Fixes bugs + reviews, then completes the current milestone | builder/, repeatedly |
 | `build --loop` | Loops through all milestones automatically (re-plans between each from backlog) | builder/, once |

@@ -46,7 +46,8 @@ cd multi-agent-dev
 pip install .
 cd ..
 
-agentic-dev go --directory hello-world --description "a C# console app that prints Hello World"
+agentic-dev go --directory hello-world --model gpt-5.3-codex \
+  --description "a C# console app that prints Hello World"
 ```
 
 That's it. `go` will:
@@ -64,7 +65,7 @@ Four windows will be running. Watch the Builder work through milestones while th
 Come back later and add new features to the same project:
 
 ```bash
-agentic-dev go --directory hello-world --spec-file new-features.md
+agentic-dev go --directory hello-world --model gpt-5.3-codex --spec-file new-features.md
 ```
 
 The planner detects what's already built, updates the spec, and creates new milestones for the unimplemented work.
@@ -72,7 +73,7 @@ The planner detects what's already built, updates the spec, and creates new mile
 ### Resuming Where You Left Off
 
 ```bash
-agentic-dev go --directory hello-world
+agentic-dev go --directory hello-world --model gpt-5.3-codex
 ```
 
 No spec needed — just re-evaluates the plan and continues building.
@@ -82,7 +83,7 @@ No spec needed — just re-evaluates the plan and continues building.
 Point `--directory` at any existing project directory, even from a test harness run:
 
 ```bash
-agentic-dev go --directory /path/to/runs/20260213/my-app --local
+agentic-dev go --directory /path/to/runs/20260213/my-app --model gpt-5.3-codex --local
 ```
 
 `go` detects the existing repo (locally via `remote.git/`, or on GitHub via `gh repo view`) and automatically clones any missing agent directories. You can resume on a fresh machine with nothing but the repo — no pre-existing `builder/`, `reviewer/`, `tester/`, or `validator/` directories needed.
@@ -92,7 +93,7 @@ agentic-dev go --directory /path/to/runs/20260213/my-app --local
 Add `--local` to run entirely offline with a local bare git repo instead of GitHub:
 
 ```bash
-agentic-dev go --directory my-project --description "..." --local
+agentic-dev go --directory my-project --model gpt-5.3-codex --description "..." --local
 ```
 
 This skips all `gh` CLI calls and creates a bare repo at `remote.git/` inside the project directory. All git operations (push, pull, clone) work identically against it. Useful for testing, offline development, or environments without GitHub access.
