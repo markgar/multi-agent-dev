@@ -22,8 +22,11 @@ def register(app: typer.Typer) -> None:
     app.command()(plan)
 
 
-def plan(requirements_changed: bool = False) -> None:
-    """Run the planner to create or update TASKS.md based on SPEC.md."""
+def plan(requirements_changed: bool = False) -> bool:
+    """Run the planner to create or update TASKS.md based on SPEC.md.
+
+    Returns True if planning succeeded, False if it failed.
+    """
     log("planner", "")
     log("planner", "[Planner] Evaluating project state...", style="magenta")
     log("planner", "")
@@ -39,7 +42,7 @@ def plan(requirements_changed: bool = False) -> None:
             log("planner", "======================================", style="bold red")
             log("planner", " Planner failed! Check errors above", style="bold red")
             log("planner", "======================================", style="bold red")
-            return
+            return False
 
         # Completeness pass: validate backlog covers all requirements
         log("planner", "")
@@ -67,12 +70,13 @@ def plan(requirements_changed: bool = False) -> None:
             log("planner", "======================================", style="bold red")
             log("planner", " Planner failed! Check errors above", style="bold red")
             log("planner", "======================================", style="bold red")
-            return
+            return False
 
     log("planner", "")
     log("planner", "======================================", style="bold magenta")
     log("planner", " Plan updated!", style="bold magenta")
     log("planner", "======================================", style="bold magenta")
+    return True
 
 
 def check_milestone_sizes() -> None:

@@ -162,7 +162,11 @@ def _launch_agents_and_build(parent_dir: str, plan_label: str, requirements_chan
     log("orchestrator", "======================================", style="bold magenta")
     log("orchestrator", f" {plan_label}", style="bold magenta")
     log("orchestrator", "======================================", style="bold magenta")
-    plan(requirements_changed=requirements_changed)
+    plan_ok = plan(requirements_changed=requirements_changed)
+    if not plan_ok:
+        log("orchestrator", "")
+        log("orchestrator", "Planner failed — aborting. Fix the issue and re-run.", style="bold red")
+        return
     check_milestone_sizes()
     _generate_copilot_instructions()
 
