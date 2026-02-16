@@ -81,6 +81,13 @@ def build(
             write_builder_done()
             break
 
+        # Expand the next backlog story before checking remaining work.
+        # Without this, a fast builder (e.g. Codex) can finish a milestone
+        # while agents are already idle, causing _check_remaining_work to
+        # see "no tasks, agents idle" and exit before re-planning.
+        if _try_expand_next_story(state):
+            continue  # new milestone queued → loop back to build it
+
         signal = _check_remaining_work(state)
         if signal == "done":
             write_builder_done()
@@ -219,6 +226,20 @@ def _handle_backlog_expansion(state: BuildState) -> bool:
         return _try_expand_legacy_roadmap(state)
     log("builder", "")
     log("builder", "[Milestone Planner] Skipping re-plan (backlog empty, replan limit reached).", style="dim")
+    return False
+
+
+def _try_expand_next_story(state: BuildState) -> bool:
+    """After a milestone completes, expand the next backlog story into a new milestone.
+
+    Called before _check_remaining_work so the builder doesn't exit prematurely
+    when agents happen to be idle already (common with fast models like Codex).
+    Returns True if a new milestone was queued.
+    """
+    if has_pending_backlog_stories_in_file("BACKLOG.md"):
+        return _try_expand_backlog(state)
+    if has_unexpanded_stories_in_file("TASKS.md"):
+        return _try_expand_legacy_roadmap(state)
     return False
 
 
