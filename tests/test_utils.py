@@ -160,21 +160,30 @@ def test_find_untested_milestones_excludes_already_tested():
 
 # --- model validation ---
 
-def test_validate_model_accepts_codex():
-    assert validate_model("GPT-5.3-Codex") == "GPT-5.3-Codex"
+def test_validate_model_accepts_codex_friendly_name():
+    assert validate_model("GPT-5.3-Codex") == "gpt-5.3-codex"
 
 
-def test_validate_model_accepts_opus():
-    assert validate_model("Claude Opus 4.6") == "Claude Opus 4.6"
+def test_validate_model_accepts_codex_cli_name():
+    assert validate_model("gpt-5.3-codex") == "gpt-5.3-codex"
+
+
+def test_validate_model_accepts_opus_friendly_name():
+    assert validate_model("Claude Opus 4.6") == "claude-opus-4.6"
+
+
+def test_validate_model_accepts_opus_cli_name():
+    assert validate_model("claude-opus-4.6") == "claude-opus-4.6"
 
 
 def test_validate_model_rejects_unknown_model():
     with pytest.raises(SystemExit) as exc_info:
         validate_model("GPT-4.1")
     assert "Invalid model" in str(exc_info.value)
-    assert "GPT-5.3-Codex" in str(exc_info.value)
-    assert "Claude Opus 4.6" in str(exc_info.value)
 
 
-def test_allowed_models_contains_exactly_two():
-    assert ALLOWED_MODELS == {"GPT-5.3-Codex", "Claude Opus 4.6"}
+def test_allowed_models_accepts_both_formats():
+    assert "GPT-5.3-Codex" in ALLOWED_MODELS
+    assert "gpt-5.3-codex" in ALLOWED_MODELS
+    assert "Claude Opus 4.6" in ALLOWED_MODELS
+    assert "claude-opus-4.6" in ALLOWED_MODELS

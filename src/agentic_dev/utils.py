@@ -93,18 +93,31 @@ def _stream_process_output(proc: subprocess.Popen, log_file: str) -> None:
         pass
 
 
-ALLOWED_MODELS = {"GPT-5.3-Codex", "Claude Opus 4.6"}
+# Mapping of friendly display names to Copilot CLI model identifiers.
+# The CLI expects lowercase-hyphenated names (e.g. "gpt-5.3-codex").
+# Users can pass either the friendly name or the CLI name.
+MODEL_NAME_MAP = {
+    "GPT-5.3-Codex": "gpt-5.3-codex",
+    "Claude Opus 4.6": "claude-opus-4.6",
+}
+
+# Set of all accepted inputs (friendly names + CLI names).
+ALLOWED_MODELS = set(MODEL_NAME_MAP.keys()) | set(MODEL_NAME_MAP.values())
 
 
 def validate_model(model: str) -> str:
-    """Validate that the model name is in the allowed set.
+    """Validate and normalize a model name to its Copilot CLI identifier.
 
-    Returns the model string if valid. Raises SystemExit with a clear message
-    listing valid options if the model is not recognized.
+    Accepts either a friendly display name ('GPT-5.3-Codex') or the CLI name
+    ('gpt-5.3-codex'). Returns the CLI name. Raises SystemExit with a clear
+    message listing valid options if the model is not recognized.
     """
-    if model not in ALLOWED_MODELS:
-        allowed = ", ".join(sorted(ALLOWED_MODELS))
-        raise SystemExit(f"Invalid model '{model}'. Allowed models: {allowed}")
+    if model in MODEL_NAME_MAP:
+        return MODEL_NAME_MAP[model]
+    if model in MODEL_NAME_MAP.values():
+        return model
+    allowed = ", ".join(sorted(MODEL_NAME_MAP.keys()))
+    raise SystemExit(f"Invalid model '{model}'. Allowed models: {allowed}")
     return model
 
 

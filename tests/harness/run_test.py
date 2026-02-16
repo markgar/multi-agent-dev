@@ -87,7 +87,7 @@ def run_harness() -> int:
     parser = argparse.ArgumentParser(description="Run local test harness")
     parser.add_argument("--spec-file", default=None)
     parser.add_argument("--name", default="test-run")
-    parser.add_argument("--model", required=True, help="Copilot model to use (e.g. GPT-5.3-Codex, Claude Opus 4.6)")
+    parser.add_argument("--model", required=True, help="Copilot model to use (e.g. gpt-5.3-codex, claude-opus-4.6)")
     parser.add_argument("--resume", action="store_true")
     args = parser.parse_args()
 

@@ -268,7 +268,7 @@ def _resume_existing_project(
 
 def go(
     directory: Annotated[str, typer.Option(help="Project directory path (created if new, resumed if existing)")],
-    model: Annotated[str, typer.Option(help="Copilot model to use (required). Allowed: GPT-5.3-Codex, Claude Opus 4.6")],
+    model: Annotated[str, typer.Option(help="Copilot model to use (required). Allowed: gpt-5.3-codex, claude-opus-4.6")],
     description: Annotated[str, typer.Option(help="What the project should do")] = None,
     spec_file: Annotated[str, typer.Option(help="Path to a markdown file containing the project requirements")] = None,
     local: Annotated[bool, typer.Option(help="Use a local bare git repo instead of GitHub")] = False,
