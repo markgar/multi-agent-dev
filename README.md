@@ -43,7 +43,7 @@ gh auth login
 ```bash
 git clone https://github.com/markgar/multi-agent-dev
 cd multi-agent-dev
-pip install .
+pip install -e .
 cd ..
 
 agentic-dev go --directory hello-world --model gpt-5.3-codex \
