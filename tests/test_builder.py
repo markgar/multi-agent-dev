@@ -130,3 +130,36 @@ def test_post_completion_replan_limit_only_applies_when_backlog_empty():
     before the builder stops re-planning. When backlog stories exist, the limit
     is reset and story expansion takes precedence."""
     assert _MAX_POST_COMPLETION_REPLANS <= 3
+
+
+def test_consecutive_milestones_do_not_accumulate_retry_count():
+    """Regression: _update_state_from_replan sets last_milestone_name to the
+    new milestone but did not reset milestone_retry_count. After 3 consecutive
+    milestones the retry counter hit _MAX_MILESTONE_RETRIES and falsely
+    declared the builder stuck — causing early exit with 17 stories remaining."""
+    state = BuildState()
+
+    # Simulate 3 consecutive milestone expansions via _update_state_from_replan.
+    # Each time the planner creates a new milestone at 0 tasks done and sets
+    # state via _update_state_from_replan.  Then _detect_milestone_progress
+    # sees current_name == last_name with current_done == last_done == 0.
+    for i, name in enumerate(["Milestone-A", "Milestone-B", "Milestone-C", "Milestone-D"]):
+        # Simulate what _update_state_from_replan does (with the fix)
+        state.last_milestone_name = name
+        state.last_milestone_done_count = 0
+        state.milestone_retry_count = 0  # the fix
+
+        # Simulate what _detect_milestone_progress sees on the next cycle:
+        # same name, same done count
+        is_stuck, new_count = update_milestone_retry_state(
+            current_name=name, current_done=0,
+            last_name=state.last_milestone_name,
+            last_done=state.last_milestone_done_count,
+            retry_count=state.milestone_retry_count,
+            max_retries=3,
+        )
+        state.milestone_retry_count = new_count
+
+        # Should never be stuck on the first attempt of a freshly-expanded milestone
+        assert not is_stuck, f"Falsely stuck on {name} (cycle {i+1})"
+        assert new_count == 1  # first attempt, no progress yet

@@ -165,6 +165,7 @@ def _handle_fix_only_replan(state: BuildState) -> bool:
         log("builder", "")
         log("builder", "[Milestone Planner] New milestone detected — exiting fix-only mode.", style="magenta")
         state.fix_only_cycles = 0
+        state.milestone_retry_count = 0
         state.last_milestone_done_count = progress["done"]
         state.last_milestone_name = progress["name"]
         return True
@@ -212,6 +213,7 @@ def _update_state_from_replan(state: BuildState) -> bool:
         return False
     state.last_milestone_done_count = progress["done"]
     state.last_milestone_name = progress["name"]
+    state.milestone_retry_count = 0
     unstarted = count_unstarted_milestones_in_file("TASKS.md")
     if unstarted > 1:
         log("builder", f"[Milestone Planner] WARNING: {unstarted} unstarted milestones queued (expected 1).", style="bold yellow")
