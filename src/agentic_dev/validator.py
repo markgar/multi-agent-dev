@@ -182,6 +182,18 @@ def validateloop(
     log("validator", "======================================", style="bold blue")
     log("validator", "")
 
+    try:
+        _validateloop_inner(interval)
+    except SystemExit as exc:
+        log("validator", f"FATAL: {exc}", style="bold red")
+        raise
+    except Exception as exc:
+        log("validator", f"FATAL: Unexpected error: {exc}", style="bold red")
+        raise
+
+
+def _validateloop_inner(interval: int) -> None:
+    """Inner loop for validateloop, separated for crash-logging wrapper."""
     while True:
         # Check if the builder has finished
         builder_done = is_builder_done()

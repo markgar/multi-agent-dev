@@ -133,6 +133,18 @@ def test_windows_script_still_generates_valid_content():
     assert "agentic-dev commitwatch" in script
 
 
+def test_agent_script_propagates_copilot_model(monkeypatch):
+    monkeypatch.setenv("COPILOT_MODEL", "gpt-5.3-codex")
+    script = build_agent_script("/path/to/reviewer", "commitwatch", "macos")
+    assert "export COPILOT_MODEL='gpt-5.3-codex'" in script
+
+
+def test_agent_script_omits_model_when_unset(monkeypatch):
+    monkeypatch.delenv("COPILOT_MODEL", raising=False)
+    script = build_agent_script("/path/to/reviewer", "commitwatch", "macos")
+    assert "COPILOT_MODEL" not in script
+
+
 # --- milestone filtering ---
 
 def test_find_unreviewed_milestones_excludes_already_reviewed():

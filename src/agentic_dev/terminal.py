@@ -14,8 +14,12 @@ def build_agent_script(working_dir: str, command: str, platform: str) -> str:
 
     Pure function: returns the script text for the given platform.
     platform should be 'macos', 'windows', or 'linux'.
+    Propagates COPILOT_MODEL so child terminals use the same model.
     """
     lines = ["#!/bin/bash"]
+    copilot_model = os.environ.get("COPILOT_MODEL", "")
+    if copilot_model:
+        lines.append(f"export COPILOT_MODEL='{copilot_model}'")
     lines.append(f"cd '{working_dir}'")
     lines.append(f"agentic-dev {command}")
     if platform == "linux":

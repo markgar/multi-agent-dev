@@ -88,6 +88,18 @@ def testloop(
     log("tester", "======================================", style="bold yellow")
     log("tester", "")
 
+    try:
+        _testloop_inner(interval)
+    except SystemExit as exc:
+        log("tester", f"FATAL: {exc}", style="bold red")
+        raise
+    except Exception as exc:
+        log("tester", f"FATAL: Unexpected error: {exc}", style="bold red")
+        raise
+
+
+def _testloop_inner(interval: int) -> None:
+    """Inner loop for testloop, separated for crash-logging wrapper."""
     while True:
         # Check if the builder has finished
         builder_done = is_builder_done()

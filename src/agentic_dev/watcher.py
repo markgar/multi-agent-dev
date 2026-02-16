@@ -296,6 +296,18 @@ def commitwatch(
     log("commit-watcher", "======================================", style="bold yellow")
     log("commit-watcher", "")
 
+    try:
+        _commitwatch_loop()
+    except SystemExit as exc:
+        log("commit-watcher", f"FATAL: {exc}", style="bold red")
+        raise
+    except Exception as exc:
+        log("commit-watcher", f"FATAL: Unexpected error: {exc}", style="bold red")
+        raise
+
+
+def _commitwatch_loop() -> None:
+    """Inner loop for commitwatch, separated for crash-logging wrapper."""
     last_sha = _initialize_watcher_checkpoint()
 
     while True:
