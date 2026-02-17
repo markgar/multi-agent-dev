@@ -90,6 +90,61 @@ def _cleanup_containers() -> None:
         pass
 
 
+def _commit_uncommitted_changes() -> None:
+    """Commit any uncommitted changes left behind by Copilot.
+
+    Safety net: if Copilot made file changes but did not commit them,
+    this bundles them into a single commit so they can be cherry-picked.
+    Does nothing if the working tree is clean.
+    """
+    status = run_cmd(["git", "status", "--porcelain"], capture=True)
+    if status.returncode != 0 or not status.stdout.strip():
+        return
+    run_cmd(["git", "add", "-A"], quiet=True)
+    run_cmd(
+        ["git", "commit", "-m", "[validator] Save uncommitted validation changes"],
+        quiet=True,
+    )
+
+
+def _collect_detached_commits(base_sha: str) -> list[str]:
+    """Return commit SHAs made since base_sha on the current (detached) HEAD.
+
+    Returns them in chronological order (oldest first) so they can be
+    cherry-picked in sequence. Returns an empty list if there are no new commits.
+    """
+    result = run_cmd(
+        ["git", "log", f"{base_sha}..HEAD", "--format=%H", "--reverse"],
+        capture=True,
+    )
+    if result.returncode != 0 or not result.stdout.strip():
+        return []
+    return [sha.strip() for sha in result.stdout.strip().split("\n") if sha.strip()]
+
+
+def _cherry_pick_commits(commits: list[str]) -> bool:
+    """Cherry-pick a list of commits onto the current branch.
+
+    On conflict, attempts to resolve by accepting the cherry-picked version.
+    Returns True if all commits were applied, False if any failed (aborts that pick).
+    """
+    for sha in commits:
+        result = run_cmd(["git", "cherry-pick", "--no-edit", sha], capture=True)
+        if result.returncode == 0:
+            continue
+        # Conflict — try to resolve by adding everything and continuing
+        run_cmd(["git", "add", "-A"], quiet=True)
+        cont = run_cmd(
+            ["git", "-c", "core.editor=true", "cherry-pick", "--continue"],
+            capture=True,
+        )
+        if cont.returncode != 0:
+            run_cmd(["git", "cherry-pick", "--abort"], quiet=True)
+            log("validator", f"Cherry-pick of {sha[:8]} failed, skipping", style="yellow")
+            return False
+    return True
+
+
 def _copy_validation_results(milestone_name: str) -> None:
     """Copy validation-results.txt from the working dir to logs/.
 
@@ -112,7 +167,13 @@ def _copy_validation_results(milestone_name: str) -> None:
 
 
 def _validate_milestone(boundary: dict) -> None:
-    """Build a container, validate at the milestone's end SHA, and checkpoint."""
+    """Build a container, validate at the milestone's end SHA, and checkpoint.
+
+    Flow: checkout milestone SHA (detached HEAD) → run Copilot validation →
+    collect any commits Copilot made → return to main → cherry-pick commits
+    onto main → push. This avoids rebase conflicts from pushing on a detached
+    HEAD that diverged from main while validation was running.
+    """
     now = datetime.now().strftime("%H:%M:%S")
     log(
         "validator",
@@ -138,7 +199,26 @@ def _validate_milestone(boundary: dict) -> None:
 
     _copy_validation_results(boundary["name"])
     _cleanup_containers()
-    git_push_with_retry("validator")
+
+    # Collect commits Copilot made on detached HEAD
+    _commit_uncommitted_changes()
+    new_commits = _collect_detached_commits(boundary["end_sha"])
+
+    # Return to main and pull latest before applying validator's work
+    run_cmd(["git", "checkout", "main"], quiet=True)
+    run_cmd(["git", "pull", "--rebase", "-q"], quiet=True)
+
+    if new_commits:
+        pick_ok = _cherry_pick_commits(new_commits)
+        if pick_ok:
+            git_push_with_retry("validator")
+        else:
+            log(
+                "validator",
+                "Could not cherry-pick validator commits onto main — "
+                "validation results are saved in logs/ but code changes were lost.",
+                style="red",
+            )
 
     now = datetime.now().strftime("%H:%M:%S")
     if exit_code != 0:
@@ -150,7 +230,6 @@ def _validate_milestone(boundary: dict) -> None:
         boundary["name"],
         checkpoint_file=_VALIDATOR_MILESTONE_CHECKPOINT,
     )
-    run_cmd(["git", "checkout", "-"], quiet=True)
 
 
 def register(app: typer.Typer) -> None:
