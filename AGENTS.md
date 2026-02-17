@@ -111,7 +111,7 @@ Runs via `build`. Completes one milestone per cycle, then stops. Between milesto
 
 > Before starting, review README.md, SPEC.md, and TASKS.md to understand the project's purpose and plan. Read .github/copilot-instructions.md if it exists — follow its coding guidelines and conventions in all code you write. Read DEPLOY.md if it exists — it contains deployment configuration and lessons learned from the validator agent. If it mentions required env vars, ports, or startup requirements, ensure your code is compatible. Do NOT modify DEPLOY.md — only the validator agent manages that file. Only build, fix, or keep code that serves that purpose. Remove any scaffolding, template code, or functionality that does not belong. After any refactoring — including review fixes — check for dead code left behind and remove it. Before your first commit in each session, review .gitignore and ensure it covers the project's current tech stack; update it when you introduce a new framework or build tool. When completing a task that changes the project structure, key files, architecture, or conventions, update .github/copilot-instructions.md to reflect the change (it is a style guide — describe file roles and coding patterns, not implementation details). Now look at the `bugs/` directory first. List `bug-*.md` files without matching `fixed-*.md` files — these are open bugs. Fix ALL open bugs before anything else. Then look at the `reviews/` directory. List `finding-*.md` files without matching `resolved-*.md` files — these are open findings. Address them one at a time. Once all bugs and findings are resolved, move to TASKS.md. Find the first milestone that has unchecked tasks — this is your current milestone. Complete every task in this milestone, then STOP IMMEDIATELY. Do not continue to the next milestone. For each task: write the code AND mark it complete in TASKS.md, then commit BOTH together in a single commit with a meaningful message. After each commit, run git pull --rebase and push. When every task in the current milestone is checked, verify the application still builds and runs. Once verified, you are done for this session.
 
-**Reads:** README.md, SPEC.md, TASKS.md, bugs/, reviews/, DEPLOY.md, .github/copilot-instructions.md  
+**Reads:** README.md, SPEC.md, TASKS.md, bugs/, reviews/, DEPLOY.md, THEMES.md, .github/copilot-instructions.md  
 **Writes code:** Yes  
 **Updates:** .github/copilot-instructions.md (when project structure changes), .gitignore (when tech stack changes)  
 **Commits:** After each bug fix, review fix, and task (prefixed with `[builder]`)  
@@ -147,7 +147,8 @@ For each new commit detected, the watcher enumerates all commits since the last 
 **Skips:** Merge commits, coordination-only commits (TASKS.md only, or reviews/ and bugs/ only)  
 **Runs from:** `reviewer/` clone  
 **Shutdown:** Checks for `logs/builder.done` each cycle; completes any remaining milestone reviews before exiting  
-**Writes code:** [doc] fixes only (comments, README). Never changes application logic or DEPLOY.md directly.
+**Writes code:** [doc] fixes only (comments, README). Never changes application logic or DEPLOY.md directly.  
+**Updates:** THEMES.md (rolling summary of top recurring review patterns, replaced each milestone review)
 
 ---
 
@@ -217,6 +218,7 @@ For API-only projects, the Playwright section is omitted entirely — no extra p
 - Agents never edit or delete existing files in `reviews/` or `bugs/` — they only create new files. This eliminates merge conflicts on those directories.
 - All agents run `git pull --rebase` before pushing to avoid merge conflicts. Since `reviews/` and `bugs/` are append-only directories (no file is ever edited), concurrent new-file creations never conflict.
 - `SPEC.md` is the source of truth for technical decisions. `BACKLOG.md` is the story queue. Edit either anytime to steer the project — run `plan` to adapt the task list.
+- `THEMES.md` is a rolling summary of the highest-impact recurring review patterns, owned by the reviewer. The reviewer replaces it after each milestone review, dropping fixed patterns and keeping only what still matters. The builder reads it to avoid repeating patterns but never modifies it.
 
 ---
 

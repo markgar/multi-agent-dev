@@ -49,7 +49,7 @@ This software is entirely written by GitHub Copilot. The code is structured to b
 
 This is a multi-agent orchestrator that uses GitHub Copilot CLI (`copilot --yolo`) as the execution engine. Agents (builder, planner, reviewer, tester, validator) run as separate processes in separate git clones of the same repo. They coordinate through:
 
-- **Markdown files** (`TASKS.md`, `BUGS.md`, `REVIEWS.md`, `DEPLOY.md`) — shared state via git push/pull.
+- **Markdown files** (`TASKS.md`, `BUGS.md`, `REVIEWS.md`, `DEPLOY.md`, `THEMES.md`) — shared state via git push/pull.
 - **Log files** (`logs/`) — local coordination signals like `builder.done`, `reviewer.checkpoint`, `milestones.log`, `validator.milestone`.
 
 The build loop (Python code in `builder.py`) handles deterministic orchestration — milestone boundary tracking, SHA recording, shutdown signals. The LLM agents handle creative work — writing code, reviewing diffs, writing tests.
