@@ -41,8 +41,8 @@ def register(app: typer.Typer) -> None:
 
 
 def _pull_with_warning() -> None:
-    """Run git pull and log a warning if it fails."""
-    pull_result = run_cmd(["git", "pull", "-q"], capture=True)
+    """Run git pull --rebase and log a warning if it fails."""
+    pull_result = run_cmd(["git", "pull", "--rebase", "-q"], capture=True)
     if pull_result.returncode != 0:
         now = datetime.now().strftime("%H:%M:%S")
         log("commit-watcher", f"[{now}] WARNING: git pull failed", style="red")
