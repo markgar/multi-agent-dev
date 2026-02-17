@@ -131,6 +131,16 @@ Planner ──TASKS.md──→ Builder ──git push──→ Reviewer ──R
 | Validator | Builder | `BUGS.md` | The app failed validation in a container, fix these |
 | Validator | Builder | `DEPLOY.md` | Here's what I learned about deploying this app |
 
+### Positive Feedback Loops
+
+The system is designed around cumulative knowledge — each milestone makes subsequent milestones more reliable:
+
+- **Deployment knowledge (DEPLOY.md):** The validator writes everything it learns about building and running the app (Dockerfile config, env vars, ports, startup sequence, gotchas). The builder reads it to stay compatible. Each milestone's validation inherits all prior knowledge, so deployments get more reliable over time.
+- **Review signal filtering (notes → findings):** Per-commit reviews file [bug]/[security] issues immediately but file [cleanup]/[robustness] issues as observational notes. The milestone review then evaluates notes for recurring patterns — only issues that appear in 2+ locations get promoted to findings for the builder. This means the builder spends time on systemic problems, not one-off nitpicks.
+- **Review themes (REVIEW-THEMES.md):** The reviewer maintains a rolling summary of the highest-impact recurring patterns. The builder reads it to avoid repeating the same class of mistake across milestones.
+- **Codebase-aware planning:** The milestone planner reads the actual codebase before expanding the next story — it matches existing patterns (base classes, naming conventions, DI wiring) rather than planning in a vacuum.
+- **Copilot instructions (.github/copilot-instructions.md):** The builder updates this style guide as the project structure evolves. Future builder sessions read it, so coding conventions stay consistent as the project grows.
+
 See [AGENTS.md](AGENTS.md) for the exact prompts each agent receives and coordination rules.
 
 See [USAGE.md](USAGE.md) for the full command reference, logging, troubleshooting, and more.

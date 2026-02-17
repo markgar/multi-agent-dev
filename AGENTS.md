@@ -111,7 +111,7 @@ Runs via `build`. Completes one milestone per cycle, then stops. Between milesto
 
 > Before starting, review README.md, SPEC.md, and TASKS.md to understand the project's purpose and plan. Read .github/copilot-instructions.md if it exists — follow its coding guidelines and conventions in all code you write. Read DEPLOY.md if it exists — it contains deployment configuration and lessons learned from the validator agent. If it mentions required env vars, ports, or startup requirements, ensure your code is compatible. Do NOT modify DEPLOY.md — only the validator agent manages that file. Only build, fix, or keep code that serves that purpose. Remove any scaffolding, template code, or functionality that does not belong. After any refactoring — including review fixes — check for dead code left behind and remove it. Before your first commit in each session, review .gitignore and ensure it covers the project's current tech stack; update it when you introduce a new framework or build tool. When completing a task that changes the project structure, key files, architecture, or conventions, update .github/copilot-instructions.md to reflect the change (it is a style guide — describe file roles and coding patterns, not implementation details). Now look at the `bugs/` directory first. List `bug-*.md` files without matching `fixed-*.md` files — these are open bugs. Fix ALL open bugs before anything else. Then look at the `reviews/` directory. List `finding-*.md` files without matching `resolved-*.md` files — these are open findings. Address them one at a time. Once all bugs and findings are resolved, move to TASKS.md. Find the first milestone that has unchecked tasks — this is your current milestone. Complete every task in this milestone, then STOP IMMEDIATELY. Do not continue to the next milestone. For each task: write the code AND mark it complete in TASKS.md, then commit BOTH together in a single commit with a meaningful message. After each commit, run git pull --rebase and push. When every task in the current milestone is checked, verify the application still builds and runs. Once verified, you are done for this session.
 
-**Reads:** README.md, SPEC.md, TASKS.md, bugs/, reviews/, DEPLOY.md, THEMES.md, .github/copilot-instructions.md  
+**Reads:** README.md, SPEC.md, TASKS.md, bugs/, reviews/, DEPLOY.md, REVIEW-THEMES.md, .github/copilot-instructions.md  
 **Writes code:** Yes  
 **Updates:** .github/copilot-instructions.md (when project structure changes), .gitignore (when tech stack changes)  
 **Commits:** After each bug fix, review fix, and task (prefixed with `[builder]`)  
@@ -129,17 +129,24 @@ Runs continuously via `commitwatch`, launched automatically by `go`. Polls for n
 
 For each new commit detected, the watcher enumerates all commits since the last checkpoint (`git log {last_sha}..HEAD --format=%H --reverse`), filters out skippable commits (merges, reviewer-only, coordination-only), and reviews the remaining ones. If there is a single reviewable commit, it reviews that commit individually. If there are multiple reviewable commits (e.g. the builder pushed several commits while the reviewer was busy), it reviews them as a single batch using the combined diff — one Copilot call instead of N:
 
+**Severity-based filing:** Per-commit and batch reviews use a split filing strategy. [bug] and [security] issues are filed as `finding-<timestamp>.md` so the builder sees and fixes them immediately. [cleanup] and [robustness] issues are filed as `note-<timestamp>.md` — per-commit observations that the builder does not act on directly. The milestone review later evaluates notes for recurring patterns and only promotes them to `finding-*.md` if the same class of issue appeared in 2+ locations. This reduces noise while ensuring critical issues reach the builder without delay.
+
 **Single commit prompt:**
 
-> You are a SENIOR staff engineer performing a rigorous code review. You have high standards and you do not let things slide. Every line of code that ships must be production-ready — correct, secure, robust, readable, and maintainable. If it is not, you file a finding. Your only job is to review the changes in a single commit for quality issues. Read SPEC.md and TASKS.md ONLY to understand the project goals — do NOT review those files themselves. Run `git diff {prev_sha} {commit_sha}` to get the diff. This diff is your ONLY input for review — do NOT read entire source files, do NOT review code outside the diff. Focus exclusively on the added and modified lines. Examine every changed line against: (1) CORRECTNESS — off-by-one, wrong operator, missing return, unreachable paths. (2) ERROR HANDLING — swallowed exceptions, missing null checks, unhelpful error messages. (3) SECURITY — hardcoded secrets, injection, missing input validation, overly permissive CORS. (4) ROBUSTNESS — missing bounds checking, no timeouts, missing resource cleanup. (5) READABILITY — unclear names, magic numbers, functions doing too many things, dead code, TODO/FIXME shipping as done. (6) CONVENTIONS — inconsistency with established project patterns. File ALL findings you discover — do not self-censor or cap the count. NON-CODE ISSUES — [doc]: Fix stale docs directly. Do NOT directly edit DEPLOY.md — file it as a finding instead. CODE ISSUES: Create `finding-<timestamp>.md` files in `reviews/` with the commit SHA, severity, file, description explaining WHY it matters, and a concrete suggested fix with example code. Commit with message 'Code review: {sha}', run git pull --rebase, and push.
+> ...reviews the diff... For [bug] and [security] issues, create `finding-<timestamp>.md` files in `reviews/`. For [cleanup] and [robustness] issues, create `note-<timestamp>.md` files instead — these are observations that the milestone review will evaluate for patterns. Commit with message 'Code review: {sha}', run git pull --rebase, and push.
 
 **Batched commits prompt (2+ commits):**
 
-> You are a SENIOR staff engineer performing a rigorous code review. You have high standards and you do not let things slide. Every line of code that ships must be production-ready. Your job is to review the combined changes from {commit_count} commits for quality issues. Read SPEC.md and TASKS.md ONLY to understand the project goals. Run `git log --oneline {base_sha}..{head_sha}` to see the commit messages. Run `git diff {base_sha} {head_sha}` to get the combined diff. This diff is your ONLY input for review. Focus exclusively on the added and modified lines. Examine every changed line against: CORRECTNESS, ERROR HANDLING, SECURITY, ROBUSTNESS, READABILITY, and CONVENTIONS. File ALL findings — do not cap the count. NON-CODE ISSUES — [doc]: Fix stale docs directly. Do NOT directly edit DEPLOY.md — file it as a finding instead. CODE ISSUES: Create `finding-<timestamp>.md` files in `reviews/` with the commit SHA(s), severity, file, description explaining WHY it matters, and a concrete suggested fix. Commit with message 'Code review: {base_sha:.8}..{head_sha:.8}', run git pull --rebase, and push.
+> ...reviews the combined diff... Same severity-based filing: `finding-*.md` for [bug]/[security], `note-*.md` for [cleanup]/[robustness]. Commit with message 'Code review: {base_sha:.8}..{head_sha:.8}', run git pull --rebase, and push.
 
-**Milestone reviews:** When the watcher detects that all tasks under a `## Milestone:` heading in TASKS.md are checked, it triggers a cross-cutting review of the entire milestone's diff. This catches issues that per-commit reviews miss: inconsistent patterns across files, API mismatches, duplicated logic introduced across separate commits, and architectural problems in how pieces fit together. Milestone review findings are filed as `finding-<timestamp>.md` files in `reviews/` prefixed with `[Milestone: <name>]`. Each milestone is only reviewed once (tracked in `logs/reviewer.milestone`). The milestone reviewer also cleans up stale findings — creating `resolved-*.md` files for issues already fixed in the code.
+**Milestone reviews:** When the watcher detects that all tasks under a `## Milestone:` heading in TASKS.md are checked, it triggers a cross-cutting review of the entire milestone's diff. This catches issues that per-commit reviews miss: inconsistent patterns across files, API mismatches, duplicated logic introduced across separate commits, and architectural problems in how pieces fit together. Each milestone is only reviewed once (tracked in `logs/reviewer.milestone`). The milestone reviewer also cleans up stale findings — creating `resolved-*.md` files for issues already fixed in the code.
 
-> You are a SENIOR staff engineer performing a milestone-level review. You have high standards and you do not let things slide. A milestone — '{milestone_name}' — has just been completed. This is your most important review — per-commit reviews catch local issues; milestone reviews catch how the pieces fit together. Run `git diff {milestone_start_sha} {milestone_end_sha}` to see everything that changed. Examine every changed line against: CORRECTNESS, ERROR HANDLING, SECURITY, ROBUSTNESS, READABILITY, and CONVENTIONS. Also review for cross-cutting concerns: inconsistent patterns, API mismatches, duplicated logic across commits, missing integration, naming inconsistencies, error handling gaps, architectural issues, and dead code. File ALL findings — do not cap the count. STALE FINDING CLEANUP: Before filing new findings, list `finding-*.md` files in `reviews/` without matching `resolved-*.md` files. For each unresolved finding, check whether it has been fixed. If so, create a `resolved-<same-id>.md` file. NON-CODE ISSUES — [doc]: Fix non-code issues directly. Do NOT directly edit DEPLOY.md — file it as a finding instead. CODE ISSUES: Create `finding-<timestamp>.md` files in `reviews/` prefixed with '[Milestone: {milestone_name}]'. Each finding must explain WHY the issue matters for production and include a concrete suggested fix with example code. Commit with message 'Milestone review: {milestone_name}', run git pull --rebase, and push.
+**Milestone frequency filter:** The milestone review reads all `note-*.md` files from per-commit reviews and applies a frequency filter before filing findings for the builder:
+- [bug] and [security]: Always filed as `finding-*.md` regardless of frequency
+- [cleanup] and [robustness]: Only promoted to `finding-*.md` if the same class of problem appears in 2+ locations or files across the milestone. One-off issues stay as notes.
+- When promoting a recurring pattern, the reviewer consolidates the notes into a single finding describing the pattern and all affected locations.
+
+> ...reviews the full milestone diff... Reads `note-*.md` files for per-commit observations. Files `finding-*.md` for [bug]/[security] always, and for [cleanup]/[robustness] only when the pattern recurs in 2+ locations. Cleans up stale findings. Commit with message 'Milestone review: {milestone_name}', run git pull --rebase, and push.
 
 **Trigger:** Polls every 10 seconds for new commits  
 **Scope:** Per-commit diff for individual reviews; full milestone diff for milestone reviews  
@@ -148,7 +155,7 @@ For each new commit detected, the watcher enumerates all commits since the last 
 **Runs from:** `reviewer/` clone  
 **Shutdown:** Checks for `logs/builder.done` each cycle; completes any remaining milestone reviews before exiting  
 **Writes code:** [doc] fixes only (comments, README). Never changes application logic or DEPLOY.md directly.  
-**Updates:** THEMES.md (rolling summary of top recurring review patterns, replaced each milestone review)
+**Updates:** REVIEW-THEMES.md (rolling summary of top recurring review patterns, replaced each milestone review)
 
 ---
 
@@ -207,6 +214,32 @@ For API-only projects, the Playwright section is omitted entirely — no extra p
 
 ---
 
+## Positive Feedback Loops
+
+The multi-agent system is designed around cumulative knowledge. Several mechanisms create positive feedback loops where each milestone makes subsequent milestones more reliable:
+
+### Deployment Knowledge Ratchet (DEPLOY.md)
+
+The validator writes DEPLOY.md after each milestone — Dockerfile configuration, required env vars, port mappings, startup sequence, health check details, and known gotchas. The builder reads DEPLOY.md before every session to stay compatible with deployment requirements. Each milestone's validation run inherits all knowledge from prior runs, so container builds and runtime validation get progressively more reliable. What was a painful discovery in milestone 1 becomes a documented fact for milestone 2.
+
+### Review Signal Filtering (notes → findings)
+
+Per-commit reviews catch every issue but split them by urgency. [bug] and [security] issues are filed as `finding-*.md` so the builder sees and fixes them immediately — these are too important to wait. [cleanup] and [robustness] issues are filed as `note-*.md` — observational records that the builder does not act on directly. When a milestone completes, the milestone review reads all accumulated notes and applies a frequency filter: only patterns that recurred across 2+ locations or files get promoted to `finding-*.md` for the builder. One-off cleanup issues stay as notes. This means the builder spends fix cycles on systemic problems, not isolated nitpicks, and the signal-to-noise ratio of review feedback improves over time as the reviewer learns what patterns actually recur.
+
+### Review Themes (REVIEW-THEMES.md)
+
+The reviewer maintains REVIEW-THEMES.md — a rolling summary of the highest-impact recurring code quality patterns observed across milestone reviews. The builder reads it to avoid repeating the same class of mistake. The reviewer replaces the file after each milestone review, dropping patterns the builder has already fixed and keeping only what still matters. This creates a tightening loop: the reviewer identifies patterns → the builder reads and avoids them → the reviewer drops fixed patterns → only genuinely persistent issues remain.
+
+### Codebase-Aware Planning
+
+The milestone planner reads the actual codebase before expanding the next backlog story. It discovers what patterns have emerged — base classes, naming conventions, dependency injection wiring, project structure — and writes tasks that match those patterns. This prevents the planner from fighting the codebase's natural direction and ensures each milestone's tasks build on what actually exists rather than what was originally imagined.
+
+### Evolving Style Guide (.github/copilot-instructions.md)
+
+The builder updates the project's copilot-instructions.md whenever project structure, key files, architecture, or conventions change. Future builder sessions (and all other Copilot-powered agents) read this file, so coding conventions stay consistent as the project grows. This is especially important across iterative development sessions where the builder agent is a fresh process with no memory of prior sessions.
+
+---
+
 ## Agent Coordination Rules
 
 - **Commit message tagging:** Every agent prefixes its commit messages with its name in brackets — `[builder]`, `[reviewer]`, `[tester]`, `[validator]`, `[planner]`, `[bootstrap]`. This makes it easy to see who did what in `git log`.
@@ -218,7 +251,7 @@ For API-only projects, the Playwright section is omitted entirely — no extra p
 - Agents never edit or delete existing files in `reviews/` or `bugs/` — they only create new files. This eliminates merge conflicts on those directories.
 - All agents run `git pull --rebase` before pushing to avoid merge conflicts. Since `reviews/` and `bugs/` are append-only directories (no file is ever edited), concurrent new-file creations never conflict.
 - `SPEC.md` is the source of truth for technical decisions. `BACKLOG.md` is the story queue. Edit either anytime to steer the project — run `plan` to adapt the task list.
-- `THEMES.md` is a rolling summary of the highest-impact recurring review patterns, owned by the reviewer. The reviewer replaces it after each milestone review, dropping fixed patterns and keeping only what still matters. The builder reads it to avoid repeating patterns but never modifies it.
+- `REVIEW-THEMES.md` is a rolling summary of the highest-impact recurring review patterns, owned by the reviewer. The reviewer replaces it after each milestone review, dropping fixed patterns and keeping only what still matters. The builder reads it to avoid repeating patterns but never modifies it.
 
 ---
 

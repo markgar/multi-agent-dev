@@ -69,6 +69,38 @@ _FILING_RULES = (
     "with `ls reviews/finding-*.md` and read recent ones). "
 )
 
+_COMMIT_FILING_RULES = (
+    "FILING BY SEVERITY: For [bug] and [security] issues, create a `finding-<timestamp>.md` "
+    "file in `reviews/` (the builder will see and fix these immediately). For [cleanup] and "
+    "[robustness] issues, create a `note-<timestamp>.md` file in `reviews/` instead — these "
+    "are per-commit observations that the milestone review will evaluate for recurring "
+    "patterns. Only patterns that recur across 2+ locations get promoted to findings for "
+    "the builder. Use `date +%Y%m%d-%H%M%S` for the timestamp. If you create multiple "
+    "files in the same second, append -2, -3, etc. "
+    "Do NOT edit or delete any existing files in `reviews/`. Do not create duplicates "
+    "for issues already covered by existing files (check first with "
+    "`ls reviews/finding-*.md reviews/note-*.md` and read recent ones). "
+)
+
+_MILESTONE_FILING_RULES = (
+    "FILING WITH FREQUENCY FILTER: The milestone review applies a frequency filter to "
+    "reduce noise for the builder. "
+    "(1) Read all `note-*.md` files in `reviews/` — these are per-commit observations "
+    "from earlier reviews that were not yet promoted to findings. "
+    "(2) For [bug] and [security] issues: ALWAYS file as `finding-<timestamp>.md` "
+    "regardless of how many times they appear. These are too important to wait. "
+    "(3) For [cleanup] and [robustness] issues: only file as `finding-<timestamp>.md` "
+    "if the same class of problem appears in 2+ locations or files across the milestone. "
+    "One-off cleanup or robustness issues that appear only once should NOT be promoted — "
+    "they stay as notes. "
+    "(4) When you promote a pattern from notes to a finding, reference the note files "
+    "that demonstrated the pattern and consolidate into a single finding describing "
+    "the recurring pattern and all affected locations. "
+    "Use `date +%Y%m%d-%H%M%S` for timestamps. If you create multiple files in the "
+    "same second, append -2, -3, etc. "
+    "Do NOT edit or delete any existing files in `reviews/`. "
+)
+
 _CONFLICT_RECOVERY = (
     "CONFLICT RECOVERY: If git pull --rebase fails with merge conflicts, run "
     "`git rebase --abort`, then `git stash`, then `git pull`, then `git stash pop`. "
@@ -111,14 +143,14 @@ REVIEWER_COMMIT_PROMPT = (
     + _REVIEW_CHECKLIST
     + _SEVERITY_RULES
     + _DOC_RULES
-    + _FILING_RULES
-    + "Each finding file must contain: the commit SHA {commit_sha:.8}, the "
+    + _COMMIT_FILING_RULES
+    + "Each finding or note file must contain: the commit SHA {commit_sha:.8}, the "
     "severity tag, the file path and line(s), a clear description of the problem "
     "explaining WHY it matters (not just what is wrong), and a concrete suggested fix "
     "with example code when possible. "
     "If there are genuinely no issues, do nothing — but be skeptical. In production "
     "codebases, most commits have at least one improvable aspect. If you created any "
-    "finding files, commit with message '[reviewer] Code review: {commit_sha:.8}', run "
+    "files, commit with message '[reviewer] Code review: {commit_sha:.8}', run "
     "git pull --rebase, and push. If the push fails, run git pull --rebase and push "
     "again (retry up to 3 times). "
     + _CONFLICT_RECOVERY
@@ -138,13 +170,13 @@ REVIEWER_BATCH_PROMPT = (
     + _REVIEW_CHECKLIST
     + _SEVERITY_RULES
     + _DOC_RULES
-    + _FILING_RULES
-    + "Each finding file must contain: the relevant commit SHA(s), the "
+    + _COMMIT_FILING_RULES
+    + "Each finding or note file must contain: the relevant commit SHA(s), the "
     "severity tag, the file path and line(s), a clear description of the problem "
     "explaining WHY it matters, and a concrete suggested fix with example code when "
     "possible. "
     "If there are genuinely no issues, do nothing — but be skeptical. Multiple commits "
-    "in a batch almost always contain at least one issue. If you created any finding "
+    "in a batch almost always contain at least one issue. If you created any "
     "files, commit with message '[reviewer] Code review: {base_sha:.8}..{head_sha:.8}', "
     "run git pull --rebase, and push. If the push fails, run git pull --rebase and push "
     "again (retry up to 3 times). "
@@ -185,7 +217,7 @@ REVIEWER_MILESTONE_PROMPT = (
     "issue it describes has already been fixed in the current code. If it has, create a "
     "`resolved-<same-id>.md` file noting it was resolved and by which commit. This "
     "prevents the builder from chasing already-fixed issues. "
-    + _FILING_RULES
+    + _MILESTONE_FILING_RULES
     + "Each finding file must contain: '[Milestone: {milestone_name}]' on "
     "the first line, the severity tag, the file(s) involved, a clear description "
     "explaining WHY it matters for production, and a concrete suggested fix with "
@@ -195,7 +227,7 @@ REVIEWER_MILESTONE_PROMPT = (
     "exceptionally rare. "
     "\n\n"
     "REVIEW THEMES: After filing findings and cleaning up stale ones, update "
-    "THEMES.md in the repo root. This is a rolling summary of the highest-impact "
+    "REVIEW-THEMES.md in the repo root. This is a rolling summary of the highest-impact "
     "recurring code quality patterns you keep seeing across your reviews. Rules: "
     "(1) Keep the list short — just the few patterns that matter most for production "
     "quality. If a theme is not clearly hurting the codebase, leave it out. "
@@ -208,7 +240,7 @@ REVIEWER_MILESTONE_PROMPT = (
     "(5) Replace the file entirely each time — do not append. "
     "Format: a '# Review Themes' heading, a 'Last updated: {milestone_name}' "
     "subline, then a numbered list of entries. "
-    "If you created any files in `reviews/`, updated THEMES.md, or fixed doc issues, "
+    "If you created any files in `reviews/`, updated REVIEW-THEMES.md, or fixed doc issues, "
     "commit with message '[reviewer] Milestone review: {milestone_name}', run "
     "git pull --rebase, and push. If the push fails, run git pull --rebase and push "
     "again (retry up to 3 times). "
