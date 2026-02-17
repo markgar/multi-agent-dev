@@ -3,9 +3,17 @@
 import pytest
 
 from agentic_dev.sentinel import check_builder_done_status
-from agentic_dev.utils import count_unchecked_items, find_project_root, validate_model, ALLOWED_MODELS
+from agentic_dev.utils import (
+    count_unchecked_items,
+    find_project_root,
+    validate_model,
+    ALLOWED_MODELS,
+    _AUTH_ERROR_MARKERS,
+    _detect_auth_failure,
+)
 from agentic_dev.git_helpers import is_reviewer_only_files, is_coordination_only_files
 from agentic_dev.terminal import build_agent_script
+from agentic_dev.utils import count_open_items_in_dir, _extract_item_ids
 from agentic_dev.watcher import find_unreviewed_milestones
 from agentic_dev.tester import find_untested_milestones
 
@@ -75,11 +83,15 @@ def test_non_agent_dir_returns_itself():
 # --- reviewer commit filtering ---
 
 def test_reviews_only_commit_is_skipped():
-    assert is_reviewer_only_files(["REVIEWS.md"]) is True
+    assert is_reviewer_only_files(["reviews/finding-20260215-120000.md"]) is True
+
+
+def test_reviews_multiple_files_is_skipped():
+    assert is_reviewer_only_files(["reviews/finding-20260215-120000.md", "reviews/resolved-20260215-110000.md"]) is True
 
 
 def test_commit_touching_code_is_not_skipped():
-    assert is_reviewer_only_files(["REVIEWS.md", "src/main.py"]) is False
+    assert is_reviewer_only_files(["reviews/finding-20260215-120000.md", "src/main.py"]) is False
 
 
 def test_empty_file_list_is_not_skipped():
@@ -93,15 +105,19 @@ def test_tasks_only_commit_is_skipped():
 
 
 def test_reviews_only_is_coordination_only():
-    assert is_coordination_only_files(["REVIEWS.md"]) is True
+    assert is_coordination_only_files(["reviews/finding-20260215-120000.md"]) is True
 
 
 def test_bugs_only_commit_is_skipped():
-    assert is_coordination_only_files(["BUGS.md"]) is True
+    assert is_coordination_only_files(["bugs/bug-20260215-120000.md"]) is True
 
 
 def test_mixed_coordination_files_are_skipped():
-    assert is_coordination_only_files(["TASKS.md", "REVIEWS.md"]) is True
+    assert is_coordination_only_files(["TASKS.md", "reviews/finding-20260215-120000.md"]) is True
+
+
+def test_bugs_and_reviews_coordination_only():
+    assert is_coordination_only_files(["bugs/fixed-20260215-120000.md", "reviews/resolved-20260215-110000.md"]) is True
 
 
 def test_coordination_with_code_is_not_skipped():
@@ -199,3 +215,110 @@ def test_allowed_models_accepts_both_formats():
     assert "gpt-5.3-codex" in ALLOWED_MODELS
     assert "Claude Opus 4.6" in ALLOWED_MODELS
     assert "claude-opus-4.6" in ALLOWED_MODELS
+
+
+# --- auth failure detection ---
+
+def test_detect_auth_failure_recognizes_expired_token(tmp_path):
+    log_file = tmp_path / "builder.log"
+    log_file.write_text(
+        "========== [2026-02-16 17:10:06] builder ==========\n"
+        "Model: gpt-5.3-codex\n"
+        "Prompt: Before starting...\n"
+        "--- output ---\n"
+        "Error: No authentication information found.\n"
+        "\n"
+        "Copilot can be authenticated with GitHub using an OAuth Token "
+        "or a Fine-Grained Personal Access Token.\n"
+        "\n"
+        "To authenticate, you can use any of the following methods:\n"
+        "  • Start 'copilot' and run the '/login' command\n"
+        "  • Set the COPILOT_GITHUB_TOKEN, GH_TOKEN, or GITHUB_TOKEN "
+        "environment variable\n"
+        "  • Run 'gh auth login' to authenticate with the GitHub CLI\n"
+        "--- end (exit: 1) ---\n"
+    )
+    assert _detect_auth_failure(str(log_file)) is True
+
+
+def test_detect_auth_failure_ignores_normal_errors(tmp_path):
+    log_file = tmp_path / "builder.log"
+    log_file.write_text(
+        "--- output ---\n"
+        "Error: something went wrong with the build\n"
+        "--- end (exit: 1) ---\n"
+    )
+    assert _detect_auth_failure(str(log_file)) is False
+
+
+def test_detect_auth_failure_handles_missing_file():
+    assert _detect_auth_failure("/nonexistent/path/builder.log") is False
+
+
+def test_detect_auth_failure_handles_empty_file(tmp_path):
+    log_file = tmp_path / "builder.log"
+    log_file.write_text("")
+    assert _detect_auth_failure(str(log_file)) is False
+
+
+# --- _extract_item_ids ---
+
+def test_extract_item_ids_strips_prefix_and_suffix():
+    filenames = ["finding-20260215-120000.md", "finding-20260215-130000.md"]
+    assert _extract_item_ids(filenames, "finding-") == {"20260215-120000", "20260215-130000"}
+
+
+def test_extract_item_ids_ignores_non_matching_files():
+    filenames = ["finding-20260215-120000.md", "resolved-20260215-110000.md", "README.md"]
+    assert _extract_item_ids(filenames, "finding-") == {"20260215-120000"}
+
+
+def test_extract_item_ids_empty_list():
+    assert _extract_item_ids([], "bug-") == set()
+
+
+# --- count_open_items_in_dir ---
+
+def test_count_open_items_no_closed(tmp_path):
+    d = tmp_path / "reviews"
+    d.mkdir()
+    (d / "finding-20260215-120000.md").write_text("issue 1")
+    (d / "finding-20260215-130000.md").write_text("issue 2")
+    assert count_open_items_in_dir(str(d), "finding-", "resolved-") == 2
+
+
+def test_count_open_items_some_resolved(tmp_path):
+    d = tmp_path / "reviews"
+    d.mkdir()
+    (d / "finding-20260215-120000.md").write_text("issue 1")
+    (d / "finding-20260215-130000.md").write_text("issue 2")
+    (d / "resolved-20260215-120000.md").write_text("fixed")
+    assert count_open_items_in_dir(str(d), "finding-", "resolved-") == 1
+
+
+def test_count_open_items_all_resolved(tmp_path):
+    d = tmp_path / "reviews"
+    d.mkdir()
+    (d / "finding-20260215-120000.md").write_text("issue 1")
+    (d / "resolved-20260215-120000.md").write_text("fixed")
+    assert count_open_items_in_dir(str(d), "finding-", "resolved-") == 0
+
+
+def test_count_open_items_empty_directory(tmp_path):
+    d = tmp_path / "bugs"
+    d.mkdir()
+    assert count_open_items_in_dir(str(d), "bug-", "fixed-") == 0
+
+
+def test_count_open_items_missing_directory(tmp_path):
+    assert count_open_items_in_dir(str(tmp_path / "nonexistent"), "bug-", "fixed-") == 0
+
+
+def test_count_open_bugs(tmp_path):
+    d = tmp_path / "bugs"
+    d.mkdir()
+    (d / "bug-20260215-120000.md").write_text("crash")
+    (d / "bug-20260215-130000.md").write_text("error")
+    (d / "fixed-20260215-120000.md").write_text("patched")
+    (d / ".gitkeep").write_text("")
+    assert count_open_items_in_dir(str(d), "bug-", "fixed-") == 1

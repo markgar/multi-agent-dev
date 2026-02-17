@@ -20,7 +20,7 @@ from agentic_dev.milestone import (
 )
 from agentic_dev.prompts import BUILDER_PROMPT
 from agentic_dev.sentinel import are_agents_idle, write_builder_done
-from agentic_dev.utils import has_unchecked_items, log, run_cmd, run_copilot
+from agentic_dev.utils import count_open_items_in_dir, has_unchecked_items, log, run_cmd, run_copilot
 
 
 def register(app: typer.Typer) -> None:
@@ -498,8 +498,8 @@ def _check_remaining_work(state: BuildState) -> str:
     while wait_cycle < _AGENT_WAIT_MAX_CYCLES:
         run_cmd(["git", "pull", "--rebase", "-q"], quiet=True)
 
-        remaining_bugs = has_unchecked_items("BUGS.md")
-        remaining_reviews = has_unchecked_items("REVIEWS.md")
+        remaining_bugs = count_open_items_in_dir("bugs", "bug-", "fixed-")
+        remaining_reviews = count_open_items_in_dir("reviews", "finding-", "resolved-")
         remaining_tasks = has_unchecked_items("TASKS.md")
         agents_idle = are_agents_idle()
 

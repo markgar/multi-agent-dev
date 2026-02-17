@@ -283,7 +283,7 @@ def commitwatch(
     Runs from the reviewer clone directory. For each new commit detected,
     invokes a reviewer agent scoped to exactly that commit's diff.
     Uses a persistent checkpoint so no commits are ever missed, even across
-    restarts. Skips merge commits and the reviewer's own REVIEWS.md commits.
+    restarts. Skips merge commits and the reviewer's own reviews/ commits.
     Shuts down automatically when the builder finishes.
     """
     if reviewer_dir:

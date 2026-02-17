@@ -140,8 +140,10 @@ They coordinate through git push/pull and shared markdown files.
 | `BACKLOG.md` | Ordered story queue with dependency tracking (planner-managed) |
 | `TASKS.md` | Current and completed milestones — checked off as work is completed |
 | `REQUIREMENTS.md` | Original user requirements (may be updated between sessions) |
-| `BUGS.md` | Bugs found by the tester and validator |
-| `REVIEWS.md` | Code review findings from the reviewer |
+| `BUGS.md` | Bugs found by the tester and validator (legacy — new projects use `bugs/`) |
+| `REVIEWS.md` | Code review findings from the reviewer (legacy — new projects use `reviews/`) |
+| `reviews/` | Directory-based review findings (one file per finding, never edited) |
+| `bugs/` | Directory-based bug reports (one file per bug, never edited) |
 | `DEPLOY.md` | Deployment knowledge accumulated by the validator |
 | `.github/copilot-instructions.md` | Coding guidelines and project conventions for the builder |
 
@@ -196,6 +198,17 @@ def _write_requirements_file(builder_dir: str, description: str) -> None:
         f.write("> It may be updated with new requirements in later sessions.\n\n")
         f.write(description)
         f.write("\n")
+
+
+def _create_tracking_directories(builder_dir: str) -> None:
+    """Create reviews/ and bugs/ directories with .gitkeep files for directory-based tracking."""
+    for dirname in ("reviews", "bugs"):
+        dirpath = os.path.join(builder_dir, dirname)
+        os.makedirs(dirpath, exist_ok=True)
+        gitkeep = os.path.join(dirpath, ".gitkeep")
+        if not os.path.exists(gitkeep):
+            with open(gitkeep, "w", encoding="utf-8") as f:
+                f.write("")
     console.print("✓ Saved original requirements to REQUIREMENTS.md", style="green")
 
 
@@ -243,6 +256,7 @@ def _scaffold_project(directory, name, description, gh_user, local=False):
     builder_dir = os.path.join(os.getcwd(), "builder")
     os.makedirs(builder_dir, exist_ok=True)
     _write_requirements_file(builder_dir, description)
+    _create_tracking_directories(builder_dir)
 
     if local:
         remote_path = os.path.join(os.getcwd(), "remote.git")

@@ -49,25 +49,37 @@ def git_push_with_retry(agent_name: str = "", max_attempts: int = 3, backoff: in
     return False
 
 
-SKIP_ONLY_FILES = {"REVIEWS.md", "TASKS.md", "BUGS.md"}
+SKIP_ONLY_FILES = {"TASKS.md"}
+
+# Paths under these directories are coordination-only (reviews/ and bugs/)
+_COORDINATION_DIRS = ("reviews/", "bugs/")
 
 
 def is_reviewer_only_files(file_list: list[str]) -> bool:
-    """Check if every file in the list is REVIEWS.md.
+    """Check if every file in the list is a reviews/ directory file.
 
     Pure function: returns True if the commit should be skipped because it
-    only touches the reviewer's own output file.
+    only touches the reviewer's own output directory.
     """
-    return len(file_list) > 0 and all(f == "REVIEWS.md" for f in file_list)
+    return len(file_list) > 0 and all(f.startswith("reviews/") for f in file_list)
 
 
 def is_coordination_only_files(file_list: list[str]) -> bool:
-    """Check if every file in the list is a coordination file (TASKS.md, REVIEWS.md, BUGS.md).
+    """Check if every file in the list is a coordination file.
 
+    Coordination files: TASKS.md, and any file under reviews/ or bugs/.
     Pure function: returns True if the commit should be skipped because it
     only touches coordination files with no code changes.
     """
-    return len(file_list) > 0 and all(f in SKIP_ONLY_FILES for f in file_list)
+    if not file_list:
+        return False
+    for f in file_list:
+        if f in SKIP_ONLY_FILES:
+            continue
+        if any(f.startswith(d) for d in _COORDINATION_DIRS):
+            continue
+        return False
+    return True
 
 
 def is_reviewer_only_commit(commit_sha: str) -> bool:

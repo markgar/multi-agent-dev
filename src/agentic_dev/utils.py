@@ -148,18 +148,52 @@ def _resolve_copilot_cmd() -> list[str]:
     return ["copilot"]
 
 
-def run_copilot(agent_name: str, prompt: str) -> int:
-    """Run 'copilot --allow-all-tools --model <model> -p <prompt>' with streaming output.
+_AUTH_ERROR_MARKERS = [
+    "No authentication information found",
+    "COPILOT_GITHUB_TOKEN",
+    "gh auth login",
+]
 
-    Reads the model from the COPILOT_MODEL environment variable (required).
-    Returns the process exit code.
+
+def _detect_auth_failure(log_file: str) -> bool:
+    """Check if the last copilot output indicates an auth token expiry.
+
+    Reads the tail of the log file and looks for known auth error markers.
+    Pure-ish function: only reads the file, no side effects.
     """
-    model = os.environ.get("COPILOT_MODEL", "")
-    if not model:
-        raise SystemExit("COPILOT_MODEL environment variable is not set. Use --model on the go command.")
+    try:
+        with open(log_file, "r", encoding="utf-8") as f:
+            # Read the last 2KB — auth errors appear at the very end
+            f.seek(0, 2)
+            size = f.tell()
+            f.seek(max(0, size - 2048))
+            tail = f.read()
+    except Exception:
+        return False
+    return all(marker in tail for marker in _AUTH_ERROR_MARKERS)
 
-    logs_dir = resolve_logs_dir()
-    log_file = os.path.join(logs_dir, f"{agent_name}.log")
+
+def _refresh_github_auth() -> bool:
+    """Attempt to refresh the GitHub auth token non-interactively.
+
+    Tries 'gh auth refresh' which uses the stored refresh token —
+    no user interaction needed if the refresh token is still valid.
+    Returns True if the refresh succeeded.
+    """
+    try:
+        result = subprocess.run(
+            ["gh", "auth", "refresh"],
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        return result.returncode == 0
+    except Exception:
+        return False
+
+
+def _run_copilot_once(agent_name: str, prompt: str, model: str, log_file: str) -> int:
+    """Run a single copilot invocation. Returns the exit code."""
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     prompt_preview = prompt[:100]
 
@@ -186,6 +220,33 @@ def run_copilot(agent_name: str, prompt: str) -> int:
     exit_code = proc.returncode
 
     _write_log_entry(log_file, f"--- end (exit: {exit_code}) ---\n")
+
+    return exit_code
+
+
+def run_copilot(agent_name: str, prompt: str) -> int:
+    """Run 'copilot --allow-all-tools --model <model> -p <prompt>' with streaming output.
+
+    Reads the model from the COPILOT_MODEL environment variable (required).
+    If copilot fails with an auth error, attempts 'gh auth refresh' and retries once.
+    Returns the process exit code.
+    """
+    model = os.environ.get("COPILOT_MODEL", "")
+    if not model:
+        raise SystemExit("COPILOT_MODEL environment variable is not set. Use --model on the go command.")
+
+    logs_dir = resolve_logs_dir()
+    log_file = os.path.join(logs_dir, f"{agent_name}.log")
+
+    exit_code = _run_copilot_once(agent_name, prompt, model, log_file)
+
+    if exit_code != 0 and _detect_auth_failure(log_file):
+        log(agent_name, "[Auth] Token expired — attempting gh auth refresh...", style="yellow")
+        if _refresh_github_auth():
+            log(agent_name, "[Auth] Refresh succeeded — retrying copilot...", style="green")
+            exit_code = _run_copilot_once(agent_name, prompt, model, log_file)
+        else:
+            log(agent_name, "[Auth] Refresh failed — cannot recover without manual login.", style="red")
 
     return exit_code
 
@@ -229,3 +290,36 @@ def has_unchecked_items(filepath: str) -> int:
         return 0
     with open(filepath, "r", encoding="utf-8") as f:
         return count_unchecked_items(f.read())
+
+
+def _extract_item_ids(filenames: list[str], prefix: str) -> set[str]:
+    """Extract item IDs from filenames by stripping a prefix and .md suffix.
+
+    Pure function: e.g. prefix='finding-' turns 'finding-20260215-120000.md'
+    into '20260215-120000'.
+    """
+    ids = set()
+    for name in filenames:
+        if name.startswith(prefix) and name.endswith(".md"):
+            item_id = name[len(prefix):-3]
+            ids.add(item_id)
+    return ids
+
+
+def count_open_items_in_dir(directory: str, open_prefix: str, closed_prefix: str) -> int:
+    """Count open items in a directory-based tracking system.
+
+    An item is "open" when an open_prefix file exists without a matching
+    closed_prefix file. Items are matched by stripping the prefix.
+
+    Pure function over directory contents. Returns 0 if directory doesn't exist.
+    """
+    if not os.path.isdir(directory):
+        return 0
+    try:
+        filenames = os.listdir(directory)
+    except OSError:
+        return 0
+    open_ids = _extract_item_ids(filenames, open_prefix)
+    closed_ids = _extract_item_ids(filenames, closed_prefix)
+    return len(open_ids - closed_ids)
