@@ -1,10 +1,42 @@
-"""Tests for validator milestone filtering, sentinel integration, and frontend detection."""
+"""Tests for validator milestone filtering, sentinel integration, frontend detection, and port isolation."""
 
 import os
 
-from agentic_dev.validator import find_unvalidated_milestones, detect_has_frontend
+from agentic_dev.validator import find_unvalidated_milestones, detect_has_frontend, compute_project_ports
 from agentic_dev.sentinel import check_agent_idle
 from agentic_dev.utils import find_project_root
+
+
+# --- port isolation ---
+
+def test_compute_project_ports_returns_two_integers():
+    app_port, secondary_port = compute_project_ports("my-project")
+    assert isinstance(app_port, int)
+    assert isinstance(secondary_port, int)
+
+
+def test_compute_project_ports_in_valid_range():
+    app_port, secondary_port = compute_project_ports("bookstore-fullstack-claude")
+    assert 3000 <= app_port <= 8999
+    assert 3001 <= secondary_port <= 9000
+
+
+def test_compute_project_ports_deterministic():
+    ports1 = compute_project_ports("test-project")
+    ports2 = compute_project_ports("test-project")
+    assert ports1 == ports2
+
+
+def test_compute_project_ports_different_names_usually_differ():
+    ports_a = compute_project_ports("bookstore-fullstack-claude")
+    ports_b = compute_project_ports("bookstore-fullstack-codex")
+    # Hash collisions are theoretically possible but extremely unlikely
+    assert ports_a != ports_b
+
+
+def test_compute_project_ports_secondary_is_one_more():
+    app_port, secondary_port = compute_project_ports("anything")
+    assert secondary_port == app_port + 1
 
 
 # --- validator milestone filtering ---

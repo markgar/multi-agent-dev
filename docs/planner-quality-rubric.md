@@ -47,7 +47,7 @@ A milestone is a coherent batch of related tasks that leaves the app runnable.
 |-----------|------|---------|------|
 | **Size range** | 3-7 tasks | 2 tasks or 8-9 tasks | 1 task or 10+ tasks |
 | **Cohesion** | All tasks in the milestone serve a single feature or concern | Most tasks are related with 1 outlier | Tasks span unrelated features |
-| **Vertical slice** | Milestone delivers a testable feature through multiple layers (entity → repo → service → API → frontend) | Milestone covers 2-3 layers of one feature (e.g. backend only, frontend follows) | Milestone covers one layer across many features ("All entities", "All repositories") |
+| **Vertical slice** | Milestone delivers a testable feature through one or more layers. Paired backend+frontend milestones for one feature count as vertical slices. | Milestone covers 2-3 layers of one feature with a minor outlier task | Milestone covers one layer across many features ("All entities", "All repositories") |
 | **Runnable after completion** | App builds, starts, and responds to at least one request after the milestone | App builds but might not respond meaningfully | Milestone leaves the app in a broken or un-startable state |
 | **Natural naming** | Milestone name describes the delivered feature ("Members — backend", "Auth flow") | Name describes the layer but hints at feature ("API controllers — auth") | Name describes only the layer ("Domain entities — batch 2") |
 
@@ -84,15 +84,31 @@ The roadmap is the high-level story list that guides progressive expansion.
 | **Feature-oriented stories** | Each story is a user-facing feature ("Members", "Events and attendance", "Auditions") | Stories are mostly features with a few layer-oriented items | Stories are layers ("All entities", "All services") |
 | **Scaffolding first** | Story #1 is always project scaffolding (runnable app with health endpoint) | Scaffolding is early but not first | No scaffolding story; features assume infrastructure exists |
 | **Dependency ordering** | Stories are ordered so dependent features come after prerequisites (e.g. Members before Attendance) | Mostly ordered with 1-2 out-of-order items | No clear ordering; features appear randomly |
-| **Reasonable count** | 5-12 stories for a medium project; 3-5 for a small one | 13-15 stories (slightly over-split) or 2 stories (under-split) | 20+ stories or a single monolithic story |
+| **Proportional count** | Story count is proportional to app complexity (see sizing guide below) | Count is slightly over or under for the app's tier | Count is wildly mismatched — trivial app with 20+ stories, or complex app with 3 stories |
 | **Stable across re-plans** | Completed stories stay struck through; unstarted stories can be reordered but aren't duplicated or dropped | Minor rewording of unstarted stories | Completed stories get lost or unchecked; stories appear and disappear between re-plans |
-| **Only 2 unstarted milestones detailed** | Exactly 2 unstarted `## Milestone:` headings exist below the roadmap | 3 unstarted milestones detailed | All stories are expanded into milestones upfront (defeats progressive planning) |
+| **Progressive expansion** | Only 1-2 unstarted `## Milestone:` headings exist in TASKS.md — the rest are backlog stories expanded on demand | 3 unstarted milestones detailed | All stories are expanded into milestones upfront (defeats progressive planning) |
+
+### App sizing guide
+
+Classify the app by counting distinct user-facing features in REQUIREMENTS.md (CRUD entities, auth flows, dashboards, integrations, file uploads, calendars, etc.). Each feature that requires its own backend+frontend work counts as one.
+
+| App tier | Feature count | Expected stories | Examples |
+|----------|--------------|-----------------|----------|
+| **Small** | 1-3 features | 3-5 stories | CLI calculator, bookstore CRUD, todo app |
+| **Medium** | 4-8 features | 6-15 stories | Blog with auth, project tracker, simple SaaS |
+| **Large** | 9-15 features | 12-25 stories | Multi-entity CRUD app, e-commerce site |
+| **Complex** | 16+ features | 20-40 stories | Multi-tenant SaaS (Stretto), ERP, LMS |
+
+When a feature spans backend + frontend as separate stories (e.g. "Members — backend API" + "Members — admin pages"), count the pair as one feature but two stories. This is the expected pattern for full-stack apps — it keeps milestones focused while delivering vertical slices.
+
+**Ratio check:** Divide story count by feature count. A ratio of 1.5-2.5 is typical for full-stack apps (backend + frontend stories per feature, plus scaffolding). Below 1.0 suggests stories are too coarse. Above 3.0 suggests over-splitting.
 
 ### Anti-patterns to flag
 
 - **All-upfront expansion:** Every roadmap story has corresponding milestones already detailed. This is the old behavior — no progressive benefit.
-- **Fine-grained stories:** 15+ stories where each is a single CRUD feature. Stories should group related capabilities (e.g. "Events and attendance" not "Events" + "Attendance" as separate stories).
+- **Fine-grained stories:** Stories where each is a single CRUD operation rather than a feature. Stories should group related capabilities (e.g. "Events and attendance" not "Create event" + "List events" + "Delete event").
 - **Missing stories:** Features in REQUIREMENTS.md that have no corresponding story in the roadmap.
+- **Fixed-count thinking:** Applying a fixed story count regardless of app complexity (e.g. always targeting 10 stories).
 
 ---
 
@@ -153,19 +169,36 @@ These are fast binary checks to run before detailed scoring:
 3. **Are all milestones the same size?** If every milestone has exactly N tasks → likely Fail milestone quality (planner optimizing for count, not cohesion).
 4. **Does SPEC.md have entity field tables?** If yes → Fail SPEC.md quality.
 5. **Does copilot-instructions.md list files that don't exist?** Run `ls` on the repo and compare → Fail copilot-instructions quality if >3 predicted files.
+6. **Is the story count proportional to the app?** Count features in REQUIREMENTS.md, classify the app tier, and check whether the story count falls in the expected range. A CLI calculator with 20 stories fails; Stretto with 31 stories passes.
 
 ---
 
-## Applying This Rubric: Stretto Example
+## Applying This Rubric: Examples
 
-Quick-check against the Stretto run (32 milestones, 593-line SPEC.md):
+### Old Stretto run (pre-backlog planner, Feb 15 2026)
+
+Baseline — the planner that this rubric was written to improve. 32 milestones all planned upfront, 593-line SPEC.md.
 
 | Quick check | Result |
 |------------|--------|
 | Can the validator test a real feature after milestone 2? | **No.** Milestones 2-6 are all entities and EF config. First testable API is milestone 18. |
-| Would you need SPEC.md to understand a task? | **Yes.** Tasks like "Create Member entity with IsActive and NotificationsEnabled fields" omit most fields — you need SPEC.md section 4 for the rest. |
-| Are all milestones the same size? | **Nearly.** 28 of 32 milestones have exactly 3-5 tasks. The planner packed tasks to hit 5. |
+| Would you need SPEC.md to understand a task? | **Yes.** Tasks like "Create Member entity with IsActive and NotificationsEnabled fields" omit most fields. |
+| Are all milestones the same size? | **Nearly.** 28 of 32 milestones have exactly 3-5 tasks. |
 | Does SPEC.md have entity field tables? | **Yes.** 13 entity tables with every field defined. |
-| Does copilot-instructions.md list files that don't exist? | **Yes.** 35 predicted files at generation time, 0 of which existed. |
+| Is the story count proportional? | N/A — no backlog existed. All milestones planned upfront. |
 
-**Score: Needs work** across all 6 sections. This is the baseline the refactored planner must beat.
+**Score: Needs work.** This is the baseline.
+
+### New Stretto run (backlog planner, Feb 18 2026)
+
+31 stories in BACKLOG.md, progressive planning (1 milestone at a time).
+
+| Quick check | Result |
+|------------|--------|
+| Can the validator test a real feature after milestone 2? | **Yes.** Milestone 2 is API client generation, milestone 3+ are vertical feature slices. |
+| Would you need SPEC.md to understand a task? | **No.** Tasks include field names, types, enums, endpoint paths inline. |
+| Are all milestones the same size? | **TBD** — only 2 milestones exist so far (7 and 5 tasks). |
+| Does SPEC.md have entity field tables? | **TBD.** |
+| Is the story count proportional? | **Yes.** 31 stories for 16+ features. Ratio ~2.0 (Pass). |
+
+**Score: Good** on available criteria. Significant improvement over baseline.

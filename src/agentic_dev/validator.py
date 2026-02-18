@@ -1,6 +1,7 @@
 """Validator command: watch for completed milestones, build containers, and run acceptance tests."""
 
 import glob
+import hashlib
 import os
 import shutil
 import time
@@ -28,6 +29,18 @@ _FRONTEND_KEYWORDS = (
     "vite", "webpack", "tailwind", "UI ", "user interface", "single-page",
     "SPA", "pages should render", "web app", "dashboard",
 )
+
+
+def compute_project_ports(project_name: str) -> tuple[int, int]:
+    """Compute deterministic host ports from a project name for port isolation.
+
+    Returns (app_port, secondary_port). Maps project name to port range 3000-8999
+    so multiple projects can run side-by-side without port conflicts.
+    Uses SHA-256 for a stable hash across Python sessions.
+    """
+    digest = hashlib.sha256(project_name.encode()).hexdigest()
+    base = int(digest, 16) % 6000 + 3000
+    return base, base + 1
 
 
 def detect_has_frontend(repo_dir: str) -> bool:
@@ -166,13 +179,13 @@ def _copy_validation_results(milestone_name: str) -> None:
         pass
 
 
-def _validate_milestone(boundary: dict) -> None:
-    """Build a container, validate at the milestone's end SHA, and checkpoint.
+def _validate_milestone(boundary: dict, project_name: str) -> None:
+    """Build a container, validate at the milestone's end SHA, and leave running.
 
-    Flow: checkout milestone SHA (detached HEAD) → run Copilot validation →
-    collect any commits Copilot made → return to main → cherry-pick commits
-    onto main → push. This avoids rebase conflicts from pushing on a detached
-    HEAD that diverged from main while validation was running.
+    Flow: checkout milestone SHA (detached HEAD) → set COMPOSE_PROJECT_NAME for
+    container isolation → run Copilot validation → collect any commits Copilot made →
+    return to main → cherry-pick commits onto main → push.
+    Containers are left running so the app is browsable after validation.
     """
     now = datetime.now().strftime("%H:%M:%S")
     log(
@@ -181,6 +194,10 @@ def _validate_milestone(boundary: dict) -> None:
         "Building container and validating...",
         style="bold cyan",
     )
+
+    app_port, secondary_port = compute_project_ports(project_name)
+    compose_name = project_name.lower().replace(" ", "-")
+    os.environ["COMPOSE_PROJECT_NAME"] = compose_name
 
     run_cmd(["git", "pull", "--rebase", "-q"], quiet=True)
     run_cmd(["git", "checkout", boundary["end_sha"]], quiet=True)
@@ -194,11 +211,15 @@ def _validate_milestone(boundary: dict) -> None:
         milestone_start_sha=boundary["start_sha"],
         milestone_end_sha=boundary["end_sha"],
         ui_testing_instructions=ui_instructions,
+        compose_project_name=compose_name,
+        app_port=app_port,
+        secondary_port=secondary_port,
     )
     exit_code = run_copilot("validator", prompt)
 
     _copy_validation_results(boundary["name"])
-    _cleanup_containers()
+    # Containers are intentionally left running for live browsing.
+    # They will be cleaned up at the start of the next milestone's validation.
 
     # Collect commits Copilot made on detached HEAD
     _commit_uncommitted_changes()
@@ -225,6 +246,11 @@ def _validate_milestone(boundary: dict) -> None:
         log("validator", f"[{now}] WARNING: Validation run exited with errors", style="red")
     else:
         log("validator", f"[{now}] Milestone validated: {boundary['name']}", style="blue")
+        log(
+            "validator",
+            f"  App running at http://localhost:{app_port}",
+            style="bold green",
+        )
 
     save_milestone_checkpoint(
         boundary["name"],
@@ -244,6 +270,9 @@ def validateloop(
     validator_dir: Annotated[
         str, typer.Option(help="Path to the validator git clone")
     ] = "",
+    project_name: Annotated[
+        str, typer.Option(help="Project name for container namespace and port isolation")
+    ] = "",
 ) -> None:
     """Watch for completed milestones, build containers, and run acceptance tests.
 
@@ -251,18 +280,25 @@ def validateloop(
     pulls latest code, builds the app in a Docker container, starts it, and
     validates it against SPEC.md acceptance criteria scoped to the current milestone.
     Deployment knowledge is persisted in DEPLOY.md for future runs.
+    Containers are left running after successful validation for live browsing.
     """
     if validator_dir:
         os.chdir(validator_dir)
 
+    if not project_name:
+        project_name = os.path.basename(os.path.dirname(os.getcwd()))
+
+    app_port, _ = compute_project_ports(project_name)
+
     log("validator", "======================================", style="bold blue")
     log("validator", " Validator watching for completed milestones", style="bold blue")
+    log("validator", f" Project: {project_name} | App port: {app_port}", style="bold blue")
     log("validator", " Press Ctrl+C to stop", style="bold blue")
     log("validator", "======================================", style="bold blue")
     log("validator", "")
 
     try:
-        _validateloop_inner(interval)
+        _validateloop_inner(interval, project_name)
     except SystemExit as exc:
         log("validator", f"FATAL: {exc}", style="bold red")
         raise
@@ -271,7 +307,7 @@ def validateloop(
         raise
 
 
-def _validateloop_inner(interval: int) -> None:
+def _validateloop_inner(interval: int, project_name: str) -> None:
     """Inner loop for validateloop, separated for crash-logging wrapper."""
     while True:
         # Check if the builder has finished
@@ -285,7 +321,7 @@ def _validateloop_inner(interval: int) -> None:
         validated = load_reviewed_milestones(checkpoint_file=_VALIDATOR_MILESTONE_CHECKPOINT)
 
         for boundary in find_unvalidated_milestones(boundaries, validated):
-            _validate_milestone(boundary)
+            _validate_milestone(boundary, project_name)
 
         if builder_done:
             now = datetime.now().strftime("%H:%M:%S")

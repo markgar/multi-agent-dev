@@ -154,7 +154,9 @@ def _generate_copilot_instructions() -> None:
 # ============================================
 
 
-def _launch_agents_and_build(parent_dir: str, plan_label: str, requirements_changed: bool = False) -> None:
+def _launch_agents_and_build(
+    parent_dir: str, plan_label: str, project_name: str = "", requirements_changed: bool = False,
+) -> None:
     """Run planner, spawn reviewer/tester in terminals, then build until done."""
     clear_builder_done()
 
@@ -178,7 +180,8 @@ def _launch_agents_and_build(parent_dir: str, plan_label: str, requirements_chan
     spawn_agent_in_terminal(os.path.join(parent_dir, "tester"), "testloop")
 
     log("orchestrator", "Launching validator (milestone-triggered)...", style="yellow")
-    spawn_agent_in_terminal(os.path.join(parent_dir, "validator"), "validateloop")
+    validator_cmd = f"validateloop --project-name {project_name}" if project_name else "validateloop"
+    spawn_agent_in_terminal(os.path.join(parent_dir, "validator"), validator_cmd)
 
     log("orchestrator", "")
     log("orchestrator", "======================================", style="bold green")
@@ -243,7 +246,7 @@ def _bootstrap_new_project(
         return
 
     os.chdir(os.path.join(parent_dir, "builder"))
-    _launch_agents_and_build(parent_dir, "Running backlog planner...")
+    _launch_agents_and_build(parent_dir, "Running backlog planner...", project_name=project_name)
 
 
 def _resume_existing_project(
@@ -267,7 +270,10 @@ def _resume_existing_project(
     if new_description:
         _update_requirements(os.path.join(parent_dir, "builder"), new_description)
 
-    _launch_agents_and_build(parent_dir, "Running milestone planner...", requirements_changed=bool(new_description))
+    _launch_agents_and_build(
+        parent_dir, "Running milestone planner...",
+        project_name=project_name, requirements_changed=bool(new_description),
+    )
 
 
 def go(

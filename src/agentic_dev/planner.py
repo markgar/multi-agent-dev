@@ -4,6 +4,7 @@ import os
 
 import typer
 
+from agentic_dev.backlog_checker import check_backlog_quality
 from agentic_dev.milestone import get_tasks_per_milestone
 from agentic_dev.prompts import (
     PLANNER_COMPLETENESS_PROMPT,
@@ -50,6 +51,17 @@ def plan(requirements_changed: bool = False) -> bool:
         exit_code = run_copilot("planner", PLANNER_COMPLETENESS_PROMPT)
         if exit_code != 0:
             log("planner", "[Backlog Planner] WARNING: Completeness check failed. Continuing with existing backlog.", style="bold yellow")
+
+        # Quality gate: structural checks + LLM quality review
+        quality_ok = check_backlog_quality()
+        if not quality_ok:
+            log("planner", "[Backlog Planner] Structural issues detected — re-running initial planner...", style="yellow")
+            exit_code = run_copilot("planner", PLANNER_INITIAL_PROMPT)
+            if exit_code != 0:
+                log("planner", "[Backlog Planner] Re-plan failed. Continuing with existing backlog.", style="bold yellow")
+            else:
+                # Re-check after re-plan (non-blocking — just log results)
+                check_backlog_quality()
     else:
         # Case B/C: continuing or evolving project
         prompt = PLANNER_PROMPT
