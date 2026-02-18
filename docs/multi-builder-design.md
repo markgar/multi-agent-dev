@@ -89,7 +89,7 @@ The heading, validates block, and checkbox tasks are identical to today. The onl
 
 ## Implementation Sessions
 
-### Session 1: Milestone File Parsing (milestone.py + tests)
+### Session 1: Milestone File Parsing (milestone.py + tests) ✅
 
 **Goal:** Add functions to read/parse milestone files from a `milestones/` directory. Pure additive — nothing existing changes. Old TASKS.md code paths stay intact.
 
@@ -1041,6 +1041,12 @@ These are the key files with current line counts and import structures. Use this
 | prompts/tester.py | ~50 | (constants only) — 2 TASKS.md refs to update |
 | prompts/validator.py | ~120 | (constants only) — 2 TASKS.md refs to update |
 | prompts/copilot_instructions.py | 133 | (constants only) — 3 TASKS.md refs to update |
+
+## Known Limitations
+
+**Stale claim recovery:** If a builder crashes after claiming a story (`[~]`) but before completing it (`[x]`), that story is stuck — no other builder will claim it and the crashed builder won't finish it. On re-run, the user must manually reset the stuck story from `[~]` to `[ ]` in BACKLOG.md. A future improvement could have the orchestrator detect and reset stale claims at startup.
+
+---
 
 ## Testing Strategy
 

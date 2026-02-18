@@ -243,7 +243,7 @@ def get_tasks_per_milestone(tasks_path: str) -> list[dict]:
 # ============================================
 
 _BACKLOG_RE = re.compile(
-    r"^(\d+)\.\s+\[([ xX])\]\s+(.+?)(?:\s*<!--\s*depends:\s*([\d,\s]+)\s*-->)?$"
+    r"^(\d+)\.\s+\[([ xX~])\]\s+(.+?)(?:\s*<!--\s*depends:\s*([\d,\s]+)\s*-->)?$"
 )
 
 
@@ -251,7 +251,10 @@ def parse_backlog(content: str) -> list[dict]:
     """Parse BACKLOG.md content into structured story dicts.
 
     Each line: ``N. [x] Story name <!-- depends: 1, 2 -->``
-    Returns: [{"number": int, "name": str, "checked": bool, "depends": list[int]}]
+    Three-state checkboxes: [ ] = unclaimed, [~] = in_progress, [x] = completed.
+    Returns: [{"number": int, "name": str, "checked": bool, "status": str, "depends": list[int]}]
+    The ``checked`` field is True for both [~] and [x] (backward compat).
+    The ``status`` field is one of: "unclaimed", "in_progress", "completed".
     """
     stories = []
     for line in content.split("\n"):
@@ -259,7 +262,14 @@ def parse_backlog(content: str) -> list[dict]:
         if not m:
             continue
         number = int(m.group(1))
-        checked = m.group(2).strip().lower() == "x"
+        marker = m.group(2).strip().lower()
+        if marker == "x":
+            status = "completed"
+        elif marker == "~":
+            status = "in_progress"
+        else:
+            status = "unclaimed"
+        checked = status != "unclaimed"
         name = m.group(3).strip()
         deps_raw = m.group(4)
         depends = []
@@ -269,6 +279,7 @@ def parse_backlog(content: str) -> list[dict]:
             "number": number,
             "name": name,
             "checked": checked,
+            "status": status,
             "depends": depends,
         })
     return stories
@@ -280,17 +291,19 @@ def has_pending_backlog_stories(content: str) -> bool:
 
 
 def get_next_eligible_story(content: str) -> dict | None:
-    """Return the first unchecked story whose dependencies are all checked.
+    """Return the first unclaimed story whose dependencies are all completed.
 
-    Returns None if all stories are done or if remaining stories have unmet
-    dependencies (deadlock).
+    Only stories with status "unclaimed" are candidates. Dependencies are
+    satisfied only by status "completed" — "in_progress" does NOT count.
+    Returns None if all stories are done/claimed or if remaining stories
+    have unmet dependencies (deadlock).
     """
     stories = parse_backlog(content)
-    checked_numbers = {s["number"] for s in stories if s["checked"]}
+    completed_numbers = {s["number"] for s in stories if s["status"] == "completed"}
     for story in stories:
-        if story["checked"]:
+        if story["status"] != "unclaimed":
             continue
-        if all(dep in checked_numbers for dep in story["depends"]):
+        if all(dep in completed_numbers for dep in story["depends"]):
             return story
     return None
 
@@ -315,3 +328,106 @@ def get_next_eligible_story_in_file(path: str) -> dict | None:
             return get_next_eligible_story(f.read())
     except Exception:
         return None
+
+
+# ============================================
+# Milestone file parsing (milestones/ directory)
+# ============================================
+
+
+import glob
+
+
+def parse_milestone_file(path: str) -> dict | None:
+    """Read one milestone file and return milestone info.
+
+    Returns {"name": str, "done": int, "total": int, "all_done": bool}
+    or None if the file doesn't exist or has no tasks.
+
+    The file format is the same as a ## Milestone: section in TASKS.md —
+    a heading, optional validates block, and checkbox lines.
+    """
+    try:
+        if not os.path.exists(path):
+            return None
+        with open(path, "r", encoding="utf-8") as f:
+            content = f.read()
+    except Exception:
+        return None
+
+    milestones = parse_milestones_from_text(content)
+    if not milestones:
+        return None
+
+    ms = milestones[0]
+    return {
+        "name": ms["name"],
+        "done": ms["done"],
+        "total": ms["total"],
+        "all_done": ms["done"] == ms["total"],
+    }
+
+
+def list_milestone_files(milestones_dir: str = "milestones") -> list[str]:
+    """Return sorted list of .md file paths in the milestones/ directory.
+
+    Returns full paths, sorted alphabetically. Returns empty list if
+    the directory doesn't exist.
+    """
+    if not os.path.isdir(milestones_dir):
+        return []
+    pattern = os.path.join(milestones_dir, "*.md")
+    return sorted(glob.glob(pattern))
+
+
+def get_all_milestones(milestones_dir: str = "milestones") -> list[dict]:
+    """Parse all milestone files and return milestone info for each.
+
+    Returns [{"name": str, "done": int, "total": int, "all_done": bool}, ...]
+    in filename-sorted order. Skips files that fail to parse.
+    """
+    results = []
+    for path in list_milestone_files(milestones_dir):
+        ms = parse_milestone_file(path)
+        if ms is not None:
+            results.append(ms)
+    return results
+
+
+def get_completed_milestones_from_dir(milestones_dir: str = "milestones") -> list[dict]:
+    """Return only completed milestones from the milestones/ directory.
+
+    Returns [{"name": str, "all_done": True}, ...] for milestones where
+    all tasks are checked.
+    """
+    return [
+        {"name": ms["name"], "all_done": True}
+        for ms in get_all_milestones(milestones_dir)
+        if ms["all_done"]
+    ]
+
+
+def get_milestone_progress_from_file(path: str) -> dict | None:
+    """Return progress info for a single milestone file.
+
+    Returns {"name": str, "done": int, "total": int} if the milestone
+    has unchecked tasks. Returns None if all tasks are done or file
+    doesn't exist.
+    """
+    ms = parse_milestone_file(path)
+    if ms is None or ms["all_done"]:
+        return None
+    return {"name": ms["name"], "done": ms["done"], "total": ms["total"]}
+
+
+def get_tasks_per_milestone_from_dir(milestones_dir: str = "milestones") -> list[dict]:
+    """Return task counts for each uncompleted milestone in the directory.
+
+    Returns [{"name": str, "task_count": int}, ...]
+    Replacement for get_tasks_per_milestone("TASKS.md").
+    """
+    return [
+        {"name": ms["name"], "task_count": ms["total"]}
+        for ms in get_all_milestones(milestones_dir)
+        if not ms["all_done"]
+    ]
