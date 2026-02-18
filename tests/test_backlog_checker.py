@@ -7,6 +7,7 @@ from agentic_dev.backlog_checker import (
     check_prohibited_content,
     check_proportionality,
     check_story_format,
+    check_story_ordering,
     estimate_feature_count,
     run_deterministic_checks,
 )
@@ -432,3 +433,84 @@ def test_full_pipeline_missing_deps_triggers_replan():
     replan, fix, warnings = run_deterministic_checks(backlog, tasks, SIMPLE_REQUIREMENTS)
     assert len(replan) > 0
     assert any("depends" in r.lower() for r in replan)
+
+
+# ============================================
+# Story ordering tests
+# ============================================
+
+
+def test_well_ordered_stories_pass():
+    """Stories in topological order produce no warnings."""
+    stories = [
+        {"number": 1, "name": "Scaffolding", "checked": True, "depends": []},
+        {"number": 2, "name": "Auth backend", "checked": False, "depends": [1]},
+        {"number": 3, "name": "Auth frontend", "checked": False, "depends": [1, 2]},
+        {"number": 4, "name": "Members backend", "checked": False, "depends": [2]},
+        {"number": 5, "name": "Members frontend", "checked": False, "depends": [3, 4]},
+    ]
+    warnings = check_story_ordering(stories)
+    assert warnings == []
+
+
+def test_misordered_story_detected():
+    """A story that depends only on #1 but sits at position 20+ is flagged."""
+    stories = [{"number": 1, "name": "Scaffolding", "checked": True, "depends": []}]
+    # Add 18 filler stories depending on previous
+    for i in range(2, 20):
+        stories.append({"number": i, "name": f"Story {i}", "checked": False, "depends": [i - 1]})
+    # Story 20 depends only on #1 but appears last — gap of 19
+    stories.append({"number": 20, "name": "Testing infra", "checked": False, "depends": [1]})
+    warnings = check_story_ordering(stories)
+    assert len(warnings) >= 1
+    assert any("Testing infra" in w for w in warnings)
+
+
+def test_no_deps_story_at_position_2_passes():
+    """A no-deps story near the top doesn't get flagged."""
+    stories = [
+        {"number": 1, "name": "Scaffolding", "checked": True, "depends": []},
+        {"number": 2, "name": "Error handling", "checked": False, "depends": []},
+        {"number": 3, "name": "Auth", "checked": False, "depends": [1]},
+    ]
+    warnings = check_story_ordering(stories)
+    assert warnings == []
+
+
+def test_no_deps_story_at_end_of_long_backlog_flagged():
+    """A no-deps story sitting at position 15+ is flagged."""
+    stories = [{"number": 1, "name": "Scaffolding", "checked": True, "depends": []}]
+    for i in range(2, 15):
+        stories.append({"number": i, "name": f"Story {i}", "checked": False, "depends": [i - 1]})
+    # Story 15 has no deps but appears at position 15
+    stories.append({"number": 15, "name": "Shared UI components", "checked": False, "depends": []})
+    warnings = check_story_ordering(stories)
+    assert len(warnings) >= 1
+    assert any("Shared UI" in w for w in warnings)
+
+
+def test_single_story_passes():
+    """Single story backlog shouldn't produce warnings."""
+    stories = [{"number": 1, "name": "Scaffolding", "checked": True, "depends": []}]
+    assert check_story_ordering(stories) == []
+
+
+def test_empty_stories_passes():
+    """Empty stories list shouldn't produce warnings."""
+    assert check_story_ordering([]) == []
+
+
+def test_fieldcraft_style_misordering_detected():
+    """Reproduces the FieldCraft scenario: story 42 depends on #1 but sits last."""
+    backlog = (
+        "# FieldCraft — Backlog\n\n"
+        "1. [x] Scaffolding <!-- depends: none -->\n"
+    )
+    for i in range(2, 42):
+        backlog += f"{i}. [ ] Story {i} <!-- depends: {i - 1} -->\n"
+    backlog += "42. [ ] Testing infrastructure <!-- depends: 1 -->\n"
+
+    stories = parse_backlog(backlog)
+    warnings = check_story_ordering(stories)
+    assert len(warnings) >= 1
+    assert any("Testing infrastructure" in w for w in warnings)

@@ -15,6 +15,7 @@ from agentic_dev.prompts.copilot_instructions import (
     COPILOT_INSTRUCTIONS_TEMPLATE,
 )
 from agentic_dev.prompts.planner import (
+    BACKLOG_ORDERING_PROMPT,
     BACKLOG_QUALITY_PROMPT,
     PLANNER_COMPLETENESS_PROMPT,
     PLANNER_INITIAL_PROMPT,
@@ -31,6 +32,7 @@ from agentic_dev.prompts.tester import TESTER_MILESTONE_PROMPT, TESTER_PROMPT
 from agentic_dev.prompts.validator import VALIDATOR_MILESTONE_PROMPT, VALIDATOR_PLAYWRIGHT_SECTION
 
 __all__ = [
+    "BACKLOG_ORDERING_PROMPT",
     "BACKLOG_QUALITY_PROMPT",
     "BOOTSTRAP_PROMPT",
     "LOCAL_BOOTSTRAP_PROMPT",

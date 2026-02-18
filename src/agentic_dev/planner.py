@@ -4,7 +4,7 @@ import os
 
 import typer
 
-from agentic_dev.backlog_checker import check_backlog_quality
+from agentic_dev.backlog_checker import check_backlog_quality, run_ordering_check
 from agentic_dev.milestone import get_tasks_per_milestone
 from agentic_dev.prompts import (
     PLANNER_COMPLETENESS_PROMPT,
@@ -62,6 +62,9 @@ def plan(requirements_changed: bool = False) -> bool:
             else:
                 # Re-check after re-plan (non-blocking — just log results)
                 check_backlog_quality()
+
+        # Ordering pass: ensure stories are in topological dependency order
+        run_ordering_check()
     else:
         # Case B/C: continuing or evolving project
         prompt = PLANNER_PROMPT

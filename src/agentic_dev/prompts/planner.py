@@ -265,6 +265,33 @@ BACKLOG_QUALITY_PROMPT = (
     "If everything passes with no changes needed, do nothing and exit."
 )
 
+BACKLOG_ORDERING_PROMPT = (
+    "You are a planning-only orchestrator. Your ONLY job is to reorder stories in "
+    "BACKLOG.md so they appear in topological dependency order. You must NOT write "
+    "any application code or modify any source files other than BACKLOG.md.\n\n"
+    "STEP 1 — READ:\n"
+    "Read BACKLOG.md.\n\n"
+    "STEP 2 — REORDER:\n"
+    "Sort all stories so that each story appears immediately after the "
+    "highest-numbered story it depends on. Stories with no dependencies (depends: "
+    "none) or that depend only on story #1 should appear early. Stories that depend "
+    "on later stories should appear after those dependencies.\n\n"
+    "Rules:\n"
+    "- Story #1 (scaffolding) always stays first.\n"
+    "- A story must never appear before any story it depends on.\n"
+    "- Among stories at the same dependency depth, prefer keeping backend before "
+    "its matching frontend story (e.g. 'Members — backend' before 'Members — "
+    "frontend').\n"
+    "- After reordering, renumber ALL stories sequentially starting from 1.\n"
+    "- Update ALL <!-- depends: N, M --> annotations to use the NEW story numbers.\n"
+    "- Keep the [x] or [ ] status of each story unchanged.\n"
+    "- Keep each story's description text unchanged.\n\n"
+    "STEP 3 — COMMIT:\n"
+    "If you reordered anything, commit BACKLOG.md with message '[planner] Reorder "
+    "backlog stories'. Run git pull --rebase, and push.\n"
+    "If stories are already in correct order, do nothing and exit."
+)
+
 PLANNER_SPLIT_PROMPT = (
     "You are a planning-only orchestrator. You must NOT write any code or modify "
     "any source files. Milestone '{milestone_name}' in TASKS.md has {task_count} tasks, "

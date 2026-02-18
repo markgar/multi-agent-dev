@@ -9,7 +9,7 @@ import os
 import re
 
 from agentic_dev.milestone import parse_backlog, parse_milestones_from_text
-from agentic_dev.prompts import BACKLOG_QUALITY_PROMPT
+from agentic_dev.prompts import BACKLOG_ORDERING_PROMPT, BACKLOG_QUALITY_PROMPT
 from agentic_dev.utils import log, run_copilot
 
 
@@ -287,6 +287,64 @@ def check_proportionality(story_count: int, feature_count: int) -> str | None:
     return None
 
 
+def check_story_ordering(stories: list[dict]) -> list[str]:
+    """Check that stories appear in topological dependency order.
+
+    A story is misordered if it appears after stories that don't depend on it
+    but have lower dependency depth. Specifically: a story's position should be
+    close to max(position of its dependencies) + 1.
+
+    Returns a list of warning messages for misordered stories. Empty = pass.
+    """
+    if len(stories) <= 1:
+        return []
+
+    warnings = []
+    number_to_pos = {s["number"]: i for i, s in enumerate(stories)}
+
+    for story in stories:
+        if not story["depends"]:
+            # Stories with no deps should be near the top (after story #1)
+            # Only flag if they appear after position 10 and they're not story #1
+            if story["number"] != stories[0]["number"] and number_to_pos[story["number"]] > 10:
+                warnings.append(
+                    f"Story #{story['number']} ('{story['name']}') has no dependencies "
+                    f"but appears at position {number_to_pos[story['number']] + 1} — "
+                    "should appear earlier"
+                )
+            continue
+
+        # Find the latest dependency position
+        dep_positions = []
+        for dep in story["depends"]:
+            if dep in number_to_pos:
+                dep_positions.append(number_to_pos[dep])
+
+        if not dep_positions:
+            continue
+
+        latest_dep_pos = max(dep_positions)
+        story_pos = number_to_pos[story["number"]]
+        gap = story_pos - latest_dep_pos
+
+        # A story should appear soon after its last dependency.
+        # Gap > 10 means there are 10+ unrelated stories between a dependency
+        # and the story that needs it.
+        if gap > 10:
+            latest_dep_number = None
+            for s in stories:
+                if number_to_pos[s["number"]] == latest_dep_pos:
+                    latest_dep_number = s["number"]
+                    break
+            warnings.append(
+                f"Story #{story['number']} ('{story['name']}') depends on "
+                f"#{latest_dep_number} (position {latest_dep_pos + 1}) but appears "
+                f"at position {story_pos + 1} — gap of {gap} stories"
+            )
+
+    return warnings
+
+
 # ============================================
 # Orchestration: run all deterministic checks
 # ============================================
@@ -480,3 +538,49 @@ def _read_file_safe(path: str) -> str:
     except Exception:
         pass
     return ""
+
+
+def run_ordering_check() -> bool:
+    """Run the story ordering check and fix via LLM if needed.
+
+    Reads BACKLOG.md, detects misordered stories using the dependency graph,
+    and invokes a Copilot call to reorder if any are found.
+
+    Returns True if ordering is correct or was fixed, False on failure.
+    """
+    backlog_text = _read_file_safe("BACKLOG.md")
+    if not backlog_text:
+        return True
+
+    stories = parse_backlog(backlog_text)
+    if not stories:
+        return True
+
+    ordering_issues = check_story_ordering(stories)
+    if not ordering_issues:
+        log("planner", "")
+        log("planner", "[Backlog Checker] Story ordering OK.", style="magenta")
+        return True
+
+    log("planner", "")
+    log("planner", "[Backlog Checker] Running story ordering check...", style="magenta")
+    for issue in ordering_issues:
+        log("planner", f"  [order] {issue}", style="yellow")
+
+    issue_block = "\n".join(f"- {issue}" for issue in ordering_issues)
+    prompt = (
+        BACKLOG_ORDERING_PROMPT
+        + f"\n\nThe following stories were detected as misordered:\n{issue_block}"
+    )
+
+    exit_code = run_copilot("planner", prompt)
+    if exit_code != 0:
+        log(
+            "planner",
+            "[Backlog Checker] WARNING: Ordering fix failed. Continuing with existing order.",
+            style="bold yellow",
+        )
+        return False
+
+    log("planner", "[Backlog Checker] Story ordering fixed.", style="magenta")
+    return True
