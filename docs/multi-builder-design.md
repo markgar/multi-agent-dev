@@ -363,7 +363,7 @@ This only affects newly generated copilot-instructions.md files — existing pro
 
 ---
 
-### Session 3: Builder Claim Loop + Multi-Builder Primitives
+### Session 3: Builder Claim Loop + Multi-Builder Primitives ✅
 
 **Goal:** Rewrite the builder to use the claim-and-build pattern with milestone files. Add `--builder-id` option. Update sentinel for multi-builder shutdown. Update utils and git_helpers for builder-N directories.
 
