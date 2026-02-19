@@ -1,7 +1,7 @@
 """Tester prompt templates."""
 
 TESTER_PROMPT = (
-    "Read SPEC.md and TASKS.md to understand the project. "
+    "Read SPEC.md and the milestone files in `milestones/` to understand the project. "
     "COMMIT MESSAGE FORMAT: Prefix ALL commit messages with '[tester]' — for example: "
     "'[tester] Add integration tests for user API'. This identifies you as the author "
     "in the git history. "
@@ -39,7 +39,7 @@ TESTER_PROMPT = (
 )
 
 TESTER_MILESTONE_PROMPT = (
-    "Read SPEC.md and TASKS.md to understand the project. "
+    "Read SPEC.md and the milestone files in `milestones/` to understand the project. "
     "COMMIT MESSAGE FORMAT: Prefix ALL commit messages with '[tester]' — for example: "
     "'[tester] Add tests for milestone features'. This identifies you as the author "
     "in the git history. "

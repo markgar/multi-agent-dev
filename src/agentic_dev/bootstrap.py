@@ -122,7 +122,8 @@ separate clones of the project repo, each used by a different agent.
 
 | Directory | Purpose |
 |---|---|
-| `builder/` | Builder agent — writes code, fixes bugs, completes milestones |
+| `builder-1/` | Builder agent 1 — writes code, fixes bugs, completes milestones |
+| `builder-N/` | Additional builder agents (when `--builders N` > 1) |
 | `reviewer/` | Reviewer agent — reviews each commit and milestone for quality |
 | `tester/` | Tester agent — runs scoped tests after each milestone |
 | `validator/` | Validator agent — builds Docker containers and validates against spec |
@@ -138,10 +139,8 @@ They coordinate through git push/pull and shared markdown files.
 |---|---|
 | `SPEC.md` | Technical decisions — architecture, tech stack, cross-cutting concerns |
 | `BACKLOG.md` | Ordered story queue with dependency tracking (planner-managed) |
-| `TASKS.md` | Current and completed milestones — checked off as work is completed |
+| `milestones/` | Per-story milestone files — one file per story, owned by one builder |
 | `REQUIREMENTS.md` | Original user requirements (may be updated between sessions) |
-| `BUGS.md` | Bugs found by the tester and validator (legacy — new projects use `bugs/`) |
-| `REVIEWS.md` | Code review findings from the reviewer (legacy — new projects use `reviews/`) |
 | `reviews/` | Directory-based review findings (one file per finding, never edited) |
 | `bugs/` | Directory-based bug reports (one file per bug, never edited) |
 | `DEPLOY.md` | Deployment knowledge accumulated by the validator |
@@ -158,7 +157,7 @@ They coordinate through git push/pull and shared markdown files.
 | `logs/validator.log` | Container builds and acceptance test results |
 | `logs/milestones.log` | Milestone boundaries (name, start SHA, end SHA) |
 | `logs/orchestrator.log` | High-level orchestration status |
-| `logs/builder.done` | Sentinel file — signals all agents to shut down |
+| `logs/builder-N.done` | Per-builder sentinel files — all must exist for shutdown |
 | `logs/reviewer.checkpoint` | Last-reviewed commit SHA |
 | `logs/reviewer.milestone` | Set of milestones already reviewed |
 | `logs/tester.milestone` | Set of milestones already tested |
@@ -166,13 +165,12 @@ They coordinate through git push/pull and shared markdown files.
 
 ## How It Works
 
-1. The **planner** reads SPEC.md and REQUIREMENTS.md, creates BACKLOG.md (story queue) and one milestone in TASKS.md
-2. The **builder** completes one milestone at a time, committing after each task
+1. The **planner** reads SPEC.md and REQUIREMENTS.md, creates BACKLOG.md (story queue) and the first milestone file in `milestones/`
+2. Each **builder** claims a story from BACKLOG.md (`[~]`), plans its milestone, completes all tasks, marks the story done (`[x]`), and loops
 3. The **reviewer** watches for new commits and reviews them for quality
 4. The **tester** runs scoped tests when a milestone completes
 5. The **validator** builds the app in Docker and tests against SPEC.md acceptance criteria
-6. After each milestone, the **planner** expands the next backlog story into a new milestone
-7. When the backlog is empty and all agents are idle, the builder writes `logs/builder.done` and everyone shuts down
+6. When the backlog is empty and all builders are done, downstream agents see the sentinel files and shut down
 
 Agent directories are disposable — they can be deleted and re-cloned from the repo at any time.
 The repo and `logs/` directory are the persistent state.

@@ -23,7 +23,7 @@ Runs once internally when you call `go`. Do not run `bootstrap` directly — it 
 
 Runs on demand via `plan`. Called automatically by `go` before the first build cycle (as the **Backlog Planner**), and called again by the build loop between milestones (as the **Milestone Planner**) to expand the next backlog story.
 
-The planner manages three files: **BACKLOG.md** (ordered story queue), **TASKS.md** (current and completed milestones), and **SPEC.md** (technical decisions). It plans **one milestone at a time** — never multiple milestones in a single run.
+The planner manages three files: **BACKLOG.md** (ordered story queue), **milestone files in `milestones/`** (one file per story), and **SPEC.md** (technical decisions). It plans **one milestone at a time** — never multiple milestones in a single run.
 
 The planner uses different prompts depending on the project state:
 
@@ -31,7 +31,7 @@ The planner uses different prompts depending on the project state:
 
 When no BACKLOG.md exists, the planner runs two focused Copilot calls:
 
-1. **Backlog creation** — Reads REQUIREMENTS.md and SPEC.md, decomposes all requirements into an ordered story queue (BACKLOG.md) with dependency annotations, checks off the first story, and writes the first milestone in TASKS.md.
+1. **Backlog creation** — Reads REQUIREMENTS.md and SPEC.md, decomposes all requirements into an ordered story queue (BACKLOG.md) with dependency annotations, checks off the first story, and writes the first milestone file in `milestones/`.
 2. **Completeness check** — A separate Copilot call reviews the backlog against REQUIREMENTS.md and SPEC.md. It walks through every section and subsection to verify coverage. Any gaps (missing feature stories, uncovered technical concerns like API client generation, seed data, navigation structure) are added as new stories.
 
 This two-step approach prevents the LLM from self-validating — the completeness pass reviews with fresh eyes.
@@ -40,7 +40,7 @@ This two-step approach prevents the LLM from self-validating — the completenes
 
 When BACKLOG.md already exists, the planner determines which situation applies:
 
-- **(B) Continuing project** — a milestone was just completed. BACKLOG.md and TASKS.md exist. Reads the codebase to understand what patterns emerged (base classes, naming conventions, dependency injection wiring). Finds the next eligible unchecked story in BACKLOG.md (all dependencies checked), checks it off, and appends one new `## Milestone:` to TASKS.md.
+- **(B) Continuing project** — a milestone was just completed. BACKLOG.md and milestone files exist. Reads the codebase to understand what patterns emerged (base classes, naming conventions, dependency injection wiring). Finds the next eligible unchecked story in BACKLOG.md (all dependencies completed), checks it off, and writes a new milestone file in `milestones/`.
 - **(C) Evolving project** — REQUIREMENTS.md contains features or requirements not reflected in BACKLOG.md stories or SPEC.md technical decisions. This means new requirements have been added. Updates SPEC.md to incorporate any new technical decisions. Adds new stories to BACKLOG.md for the new features. The default is additive — existing features stay in SPEC.md unless REQUIREMENTS.md explicitly asks to remove or replace them. Silence about an existing feature is not a removal request. Then proceeds to Case B logic.
 
 In both cases, the planner looks at the actual codebase to understand what is already built — it does not rely only on checked tasks.
@@ -53,36 +53,37 @@ BACKLOG.md is a planner-owned, numbered, ordered story queue. Each entry:
 N. [x] Story name <!-- depends: 1, 2 -->
 ```
 
-- `[ ]` = in backlog (not yet planned), `[x]` = planned into TASKS.md
+- `[ ]` = in backlog (unclaimed), `[~]` = claimed by a builder (in progress), `[x]` = completed
 - `<!-- depends: N -->` = HTML comment listing story numbers this depends on
+- Dependencies require `[x]` (completed) — `[~]` (claimed) does NOT satisfy dependencies
 - The first story is always scaffolding (project structure, entry point, health endpoint)
 - Stories are ordered so each builds on predecessors, preferring vertical feature slices — each story delivers one feature through all layers (entity → repository → service → API → frontend) rather than building one layer across all features.
-- The builder never reads or writes BACKLOG.md — only the planner and orchestrator touch it.
+- The builder claims stories via git-based optimistic locking: mark `[~]`, commit, push. If push fails (another builder claimed first), pull and try the next eligible story.
 
 ### Planning Rules
 
-- **One milestone per run.** The planner writes exactly one new `## Milestone:` section in TASKS.md each time it runs. It does not plan ahead or create multiple milestones at once.
+- **One milestone per run.** The planner writes exactly one new milestone file in `milestones/` each time it runs. It does not plan ahead or create multiple milestones at once.
 - **Detail in task descriptions.** Instead of "Create Member entity", write "Create Member entity (Id, FirstName, LastName, Email, Role enum, IsActive, OrganizationId)". The builder should not need to cross-reference SPEC.md or REQUIREMENTS.md.
 - **Task sizing.** Each task describes one logical change — one concept, one concern, one commit. If a task contains "and", "with", or a comma connecting distinct work, it is too big — split it.
 - **Milestone sizing.** A well-sized milestone typically has 3-7 tasks. Under 3 suggests tasks might be too coarse. Over 8 suggests a natural split point exists.
 - **Runnable after every milestone.** Each milestone must leave the app in a buildable, startable state.
 - **No test or container stories/tasks.** Do not create backlog stories or milestone tasks for writing tests or containerization/deployment. The tester and validator agents handle those automatically.
-- **Milestone acceptance context.** Each `## Milestone:` heading must be followed by a `> **Validates:**` blockquote describing what the validator should test — endpoint paths, HTTP methods, expected status codes, pages that should render, CLI commands. This is the validator's primary test plan.
+- **Milestone acceptance context.** Each milestone file must contain a `> **Validates:**` blockquote describing what the validator should test — endpoint paths, HTTP methods, expected status codes, pages that should render, CLI commands. This is the validator's primary test plan.
 - **Read the codebase first (cases B/C).** Match existing patterns — if a BaseRepository<T> exists, use it; if DTOs are records, make new DTOs records.
 
 > **Backlog planning prompt:** You are a planning-only orchestrator. Your job is to decompose a project's requirements into a complete backlog of stories, then plan the first milestone. [...story decomposition rules, task sizing, milestone sizing, detail requirements, containerization/testing exclusions...]
 
 > **Completeness check prompt:** You are a planning quality reviewer. Your ONLY job is to verify that BACKLOG.md completely covers REQUIREMENTS.md and SPEC.md. Walk through every ## and ### heading in REQUIREMENTS.md. For each section, verify at least one story covers it. Also check SPEC.md for technical decisions that require setup work. If gaps exist, add stories. [...gap identification, renumbering rules...]
 
-> **Milestone planning prompt:** You are a planning-only orchestrator. Your job is to manage BACKLOG.md, SPEC.md, and TASKS.md. ASSESS THE PROJECT STATE. Determine: (B) Continuing — find next eligible story, expand into milestone. (C) Evolving — update SPEC.md, add new stories, then do Case B. [...task sizing, milestone sizing, detail requirements, codebase reading...]
+> **Milestone planning prompt:** You are a planning-only orchestrator. Your job is to manage BACKLOG.md, SPEC.md, and the milestone files in `milestones/`. ASSESS THE PROJECT STATE. Determine: (B) Continuing — find next eligible story, expand into milestone. (C) Evolving — update SPEC.md, add new stories, then do Case B. [...task sizing, milestone sizing, detail requirements, codebase reading...]
 
 **Post-plan enforcement:** After the planner runs, the build loop checks milestone sizes. If any uncompleted milestone exceeds 10 tasks, the planner is re-invoked with a targeted split prompt. If still oversized after one retry, a warning is logged and the build proceeds.
 
 **Between-milestone re-planning:** After each milestone completes, the build loop calls the milestone planner again to expand the next backlog story. If no eligible story exists (all remaining stories have unmet dependencies), a dependency deadlock warning is logged. If the backlog is empty, the build is done.
 
-**Creates:** BACKLOG.md (first run), TASKS.md (first run)  
-**Updates:** BACKLOG.md (checks off stories), TASKS.md (appends milestones), SPEC.md (when new requirements are detected — case C)  
-**Reads:** SPEC.md, REQUIREMENTS.md, BACKLOG.md, TASKS.md, codebase  
+**Creates:** BACKLOG.md (first run), first milestone file in `milestones/` (first run)  
+**Updates:** BACKLOG.md (checks off stories), `milestones/` (writes new milestone files), SPEC.md (when new requirements are detected — case C)  
+**Reads:** SPEC.md, REQUIREMENTS.md, BACKLOG.md, `milestones/`, codebase  
 **Writes code:** No
 
 ---
@@ -107,15 +108,21 @@ The generated file includes:
 
 ## Builder
 
-Runs via `build`. Completes one milestone per cycle, then stops. Between milestones the build loop calls the milestone planner to expand the next backlog story. After all stories are done, waits for the reviewer, tester, and validator to go idle and verifies that all checklists are clean before writing `logs/builder.done` to signal shutdown.
+Runs via `build --loop --builder-id N`. Multiple builders can run in parallel, each in its own `builder-N/` clone directory. Each builder runs a claim loop:
 
-> Before starting, review README.md, SPEC.md, and TASKS.md to understand the project's purpose and plan. Read .github/copilot-instructions.md if it exists — follow its coding guidelines and conventions in all code you write. Read DEPLOY.md if it exists — it contains deployment configuration and lessons learned from the validator agent. If it mentions required env vars, ports, or startup requirements, ensure your code is compatible. Do NOT modify DEPLOY.md — only the validator agent manages that file. Only build, fix, or keep code that serves that purpose. Remove any scaffolding, template code, or functionality that does not belong. After any refactoring — including review fixes — check for dead code left behind and remove it. Before your first commit in each session, review .gitignore and ensure it covers the project's current tech stack; update it when you introduce a new framework or build tool. When completing a task that changes the project structure, key files, architecture, or conventions, update .github/copilot-instructions.md to reflect the change (it is a style guide — describe file roles and coding patterns, not implementation details). Now look at the `bugs/` directory first. List `bug-*.md` files without matching `fixed-*.md` files — these are open bugs. Fix ALL open bugs before anything else. Then look at the `reviews/` directory. List `finding-*.md` files without matching `resolved-*.md` files — these are open findings. Address them one at a time. Once all bugs and findings are resolved, move to TASKS.md. Find the first milestone that has unchecked tasks — this is your current milestone. Complete every task in this milestone, then STOP IMMEDIATELY. Do not continue to the next milestone. For each task: write the code AND mark it complete in TASKS.md, then commit BOTH together in a single commit with a meaningful message. After each commit, run git pull --rebase and push. When every task in the current milestone is checked, verify the application still builds and runs. Once verified, you are done for this session.
+1. **Claim a story:** Find the next eligible unclaimed (`[ ]`) story in BACKLOG.md where all dependencies are completed (`[x]`). Mark it `[~]` (claimed), commit, and push. If the push fails (another builder claimed it), pull and try again.
+2. **Plan the milestone:** Call the milestone planner to expand the claimed story into a milestone file in `milestones/`.
+3. **Build it:** Fix bugs and review findings first, then complete all tasks in the milestone.
+4. **Complete the story:** Mark the story `[x]` in BACKLOG.md, commit, push.
+5. **Loop:** Go back to step 1. If no eligible stories remain, write `logs/builder-N.done` and exit.
 
-**Reads:** README.md, SPEC.md, TASKS.md, bugs/, reviews/, DEPLOY.md, REVIEW-THEMES.md, .github/copilot-instructions.md  
+> Before starting, review README.md, SPEC.md, and the milestone files in `milestones/` to understand the project's purpose and plan. Read .github/copilot-instructions.md if it exists — follow its coding guidelines and conventions in all code you write. Read DEPLOY.md if it exists — it contains deployment configuration and lessons learned from the validator agent. If it mentions required env vars, ports, or startup requirements, ensure your code is compatible. Do NOT modify DEPLOY.md — only the validator agent manages that file. Only build, fix, or keep code that serves that purpose. Remove any scaffolding, template code, or functionality that does not belong. After any refactoring — including review fixes — check for dead code left behind and remove it. Before your first commit in each session, review .gitignore and ensure it covers the project's current tech stack; update it when you introduce a new framework or build tool. When completing a task that changes the project structure, key files, architecture, or conventions, update .github/copilot-instructions.md to reflect the change (it is a style guide — describe file roles and coding patterns, not implementation details). Now look at the `bugs/` directory first. List `bug-*.md` files without matching `fixed-*.md` files — these are open bugs. Fix ALL open bugs before anything else. Then look at the `reviews/` directory. List `finding-*.md` files without matching `resolved-*.md` files — these are open findings. Address them one at a time. Once all bugs and findings are resolved, move to the milestone file. Complete every task in the milestone, then STOP. For each task: write the code AND mark it complete in the milestone file, then commit BOTH together in a single commit with a meaningful message. After each commit, run git pull --rebase and push. When every task in the current milestone is checked, verify the application still builds and runs.
+
+**Reads:** README.md, SPEC.md, `milestones/`, bugs/, reviews/, DEPLOY.md, REVIEW-THEMES.md, .github/copilot-instructions.md  
 **Writes code:** Yes  
 **Updates:** .github/copilot-instructions.md (when project structure changes), .gitignore (when tech stack changes)  
 **Commits:** After each bug fix, review fix, and task (prefixed with `[builder]`)  
-**Shutdown signal:** Waits for agents to idle, then writes `logs/builder.done`
+**Shutdown signal:** Writes `logs/builder-N.done` when no eligible stories remain
 
 ---
 
@@ -139,7 +146,7 @@ For each new commit detected, the watcher enumerates all commits since the last 
 
 > ...reviews the combined diff... Same severity-based filing: `finding-*.md` for [bug]/[security], `note-*.md` for [cleanup]/[robustness]. Commit with message 'Code review: {base_sha:.8}..{head_sha:.8}', run git pull --rebase, and push.
 
-**Milestone reviews:** When the watcher detects that all tasks under a `## Milestone:` heading in TASKS.md are checked, it triggers a cross-cutting review of the entire milestone's diff. This catches issues that per-commit reviews miss: inconsistent patterns across files, API mismatches, duplicated logic introduced across separate commits, and architectural problems in how pieces fit together. Each milestone is only reviewed once (tracked in `logs/reviewer.milestone`). The milestone reviewer also cleans up stale findings — creating `resolved-*.md` files for issues already fixed in the code.
+**Milestone reviews:** When the watcher detects that all tasks in a milestone file in `milestones/` are checked, it triggers a cross-cutting review of the entire milestone's diff. This catches issues that per-commit reviews miss: inconsistent patterns across files, API mismatches, duplicated logic introduced across separate commits, and architectural problems in how pieces fit together. Each milestone is only reviewed once (tracked in `logs/reviewer.milestone`). The milestone reviewer also cleans up stale findings — creating `resolved-*.md` files for issues already fixed in the code.
 
 **Milestone frequency filter:** The milestone review reads all `note-*.md` files from per-commit reviews and applies a frequency filter before filing findings for the builder:
 - [bug] and [security]: Always filed as `finding-*.md` regardless of frequency
@@ -151,7 +158,7 @@ For each new commit detected, the watcher enumerates all commits since the last 
 **Trigger:** Polls every 10 seconds for new commits  
 **Scope:** Per-commit diff for individual reviews; full milestone diff for milestone reviews  
 **Checkpoint:** `logs/reviewer.checkpoint` (per-commit), `logs/reviewer.milestone` (per-milestone)  
-**Skips:** Merge commits, coordination-only commits (TASKS.md only, or reviews/ and bugs/ only)  
+**Skips:** Merge commits, coordination-only commits (milestone files only, or reviews/ and bugs/ only)  
 **Runs from:** `reviewer/` clone  
 **Shutdown:** Checks for `logs/builder.done` each cycle; completes any remaining milestone reviews before exiting  
 **Writes code:** [doc] fixes only (comments, README). Never changes application logic or DEPLOY.md directly.  
@@ -165,7 +172,7 @@ Milestone-triggered via `testloop`, launched automatically by `go`. Watches `log
 
 For each newly completed milestone:
 
-> Read SPEC.md and TASKS.md to understand the project. A milestone — '{milestone_name}' — has just been completed. Pull the latest code with `git pull --rebase`. Run `git diff {milestone_start_sha} {milestone_end_sha} --name-only` to see which files changed in this milestone. Build the project. Run all existing tests. Testing has two priorities: (1) test the new milestone's code — features with no tests, missing error handling, missing validation; (2) test integration with existing code — look for missing tests that span multiple components or layers (e.g. form → API service → backend endpoint → UI update), and review existing test files for cross-feature gaps that accumulated over prior milestones. The more milestones completed, the more important integration tests become. Prioritize integration tests over unit tests. Each test should verify a distinct user-facing behavior. Do not test internal implementation details, getters/setters, or trivially obvious code. Write at most 20 new tests per run. Do NOT start the application, start servers, or test live endpoints — a separate validator agent handles runtime testing in containers. Focus exclusively on running the test suite. For any test that fails, create a `bug-<timestamp>.md` file in `bugs/` with what failed, steps to reproduce, and which milestone. Do not edit or delete existing files in `bugs/`. Commit new tests and new bug files, run git pull --rebase, and push. If the push fails, run git pull --rebase and push again (retry up to 3 times). If everything passes and no new tests are needed, do nothing.
+> Read SPEC.md and the milestone files in `milestones/` to understand the project. A milestone — '{milestone_name}' — has just been completed. Pull the latest code with `git pull --rebase`. Run `git diff {milestone_start_sha} {milestone_end_sha} --name-only` to see which files changed in this milestone. Build the project. Run all existing tests. Testing has two priorities: (1) test the new milestone's code — features with no tests, missing error handling, missing validation; (2) test integration with existing code — look for missing tests that span multiple components or layers (e.g. form → API service → backend endpoint → UI update), and review existing test files for cross-feature gaps that accumulated over prior milestones. The more milestones completed, the more important integration tests become. Prioritize integration tests over unit tests. Each test should verify a distinct user-facing behavior. Do not test internal implementation details, getters/setters, or trivially obvious code. Write at most 20 new tests per run. Do NOT start the application, start servers, or test live endpoints — a separate validator agent handles runtime testing in containers. Focus exclusively on running the test suite. For any test that fails, create a `bug-<timestamp>.md` file in `bugs/` with what failed, steps to reproduce, and which milestone. Do not edit or delete existing files in `bugs/`. Commit new tests and new bug files, run git pull --rebase, and push. If the push fails, run git pull --rebase and push again (retry up to 3 times). If everything passes and no new tests are needed, do nothing.
 
 When the builder finishes, the tester sees `logs/builder.done` and exits.
 
@@ -185,7 +192,7 @@ Milestone-triggered via `validateloop`, launched automatically by `go`. Watches 
 
 For each newly completed milestone:
 
-> You are a deployment validator. Your job is to build the application in a Docker container, run it, and verify it works against the acceptance criteria in SPEC.md. FIRST: Read DEPLOY.md if it exists — it contains everything previous runs learned about building and deploying this application. Follow its instructions for Dockerfile configuration, environment variables, port mappings, startup sequence, and known gotchas. Read SPEC.md for acceptance criteria. Read TASKS.md to see which milestones are complete — you should test all requirements that should be working up to and including milestone '{milestone_name}'. Set `COMPOSE_PROJECT_NAME` for container namespace isolation and use deterministic host ports derived from the project name. Stop and remove any running containers from this project's previous validation. If no Dockerfile exists, create one appropriate for the project's tech stack. Build the container. Start it. Wait for the app to be healthy. Test every SPEC.md requirement that should be working at this point — for milestone 1, just confirm the app starts and responds; for later milestones, test accumulated functionality. Leave containers running after testing so the app is browsable. Report failures by creating `bug-<timestamp>.md` files in `bugs/`. Update DEPLOY.md with everything learned about deploying this application. Commit and push.
+> You are a deployment validator. Your job is to build the application in a Docker container, run it, and verify it works against the acceptance criteria in SPEC.md. FIRST: Read DEPLOY.md if it exists — it contains everything previous runs learned about building and deploying this application. Follow its instructions for Dockerfile configuration, environment variables, port mappings, startup sequence, and known gotchas. Read SPEC.md for acceptance criteria. Read the milestone files in `milestones/` to see which milestones are complete — you should test all requirements that should be working up to and including milestone '{milestone_name}'. Set `COMPOSE_PROJECT_NAME` for container namespace isolation and use deterministic host ports derived from the project name. Stop and remove any running containers from this project's previous validation. If no Dockerfile exists, create one appropriate for the project's tech stack. Build the container. Start it. Wait for the app to be healthy. Test every SPEC.md requirement that should be working at this point — for milestone 1, just confirm the app starts and responds; for later milestones, test accumulated functionality. Leave containers running after testing so the app is browsable. Report failures by creating `bug-<timestamp>.md` files in `bugs/`. Update DEPLOY.md with everything learned about deploying this application. Commit and push.
 
 **Port isolation:** Each project gets deterministic host ports computed from a SHA-256 hash of the project name (range 3000-8999). `COMPOSE_PROJECT_NAME` is set to the project name so Docker containers from different projects are namespaced and don't conflict. This allows multiple projects (or model comparisons) to run side-by-side on the same host.
 
@@ -247,14 +254,15 @@ The builder updates the project's copilot-instructions.md whenever project struc
 ## Agent Coordination Rules
 
 - **Commit message tagging:** Every agent prefixes its commit messages with its name in brackets — `[builder]`, `[reviewer]`, `[tester]`, `[validator]`, `[planner]`, `[bootstrap]`. This makes it easy to see who did what in `git log`.
-- The **Planner** runs on demand via `plan`. It assesses project state (fresh / continuing / evolving), manages BACKLOG.md (story queue with dependency tracking), updates SPEC.md if new requirements are detected, then creates or updates the task list one milestone at a time. It never writes application code.
-- The **Builder** checks `bugs/` first (all open bugs are fixed before any tasks), then `reviews/` (open findings), then completes the current milestone. One milestone per cycle, then the planner expands the next backlog story.
+- The **Planner** runs on demand via `plan`. It assesses project state (fresh / continuing / evolving), manages BACKLOG.md (story queue with three-state tracking: `[ ]` unclaimed, `[~]` claimed, `[x]` completed), updates SPEC.md if new requirements are detected, then writes one milestone file per story in `milestones/`. It never writes application code.
+- The **Builder** runs in a claim loop. Each builder claims a story from BACKLOG.md (`[~]`), calls the planner to expand it into a milestone, completes all tasks, marks the story done (`[x]`), and loops. When no eligible stories remain, writes `logs/builder-N.done`.
 - The **Reviewer** reviews each commit individually, plus a cross-cutting review when a milestone completes. Non-code issues ([doc]: stale docs, misleading comments) are fixed directly by the reviewer (except DEPLOY.md — that gets filed as a finding). Code-level issues ([code]) are filed as `finding-*.md` files in `reviews/` for the builder. Milestone reviews clean up stale findings by creating `resolved-*.md` files.
 - The **Tester** runs scoped tests when a milestone completes, focusing on changed files. It runs the test suite only — it does not start the app or test live endpoints. Files bugs in `bugs/`. Exits when the builder finishes.
 - The **Validator** builds the app in a Docker container after each milestone, starts it, and tests it against SPEC.md acceptance criteria. Files bugs in `bugs/`. Persists deployment knowledge in DEPLOY.md. Exits when the builder finishes.
 - Agents never edit or delete existing files in `reviews/` or `bugs/` — they only create new files. This eliminates merge conflicts on those directories.
 - All agents run `git pull --rebase` before pushing to avoid merge conflicts. Since `reviews/` and `bugs/` are append-only directories (no file is ever edited), concurrent new-file creations never conflict.
-- `SPEC.md` is the source of truth for technical decisions. `BACKLOG.md` is the story queue. Edit either anytime to steer the project — run `plan` to adapt the task list.
+- `SPEC.md` is the source of truth for technical decisions. `BACKLOG.md` is the story queue. Edit either anytime to steer the project — run `plan` to adapt.
+- Each milestone file in `milestones/` is exclusively owned by one builder — no two builders edit the same file.
 - `REVIEW-THEMES.md` is a cumulative knowledge base of recurring review patterns, owned by the reviewer. The reviewer updates it after each milestone review, adding new themes but never removing old ones. Themes persist forever as lessons learned. The builder reads it to avoid repeating patterns but never modifies it.
 
 ---
@@ -266,14 +274,16 @@ The builder updates the project's copilot-instructions.md whenever project struc
 1. **Session 1:** `go --directory my-app --model gpt-5.3-codex --spec-file api-spec.md --local` — bootstraps project, builds API
 2. **Session 2:** `go --directory my-app --model gpt-5.3-codex --spec-file frontend-spec.md --local` — detects existing repo, clones agent directories, overwrites REQUIREMENTS.md with frontend spec, planner updates SPEC.md and creates new milestones, builder implements frontend
 3. **Session 3:** `go --directory my-app --model gpt-5.3-codex --local` — continues where it left off (no new requirements)
+4. **Parallel build:** `go --directory my-app --model gpt-5.3-codex --builders 3 --local` — launches 3 builders that claim and build stories in parallel
 
 `go` uses repo-first detection: it checks whether the repo already exists (locally via `remote.git/`, or on GitHub via `gh repo view`) rather than checking for local clone directories. This means:
 
 - **Repo exists, agent dirs exist:** pulls all clones, plans, builds (standard resume)
 - **Repo exists, agent dirs missing:** clones all agents from the repo, then continues (fresh-machine resume)
 - **No repo:** bootstraps from scratch (requires `--spec-file` or `--description`)
+- **Legacy `builder/` directory:** automatically migrated to `builder-1/` on resume
 
-Agent directories (`builder/`, `reviewer/`, `tester/`, `validator/`) are treated as disposable working copies — they can be recreated from the repo at any time. The repo (GitHub or `remote.git/`) and `logs/` directory (checkpoints) are the persistent state.
+Agent directories (`builder-1/`, `builder-N/`, `reviewer/`, `tester/`, `validator/`) are treated as disposable working copies — they can be deleted and re-cloned from the repo at any time. The repo (GitHub or `remote.git/`) and `logs/` directory (checkpoints) are the persistent state.
 
 The `--spec-file` for session 2 can contain just new requirements ("Add a React frontend") or a complete updated requirements doc (old API spec + new frontend spec). The planner compares REQUIREMENTS.md against SPEC.md and the codebase to determine what's new.
 
@@ -287,13 +297,14 @@ The original `reviewoncommit` and `testoncommit` commands still exist for manual
 
 ## Shutdown Protocol
 
-The builder waits for all agents to finish before exiting:
+Multi-builder shutdown uses per-builder sentinel files:
 
-1. **Builder completes all milestones:** After the last milestone, the builder enters a wait loop.
-2. **Wait for agents to go idle:** The builder monitors `logs/reviewer.log`, `logs/tester.log`, and `logs/validator.log` modification times. When all logs haven't changed in 120+ seconds, agents are considered idle.
-3. **Check work lists:** The builder pulls latest and scans `bugs/` for open bugs (bug-* without fixed-*), `reviews/` for open findings (finding-* without resolved-*), and `TASKS.md` for unchecked items.
-4. **Fix or exit:** If new work was filed (bugs from tester/validator, reviews from reviewer), the builder fixes it (up to 4 fix-only cycles) and loops back to step 2. If checklists are clean and agents are idle, the builder writes `logs/builder.done` and exits.
-5. **Agents shut down:** The reviewer, tester, and validator see `logs/builder.done` on their next poll cycle. The reviewer completes any remaining milestone reviews before exiting. The tester and validator exit immediately.
-6. **Crash fallback:** If `logs/builder.log` hasn't been modified in 30+ minutes, agents assume the builder crashed and shut down.
-7. **Startup cleanup:** `go` clears any stale `builder.done` sentinel before launching agents.
-8. **Timeout safety:** If agents don't go idle within 10 minutes, the builder writes `builder.done` and exits anyway.
+1. **Builder completes all stories:** When a builder finds no eligible stories in BACKLOG.md (all are `[~]` or `[x]`), it waits for downstream agents to go idle, verifies checklists are clean, then writes `logs/builder-N.done`.
+2. **Wait for agents to go idle:** Each builder monitors `logs/reviewer.log`, `logs/tester.log`, and `logs/validator.log` modification times. When all logs haven't changed in 120+ seconds, agents are considered idle.
+3. **Check work lists:** The builder pulls latest and scans `bugs/` for open bugs (bug-* without fixed-*), `reviews/` for open findings (finding-* without resolved-*), and milestone files for unchecked items.
+4. **Fix or exit:** If new work was filed, the builder fixes it (up to 4 fix-only cycles) and loops back to step 2. If checklists are clean and agents are idle, writes `logs/builder-N.done`.
+5. **All builders done:** `is_builder_done()` discovers all `builder-*.done` files in `logs/` and returns True only when all expected builders have finished.
+6. **Agents shut down:** The reviewer, tester, and validator see all builders done on their next poll cycle. The reviewer completes any remaining milestone reviews before exiting.
+7. **Crash fallback:** If `logs/builder.log` hasn't been modified in 30+ minutes, agents assume the builder crashed and shut down.
+8. **Startup cleanup:** `go` calls `clear_builder_done(num_builders)` to remove stale sentinel files before launching agents.
+9. **Timeout safety:** If agents don't go idle within 10 minutes, the builder writes its sentinel and exits anyway.

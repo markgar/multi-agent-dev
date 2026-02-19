@@ -6,6 +6,7 @@ from typing import Annotated
 
 import typer
 
+from agentic_dev.milestone import get_all_milestones
 from agentic_dev.utils import console
 from agentic_dev.version import get_version
 
@@ -89,14 +90,17 @@ def status() -> None:
 
     console.print()
 
-    if os.path.exists("TASKS.md"):
-        console.print("=== TASKS ===", style="bold cyan")
-        with open("TASKS.md", "r", encoding="utf-8") as f:
-            for line in f:
-                if re.search(r"\[.\]", line):
-                    console.print(line.rstrip())
+    if os.path.isdir("milestones"):
+        milestones = get_all_milestones("milestones")
+        if milestones:
+            console.print("=== MILESTONES ===", style="bold cyan")
+            for ms in milestones:
+                mark = "x" if ms["all_done"] else " "
+                console.print(f"  [{mark}] {ms['name']}  ({ms['done']}/{ms['total']} tasks)")
+        else:
+            console.print("milestones/ directory is empty. Run 'plan' to generate milestones.", style="yellow")
     else:
-        console.print("No TASKS.md yet. Run 'plan' to generate it.", style="yellow")
+        console.print("No milestones/ directory yet. Run 'plan' to generate it.", style="yellow")
 
     console.print()
 

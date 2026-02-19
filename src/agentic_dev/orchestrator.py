@@ -2,19 +2,19 @@
 
 import os
 import re
+import time
 from datetime import datetime, timezone
 from typing import Annotated
 
 import typer
 
 from agentic_dev.bootstrap import run_bootstrap, write_workspace_readme
-from agentic_dev.builder import build
 from agentic_dev.planner import check_milestone_sizes, plan
 from agentic_dev.prompts import (
     COPILOT_INSTRUCTIONS_PROMPT,
     COPILOT_INSTRUCTIONS_TEMPLATE,
 )
-from agentic_dev.sentinel import clear_builder_done
+from agentic_dev.sentinel import clear_builder_done, is_builder_done
 from agentic_dev.terminal import spawn_agent_in_terminal
 from agentic_dev.utils import console, log, pushd, run_cmd, run_copilot, validate_model
 
@@ -32,19 +32,21 @@ def register(app: typer.Typer) -> None:
 def _detect_clone_source(parent_dir: str) -> str:
     """Determine the git clone source for creating missing agent clones.
 
-    Checks for a local bare repo first, then reads the remote URL from the builder clone.
+    Checks for a local bare repo first, then reads the remote URL from the
+    first builder clone found (builder-1/ or legacy builder/).
     Returns empty string if neither is found.
     """
     bare_repo = os.path.join(parent_dir, "remote.git")
     if os.path.exists(bare_repo):
         return bare_repo
-    builder_dir = os.path.join(parent_dir, "builder")
-    if not os.path.exists(builder_dir):
-        return ""
-    with pushd(builder_dir):
-        result = run_cmd(["git", "remote", "get-url", "origin"], capture=True)
-    if result.returncode == 0:
-        return result.stdout.strip()
+    # Check numbered builders first, then legacy builder/
+    for candidate in ("builder-1", "builder"):
+        candidate_dir = os.path.join(parent_dir, candidate)
+        if os.path.exists(candidate_dir):
+            with pushd(candidate_dir):
+                result = run_cmd(["git", "remote", "get-url", "origin"], capture=True)
+            if result.returncode == 0:
+                return result.stdout.strip()
     return ""
 
 
@@ -70,10 +72,11 @@ def _find_existing_repo(parent_dir: str, name: str, local: bool) -> str:
     return ""
 
 
-def _clone_all_agents(parent_dir: str, clone_source: str) -> None:
+def _clone_all_agents(parent_dir: str, clone_source: str, num_builders: int = 1) -> None:
     """Clone any missing agent directories from the given source."""
     os.makedirs(parent_dir, exist_ok=True)
-    for agent in ["builder", "reviewer", "tester", "validator"]:
+    agents = [f"builder-{i}" for i in range(1, num_builders + 1)] + ["reviewer", "tester", "validator"]
+    for agent in agents:
         agent_dir = os.path.join(parent_dir, agent)
         if not os.path.exists(agent_dir):
             log("orchestrator", f"Cloning {agent} from existing repo...", style="cyan")
@@ -82,11 +85,12 @@ def _clone_all_agents(parent_dir: str, clone_source: str) -> None:
     write_workspace_readme(parent_dir)
 
 
-def _pull_all_clones(parent_dir: str) -> None:
+def _pull_all_clones(parent_dir: str, num_builders: int = 1) -> None:
     """Pull latest on all agent clones. Create any missing clones."""
     clone_source = _detect_clone_source(parent_dir)
 
-    for agent in ["builder", "reviewer", "tester", "validator"]:
+    agents = [f"builder-{i}" for i in range(1, num_builders + 1)] + ["reviewer", "tester", "validator"]
+    for agent in agents:
         agent_dir = os.path.join(parent_dir, agent)
         if not os.path.exists(agent_dir):
             if clone_source:
@@ -98,6 +102,18 @@ def _pull_all_clones(parent_dir: str) -> None:
         else:
             with pushd(agent_dir):
                 run_cmd(["git", "pull", "--rebase"], quiet=True)
+
+
+def _migrate_legacy_builder(parent_dir: str) -> None:
+    """Rename legacy builder/ to builder-1/ if needed.
+
+    Handles the migration from old single-builder layout to numbered builders.
+    """
+    builder_old = os.path.join(parent_dir, "builder")
+    builder_new = os.path.join(parent_dir, "builder-1")
+    if os.path.exists(builder_old) and not os.path.exists(builder_new):
+        os.rename(builder_old, builder_new)
+        log("orchestrator", "Migrated builder/ to builder-1/", style="cyan")
 
 
 # ============================================
@@ -155,10 +171,11 @@ def _generate_copilot_instructions() -> None:
 
 
 def _launch_agents_and_build(
-    parent_dir: str, plan_label: str, project_name: str = "", requirements_changed: bool = False,
+    parent_dir: str, plan_label: str, project_name: str = "",
+    requirements_changed: bool = False, num_builders: int = 1,
 ) -> None:
-    """Run planner, spawn reviewer/tester in terminals, then build until done."""
-    clear_builder_done()
+    """Run planner, spawn all agents (including builders) in terminals, then poll for completion."""
+    clear_builder_done(num_builders)
 
     log("orchestrator", "")
     log("orchestrator", "======================================", style="bold magenta")
@@ -183,12 +200,32 @@ def _launch_agents_and_build(
     validator_cmd = f"validateloop --project-name {project_name}" if project_name else "validateloop"
     spawn_agent_in_terminal(os.path.join(parent_dir, "validator"), validator_cmd)
 
+    # Spawn builders as terminal processes
+    for i in range(1, num_builders + 1):
+        builder_dir = os.path.join(parent_dir, f"builder-{i}")
+        builder_cmd = f"build --loop --builder-id {i}"
+        log("orchestrator", f"Launching builder-{i}...", style="yellow")
+        spawn_agent_in_terminal(builder_dir, builder_cmd)
+
     log("orchestrator", "")
     log("orchestrator", "======================================", style="bold green")
-    log("orchestrator", " All agents launched! Building...", style="bold green")
+    log("orchestrator", " All agents launched!", style="bold green")
     log("orchestrator", "======================================", style="bold green")
     log("orchestrator", "")
-    build(loop=True)
+
+    _wait_for_builders()
+
+
+def _wait_for_builders() -> None:
+    """Block until all builders have finished (or stale-log timeout)."""
+    while True:
+        if is_builder_done():
+            log("orchestrator", "")
+            log("orchestrator", "======================================", style="bold green")
+            log("orchestrator", " All builders done. Run complete.", style="bold green")
+            log("orchestrator", "======================================", style="bold green")
+            return
+        time.sleep(15)
 
 
 # ============================================
@@ -232,7 +269,8 @@ def _resolve_directory(directory: str) -> str | None:
 
 
 def _bootstrap_new_project(
-    parent_dir: str, project_name: str, description: str, spec_file: str, local: bool, start_dir: str,
+    parent_dir: str, project_name: str, description: str, spec_file: str,
+    local: bool, start_dir: str, num_builders: int = 1,
 ) -> None:
     """Bootstrap a brand-new project: create repo, plan, and launch agents."""
     if not description and not spec_file:
@@ -245,12 +283,30 @@ def _bootstrap_new_project(
         os.chdir(start_dir)
         return
 
-    os.chdir(os.path.join(parent_dir, "builder"))
-    _launch_agents_and_build(parent_dir, "Running backlog planner...", project_name=project_name)
+    # Rename builder/ to builder-1/ for multi-builder consistency
+    _migrate_legacy_builder(parent_dir)
+
+    # Clone additional builders if N > 1
+    if num_builders > 1:
+        clone_source = _detect_clone_source(parent_dir)
+        if clone_source:
+            for i in range(2, num_builders + 1):
+                builder_dir = os.path.join(parent_dir, f"builder-{i}")
+                if not os.path.exists(builder_dir):
+                    log("orchestrator", f"Cloning builder-{i}...", style="cyan")
+                    with pushd(parent_dir):
+                        run_cmd(["git", "clone", clone_source, f"builder-{i}"])
+
+    os.chdir(os.path.join(parent_dir, "builder-1"))
+    _launch_agents_and_build(
+        parent_dir, "Running backlog planner...",
+        project_name=project_name, num_builders=num_builders,
+    )
 
 
 def _resume_existing_project(
     parent_dir: str, project_name: str, repo_source: str, description: str, spec_file: str,
+    num_builders: int = 1,
 ) -> None:
     """Resume an existing project: clone agents, update requirements if needed, and build."""
     new_description = _resolve_description_optional(description, spec_file)
@@ -263,16 +319,20 @@ def _resume_existing_project(
         log("orchestrator", f" Continuing project '{project_name}'", style="bold cyan")
     log("orchestrator", "======================================", style="bold cyan")
 
-    _clone_all_agents(parent_dir, repo_source)
-    _pull_all_clones(parent_dir)
-    os.chdir(os.path.join(parent_dir, "builder"))
+    # Migrate legacy builder/ to builder-1/ before cloning
+    _migrate_legacy_builder(parent_dir)
+
+    _clone_all_agents(parent_dir, repo_source, num_builders)
+    _pull_all_clones(parent_dir, num_builders)
+    os.chdir(os.path.join(parent_dir, "builder-1"))
 
     if new_description:
-        _update_requirements(os.path.join(parent_dir, "builder"), new_description)
+        _update_requirements(os.path.join(parent_dir, "builder-1"), new_description)
 
     _launch_agents_and_build(
         parent_dir, "Running milestone planner...",
         project_name=project_name, requirements_changed=bool(new_description),
+        num_builders=num_builders,
     )
 
 
@@ -283,6 +343,7 @@ def go(
     spec_file: Annotated[str, typer.Option(help="Path to a markdown file containing the project requirements")] = None,
     local: Annotated[bool, typer.Option(help="Use a local bare git repo instead of GitHub")] = False,
     name: Annotated[str, typer.Option(help="GitHub repo name (defaults to directory basename)")] = None,
+    builders: Annotated[int, typer.Option(help="Number of parallel builders (default 1)")] = 1,
 ) -> None:
     """Start or continue a project. Detects whether the project already exists.
 
@@ -291,10 +352,13 @@ def go(
 
     --directory is the project working directory — relative or absolute.
     --name optionally overrides the GitHub repo name (defaults to basename of directory).
+    --builders controls how many parallel builder agents are launched (default 1).
     """
     validate_model(model)
     os.environ["COPILOT_MODEL"] = model
     console.print(f"Using model: {model}", style="bold green")
+    if builders > 1:
+        console.print(f"Parallel builders: {builders}", style="bold green")
 
     start_dir = os.getcwd()
 
@@ -309,8 +373,14 @@ def go(
     repo_source = _find_existing_repo(parent_dir, project_name, local)
 
     if not repo_source:
-        _bootstrap_new_project(parent_dir, project_name, description, spec_file, local, start_dir)
+        _bootstrap_new_project(
+            parent_dir, project_name, description, spec_file, local, start_dir,
+            num_builders=builders,
+        )
     else:
-        _resume_existing_project(parent_dir, project_name, repo_source, description, spec_file)
+        _resume_existing_project(
+            parent_dir, project_name, repo_source, description, spec_file,
+            num_builders=builders,
+        )
 
     os.chdir(start_dir)

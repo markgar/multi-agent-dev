@@ -72,6 +72,7 @@ SPEC_FILE="$HARNESS_DIR/sample_spec_cli_calculator.md"
 PROJECT_NAME="test-run"
 RESUME=false
 MODEL=""
+BUILDERS=1
 
 # Parse arguments
 while [[ $# -gt 0 ]]; do
@@ -92,9 +93,13 @@ while [[ $# -gt 0 ]]; do
             RESUME=true
             shift
             ;;
+        --builders)
+            BUILDERS="$2"
+            shift 2
+            ;;
         *)
             echo "Unknown option: $1"
-            echo "Usage: $0 [--spec-file <path>] [--name <project>] [--model <model>] [--resume]"
+            echo "Usage: $0 [--spec-file <path>] [--name <project>] [--model <model>] [--builders <N>] [--resume]"
             exit 1
             ;;
     esac
@@ -228,9 +233,16 @@ if [[ "$RESUME" == true ]]; then
             rm -rf "$PROJ_DIR/$agent_dir"
         fi
     done
+    # Also remove numbered builder directories (builder-1, builder-2, ...)
+    for builder_dir in "$PROJ_DIR"/builder-*; do
+        if [[ -d "$builder_dir" ]]; then
+            echo "  Removing $(basename "$builder_dir")/..."
+            rm -rf "$builder_dir"
+        fi
+    done
     echo ""
 
-    GO_ARGS=(--directory "$PROJ_DIR" --model "$MODEL" --local)
+    GO_ARGS=(--directory "$PROJ_DIR" --model "$MODEL" --local --builders "$BUILDERS")
     if [[ -n "${SPEC_FILE:-}" && -f "${SPEC_FILE:-}" ]]; then
         GO_ARGS+=(--spec-file "$SPEC_FILE")
     fi
@@ -264,6 +276,7 @@ else
         --directory "$PROJ_DIR" \
         --model "$MODEL" \
         --spec-file "$SPEC_FILE" \
+        --builders "$BUILDERS" \
         --local
 
     EXIT_CODE=$?

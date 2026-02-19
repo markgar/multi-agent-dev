@@ -89,6 +89,7 @@ def run_harness() -> int:
     parser.add_argument("--name", default="test-run")
     parser.add_argument("--model", required=True, help="Copilot model to use (e.g. gpt-5.3-codex, claude-opus-4.6)")
     parser.add_argument("--resume", action="store_true")
+    parser.add_argument("--builders", type=int, default=1, help="Number of parallel builders (default 1)")
     args = parser.parse_args()
 
     python_exe = ensure_python()
@@ -134,8 +135,14 @@ def run_harness() -> int:
             if path.exists():
                 print(f"  Removing {agent_dir}/...")
                 shutil.rmtree(path)
+        # Also remove numbered builder directories (builder-1, builder-2, ...)
+        for builder_path in sorted(project_dir.glob("builder-*")):
+            if builder_path.is_dir():
+                print(f"  Removing {builder_path.name}/...")
+                shutil.rmtree(builder_path)
 
-        command = [agentic_dev, "go", "--directory", str(project_dir), "--model", args.model, "--local"]
+        command = [agentic_dev, "go", "--directory", str(project_dir), "--model", args.model, "--local",
+                   "--builders", str(args.builders)]
         if spec_file_for_resume:
             command.extend(["--spec-file", str(spec_file_for_resume)])
         exit_code = run_command(command)
@@ -174,6 +181,8 @@ def run_harness() -> int:
                 args.model,
                 "--spec-file",
                 str(spec_file),
+                "--builders",
+                str(args.builders),
                 "--local",
             ]
         )

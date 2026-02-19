@@ -112,7 +112,7 @@ _CONFLICT_RECOVERY = (
 REVIEWER_PROMPT = (
     _PRODUCTION_BAR
     + "Your only job is to review recent changes for quality issues. Read SPEC.md and "
-    "TASKS.md to understand the project goals and what was planned. Run "
+    "the milestone files in `milestones/` to understand the project goals and what was planned. Run "
     "`git diff HEAD~3 --stat` to see which files changed recently, then read the full "
     "diffs with `git diff HEAD~3`. "
     + _REVIEW_CHECKLIST
@@ -132,7 +132,7 @@ REVIEWER_PROMPT = (
 REVIEWER_COMMIT_PROMPT = (
     _PRODUCTION_BAR
     + "Your only job is to review the changes in a single commit for quality issues. "
-    "Read SPEC.md and TASKS.md ONLY to understand the project goals — do NOT review "
+    "Read SPEC.md and the milestone files in `milestones/` ONLY to understand the project goals — do NOT review "
     "those files themselves. "
     "Run `git log -1 --format=%s {commit_sha}` to see the commit message. "
     "Run `git diff {prev_sha} {commit_sha}` to get the diff. This diff is your ONLY "
@@ -159,7 +159,7 @@ REVIEWER_COMMIT_PROMPT = (
 REVIEWER_BATCH_PROMPT = (
     _PRODUCTION_BAR
     + "Your job is to review the combined changes from {commit_count} commits for "
-    "quality issues. Read SPEC.md and TASKS.md ONLY to understand the project goals — "
+    "quality issues. Read SPEC.md and the milestone files in `milestones/` ONLY to understand the project goals — "
     "do NOT review those files themselves. "
     "Run `git log --oneline {base_sha}..{head_sha}` to see the commit messages. "
     "Run `git diff {base_sha} {head_sha}` to get the combined diff. This diff is your "
@@ -189,7 +189,7 @@ REVIEWER_MILESTONE_PROMPT = (
     "review ALL the code that was built during this milestone as a cohesive whole — "
     "this is your most important review. Per-commit reviews catch local issues; "
     "milestone reviews catch how the pieces fit together. Be thorough. "
-    "Read SPEC.md and TASKS.md ONLY to understand the project goals. "
+    "Read SPEC.md and the milestone files in `milestones/` ONLY to understand the project goals. "
     "Run `git diff {milestone_start_sha} {milestone_end_sha}` to see everything that "
     "changed during this milestone. This is the complete diff of all work in the "
     "milestone. "

@@ -1,6 +1,6 @@
 """Backlog quality checker: deterministic and LLM checks for backlog planner output.
 
-Runs after the backlog planner creates BACKLOG.md and the first milestone in TASKS.md.
+Runs after the backlog planner creates BACKLOG.md and the first milestone in milestones/.
 Deterministic checks (A1-A4, B) validate structure and proportionality.
 LLM quality check (C1-C7) evaluates story semantics via a single Copilot call.
 """
@@ -8,7 +8,7 @@ LLM quality check (C1-C7) evaluates story semantics via a single Copilot call.
 import os
 import re
 
-from agentic_dev.milestone import parse_backlog, parse_milestones_from_text
+from agentic_dev.milestone import list_milestone_files, parse_backlog, parse_milestones_from_text
 from agentic_dev.prompts import BACKLOG_ORDERING_PROMPT, BACKLOG_QUALITY_PROMPT
 from agentic_dev.utils import log, run_copilot
 
@@ -180,21 +180,23 @@ def check_prohibited_content(stories: list[dict]) -> list[str]:
 
 
 def check_first_milestone(tasks_text: str) -> list[str]:
-    """A4: Validate the first milestone structure in TASKS.md.
+    """A4: Validate the first milestone structure.
 
-    Returns a list of failure messages. Empty list = pass.
+    Accepts the text content of a single milestone file (from milestones/)
+    or legacy TASKS.md content. Returns a list of failure messages.
+    Empty list = pass.
     """
     failures = []
     milestones = parse_milestones_from_text(tasks_text)
 
     if len(milestones) == 0:
-        failures.append("TASKS.md contains no milestone headings")
+        failures.append("No milestone headings found in milestone file")
         return failures
 
     if len(milestones) > 1:
         failures.append(
-            f"TASKS.md contains {len(milestones)} milestones — "
-            "backlog planner should create exactly one"
+            f"Milestone file contains {len(milestones)} milestones — "
+            "backlog planner should create exactly one per file"
         )
 
     first = milestones[0]
@@ -476,23 +478,29 @@ def run_quality_check(deterministic_warnings: list[str]) -> bool:
 def check_backlog_quality() -> bool:
     """Run the full backlog quality check pipeline.
 
-    Reads BACKLOG.md, TASKS.md, and REQUIREMENTS.md from the current directory.
-    Runs deterministic checks first, then LLM quality check if deterministic
-    checks pass.
+    Reads BACKLOG.md, milestone files from milestones/, and REQUIREMENTS.md
+    from the current directory. Runs deterministic checks first, then LLM
+    quality check if deterministic checks pass.
 
     Returns True if the backlog passed (or was fixed), False if a re-plan is needed.
     """
     # Read files
     backlog_text = _read_file_safe("BACKLOG.md")
-    tasks_text = _read_file_safe("TASKS.md")
     requirements_text = _read_file_safe("REQUIREMENTS.md")
+
+    # Read first milestone file from milestones/ directory
+    milestone_files = list_milestone_files("milestones")
+    if milestone_files:
+        tasks_text = _read_file_safe(milestone_files[0])
+    else:
+        tasks_text = ""
 
     if not backlog_text:
         log("planner", "[Backlog Checker] BACKLOG.md not found or empty — skipping checks.", style="yellow")
         return True
 
     if not tasks_text:
-        log("planner", "[Backlog Checker] TASKS.md not found or empty — skipping checks.", style="yellow")
+        log("planner", "[Backlog Checker] No milestone files found in milestones/ — skipping checks.", style="yellow")
         return True
 
     # Run deterministic checks
