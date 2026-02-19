@@ -527,4 +527,6 @@ def test_get_tasks_per_milestone_from_dir(tmp_path):
     (d / "milestone-02-members.md").write_text(MILESTONE_PARTIAL)
     result = get_tasks_per_milestone_from_dir(str(d))
     assert len(result) == 1
-    assert result[0] == {"name": "Members management", "task_count": 5}
+    assert result[0]["name"] == "Members management"
+    assert result[0]["task_count"] == 5
+    assert result[0]["path"] == str(d / "milestone-02-members.md")

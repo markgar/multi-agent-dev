@@ -1,13 +1,19 @@
-"""Tests for build loop decision logic and stuck detection."""
+"""Tests for builder claim loop, text manipulation, and decision logic."""
 
 from agentic_dev.builder import (
     BuildState,
     _MAX_FIX_ONLY_CYCLES,
-    _MAX_POST_COMPLETION_REPLANS,
     classify_remaining_work,
-    update_milestone_retry_state,
+    mark_story_claimed,
+    mark_story_completed_text,
+    find_milestone_file_for_story,
 )
 from agentic_dev.sentinel import check_agent_idle
+
+
+# ============================================
+# classify_remaining_work (pure function)
+# ============================================
 
 
 def test_all_work_done_when_agents_idle():
@@ -38,8 +44,13 @@ def test_reviews_only_with_agents_active_returns_reviews_only():
 
 
 def test_bugs_take_priority_over_reviews_only():
-    """Even with reviews, if bugs exist the signal is 'continue' (must-fix)."""
+    """Even with reviews, if bugs exist the signal is continue (must-fix)."""
     assert classify_remaining_work(bugs=1, reviews=5, tasks=0, agents_idle=True) == "continue"
+
+
+# ============================================
+# check_agent_idle (pure function from sentinel)
+# ============================================
 
 
 def test_agent_idle_when_log_old_enough():
@@ -58,48 +69,104 @@ def test_agent_idle_at_exact_threshold():
     assert check_agent_idle(log_exists=True, log_age_seconds=30.0, idle_threshold=30.0) is True
 
 
-def test_stuck_milestone_detected_after_max_retries():
-    is_stuck, count = update_milestone_retry_state(
-        current_name="API endpoints", current_done=2,
-        last_name="API endpoints", last_done=2,
-        retry_count=2, max_retries=3,
-    )
-    assert is_stuck is True
-    assert count == 3
+# ============================================
+# mark_story_claimed (pure function)
+# ============================================
+
+_SAMPLE_BACKLOG = """# Backlog
+
+1. [x] Project scaffolding <!-- depends: -->
+2. [ ] Members backend <!-- depends: 1 -->
+3. [ ] Members frontend <!-- depends: 2 -->
+4. [~] Events backend <!-- depends: 1 -->
+5. [ ] Events frontend <!-- depends: 4 -->
+"""
 
 
-def test_milestone_not_stuck_when_progress_is_made():
-    is_stuck, count = update_milestone_retry_state(
-        current_name="API endpoints", current_done=3,
-        last_name="API endpoints", last_done=2,
-        retry_count=2, max_retries=3,
-    )
-    assert is_stuck is False
-    assert count == 0
+def test_mark_story_claimed_marks_correct_story():
+    result = mark_story_claimed(_SAMPLE_BACKLOG, 2)
+    assert "2. [~] Members backend" in result
+    # Other stories unchanged
+    assert "1. [x] Project scaffolding" in result
+    assert "3. [ ] Members frontend" in result
+    assert "4. [~] Events backend" in result
 
 
-def test_new_milestone_resets_retry_count():
-    is_stuck, count = update_milestone_retry_state(
-        current_name="Core data models", current_done=0,
-        last_name="Project scaffolding", last_done=4,
-        retry_count=2, max_retries=3,
-    )
-    assert is_stuck is False
-    assert count == 0
+def test_mark_story_claimed_does_not_modify_already_claimed():
+    result = mark_story_claimed(_SAMPLE_BACKLOG, 4)
+    # Story 4 is already [~], should not change
+    assert result == _SAMPLE_BACKLOG
 
 
-def test_first_cycle_with_no_previous_milestone():
-    is_stuck, count = update_milestone_retry_state(
-        current_name="Project scaffolding", current_done=0,
-        last_name=None, last_done=-1,
-        retry_count=0, max_retries=3,
-    )
-    assert is_stuck is False
-    assert count == 0
+def test_mark_story_claimed_does_not_modify_completed():
+    result = mark_story_claimed(_SAMPLE_BACKLOG, 1)
+    # Story 1 is already [x], should not change
+    assert result == _SAMPLE_BACKLOG
 
 
-def test_fix_only_cycles_default_to_zero():
+def test_mark_story_claimed_handles_no_match():
+    result = mark_story_claimed(_SAMPLE_BACKLOG, 99)
+    assert result == _SAMPLE_BACKLOG
+
+
+def test_mark_story_claimed_handles_story_with_dependencies():
+    content = "1. [ ] Setup\n2. [ ] Feature A <!-- depends: 1 -->\n"
+    result = mark_story_claimed(content, 2)
+    assert "2. [~] Feature A <!-- depends: 1 -->" in result
+    assert "1. [ ] Setup" in result
+
+
+def test_mark_story_claimed_handles_story_at_end_without_trailing_newline():
+    content = "1. [ ] Setup\n2. [ ] Feature A"
+    result = mark_story_claimed(content, 2)
+    assert "2. [~] Feature A" in result
+
+
+# ============================================
+# mark_story_completed_text (pure function)
+# ============================================
+
+
+def test_mark_story_completed_changes_tilde_to_x():
+    result = mark_story_completed_text(_SAMPLE_BACKLOG, 4)
+    assert "4. [x] Events backend" in result
+    # Other stories unchanged
+    assert "1. [x] Project scaffolding" in result
+    assert "2. [ ] Members backend" in result
+
+
+def test_mark_story_completed_does_not_modify_unclaimed():
+    result = mark_story_completed_text(_SAMPLE_BACKLOG, 2)
+    # Story 2 is [ ], should not change
+    assert result == _SAMPLE_BACKLOG
+
+
+def test_mark_story_completed_does_not_modify_already_completed():
+    result = mark_story_completed_text(_SAMPLE_BACKLOG, 1)
+    # Story 1 is already [x], should not change
+    assert result == _SAMPLE_BACKLOG
+
+
+def test_mark_story_completed_handles_no_match():
+    result = mark_story_completed_text(_SAMPLE_BACKLOG, 99)
+    assert result == _SAMPLE_BACKLOG
+
+
+def test_mark_story_completed_handles_dependencies():
+    content = "1. [~] Setup <!-- depends: -->\n2. [ ] Feature A <!-- depends: 1 -->\n"
+    result = mark_story_completed_text(content, 1)
+    assert "1. [x] Setup <!-- depends: -->" in result
+    assert "2. [ ] Feature A <!-- depends: 1 -->" in result
+
+
+# ============================================
+# BuildState defaults
+# ============================================
+
+
+def test_build_state_defaults():
     state = BuildState()
+    assert state.cycle_count == 0
     assert state.fix_only_cycles == 0
 
 
@@ -108,58 +175,36 @@ def test_fix_only_cycle_limit_is_reasonable():
     assert _MAX_FIX_ONLY_CYCLES <= 10
 
 
-def test_fix_only_cycles_increment_independently_of_cycle_count():
-    state = BuildState()
-    state.cycle_count = 10
-    state.fix_only_cycles = 1
-    assert state.fix_only_cycles < state.cycle_count
+# ============================================
+# find_milestone_file_for_story
+# ============================================
 
 
-def test_post_completion_replans_default_to_zero():
-    state = BuildState()
-    assert state.post_completion_replans == 0
+def test_find_milestone_file_returns_incomplete(tmp_path):
+    ms_dir = tmp_path / "milestones"
+    ms_dir.mkdir()
+
+    complete = ms_dir / "milestone-01-setup.md"
+    complete.write_text("## Milestone: Setup\n- [x] Init project\n- [x] Add readme\n")
+
+    incomplete = ms_dir / "milestone-02-api.md"
+    incomplete.write_text("## Milestone: API\n- [x] Add models\n- [ ] Add endpoints\n")
+
+    result = find_milestone_file_for_story(str(ms_dir))
+    assert result == str(incomplete)
 
 
-def test_post_completion_replan_limit_is_at_least_one():
-    assert _MAX_POST_COMPLETION_REPLANS >= 1
+def test_find_milestone_file_returns_none_when_all_complete(tmp_path):
+    ms_dir = tmp_path / "milestones"
+    ms_dir.mkdir()
+
+    complete = ms_dir / "milestone-01-setup.md"
+    complete.write_text("## Milestone: Setup\n- [x] Init project\n")
+
+    result = find_milestone_file_for_story(str(ms_dir))
+    assert result is None
 
 
-def test_post_completion_replan_limit_only_applies_when_backlog_empty():
-    """After all milestones are done and no backlog stories remain, the planner
-    should only get a limited number of chances to create new cleanup milestones
-    before the builder stops re-planning. When backlog stories exist, the limit
-    is reset and story expansion takes precedence."""
-    assert _MAX_POST_COMPLETION_REPLANS <= 3
-
-
-def test_consecutive_milestones_do_not_accumulate_retry_count():
-    """Regression: _update_state_from_replan sets last_milestone_name to the
-    new milestone but did not reset milestone_retry_count. After 3 consecutive
-    milestones the retry counter hit _MAX_MILESTONE_RETRIES and falsely
-    declared the builder stuck — causing early exit with 17 stories remaining."""
-    state = BuildState()
-
-    # Simulate 3 consecutive milestone expansions via _update_state_from_replan.
-    # Each time the planner creates a new milestone at 0 tasks done and sets
-    # state via _update_state_from_replan.  Then _detect_milestone_progress
-    # sees current_name == last_name with current_done == last_done == 0.
-    for i, name in enumerate(["Milestone-A", "Milestone-B", "Milestone-C", "Milestone-D"]):
-        # Simulate what _update_state_from_replan does (with the fix)
-        state.last_milestone_name = name
-        state.last_milestone_done_count = 0
-        state.milestone_retry_count = 0  # the fix
-
-        # Simulate what _detect_milestone_progress sees on the next cycle:
-        # same name, same done count
-        is_stuck, new_count = update_milestone_retry_state(
-            current_name=name, current_done=0,
-            last_name=state.last_milestone_name,
-            last_done=state.last_milestone_done_count,
-            retry_count=state.milestone_retry_count,
-            max_retries=3,
-        )
-        state.milestone_retry_count = new_count
-
-        # Should never be stuck on the first attempt of a freshly-expanded milestone
-        assert not is_stuck, f"Falsely stuck on {name} (cycle {i+1})"
-        assert new_count == 1  # first attempt, no progress yet
+def test_find_milestone_file_returns_none_when_dir_missing(tmp_path):
+    result = find_milestone_file_for_story(str(tmp_path / "nonexistent"))
+    assert result is None

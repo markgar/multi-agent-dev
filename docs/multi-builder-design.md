@@ -245,7 +245,7 @@ Use `tmp_path` fixture to create real directories and files.
 
 ---
 
-### Session 2: Planner Writes to milestones/ (prompts + planner.py)
+### Session 2: Planner Writes to milestones/ (prompts + planner.py) ✅
 
 **Goal:** Change planner output from appending to TASKS.md to writing individual milestone files in `milestones/`. The builder still runs the old way — this session only changes the planning side.
 

@@ -2,7 +2,7 @@
 
 import pytest
 
-from agentic_dev.sentinel import check_builder_done_status
+from agentic_dev.sentinel import check_builder_done_status, check_all_builders_done_status
 from agentic_dev.utils import (
     count_unchecked_items,
     find_project_root,
@@ -322,3 +322,87 @@ def test_count_open_bugs(tmp_path):
     (d / "fixed-20260215-120000.md").write_text("patched")
     (d / ".gitkeep").write_text("")
     assert count_open_items_in_dir(str(d), "bug-", "fixed-") == 1
+
+
+# --- builder-N directory recognition ---
+
+def test_find_project_root_recognizes_builder_numbered_dirs():
+    assert find_project_root("/home/user/project/builder-1") == "/home/user/project"
+    assert find_project_root("/home/user/project/builder-2") == "/home/user/project"
+    assert find_project_root("/home/user/project/builder-10") == "/home/user/project"
+
+
+def test_find_project_root_ignores_non_matching_builder_dirs():
+    # These should NOT be treated as agent directories
+    assert find_project_root("/home/user/project/builder-") == "/home/user/project/builder-"
+    assert find_project_root("/home/user/project/builder-abc") == "/home/user/project/builder-abc"
+    assert find_project_root("/home/user/project/builder1") == "/home/user/project/builder1"
+
+
+# --- coordination-only with milestones/ and BACKLOG.md ---
+
+def test_backlog_only_commit_is_coordination_only():
+    assert is_coordination_only_files(["BACKLOG.md"]) is True
+
+
+def test_milestones_md_is_coordination_only():
+    assert is_coordination_only_files(["milestones/milestone-01-setup.md"]) is True
+
+
+def test_milestones_and_tasks_are_coordination_only():
+    assert is_coordination_only_files(["TASKS.md", "milestones/milestone-02-api.md", "BACKLOG.md"]) is True
+
+
+def test_milestones_with_code_is_not_coordination_only():
+    assert is_coordination_only_files(["milestones/milestone-01-setup.md", "src/main.py"]) is False
+
+
+def test_milestones_non_md_is_not_coordination_only():
+    assert is_coordination_only_files(["milestones/data.json"]) is False
+
+
+# --- check_all_builders_done_status (multi-builder sentinel) ---
+
+def test_all_builders_done_when_all_have_sentinels():
+    assert check_all_builders_done_status(
+        builder_logs=["builder-1.log", "builder-2.log"],
+        builder_dones={"builder-1.done", "builder-2.done"},
+        log_ages={"builder-1.log": 5.0, "builder-2.log": 3.0},
+        timeout_minutes=30.0,
+    ) is True
+
+
+def test_not_done_when_one_builder_missing_sentinel():
+    assert check_all_builders_done_status(
+        builder_logs=["builder-1.log", "builder-2.log"],
+        builder_dones={"builder-1.done"},
+        log_ages={"builder-1.log": 5.0, "builder-2.log": 3.0},
+        timeout_minutes=30.0,
+    ) is False
+
+
+def test_done_when_missing_sentinel_but_log_is_stale():
+    assert check_all_builders_done_status(
+        builder_logs=["builder-1.log", "builder-2.log"],
+        builder_dones={"builder-1.done"},
+        log_ages={"builder-1.log": 5.0, "builder-2.log": 35.0},
+        timeout_minutes=30.0,
+    ) is True
+
+
+def test_not_done_when_no_builder_logs_exist():
+    assert check_all_builders_done_status(
+        builder_logs=[],
+        builder_dones=set(),
+        log_ages={},
+        timeout_minutes=30.0,
+    ) is False
+
+
+def test_single_builder_done_status():
+    assert check_all_builders_done_status(
+        builder_logs=["builder-1.log"],
+        builder_dones={"builder-1.done"},
+        log_ages={"builder-1.log": 2.0},
+        timeout_minutes=30.0,
+    ) is True

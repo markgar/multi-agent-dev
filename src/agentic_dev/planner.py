@@ -5,7 +5,7 @@ import os
 import typer
 
 from agentic_dev.backlog_checker import check_backlog_quality, run_ordering_check
-from agentic_dev.milestone import get_tasks_per_milestone
+from agentic_dev.milestone import get_tasks_per_milestone_from_dir
 from agentic_dev.prompts import (
     PLANNER_COMPLETENESS_PROMPT,
     PLANNER_INITIAL_PROMPT,
@@ -23,14 +23,20 @@ def register(app: typer.Typer) -> None:
     app.command()(plan)
 
 
-def plan(requirements_changed: bool = False) -> bool:
-    """Run the planner to create or update TASKS.md based on SPEC.md.
+def plan(requirements_changed: bool = False, story_name: str = "") -> bool:
+    """Run the planner to create or update milestones based on SPEC.md.
+
+    When story_name is provided, it is interpolated into the PLANNER_PROMPT
+    so the LLM knows which story to expand.
 
     Returns True if planning succeeded, False if it failed.
     """
     log("planner", "")
     log("planner", "[Planner] Evaluating project state...", style="magenta")
     log("planner", "")
+
+    # Ensure milestones/ directory exists before any planner invocation
+    os.makedirs("milestones", exist_ok=True)
 
     is_fresh = not os.path.exists("BACKLOG.md")
 
@@ -67,7 +73,7 @@ def plan(requirements_changed: bool = False) -> bool:
         run_ordering_check()
     else:
         # Case B/C: continuing or evolving project
-        prompt = PLANNER_PROMPT
+        prompt = PLANNER_PROMPT.format(story_name=story_name if story_name else "the next eligible story")
         if requirements_changed:
             prefix = (
                 "IMPORTANT: REQUIREMENTS.md was JUST updated with new requirements this session. "
@@ -77,7 +83,7 @@ def plan(requirements_changed: bool = False) -> bool:
                 "'everything is already covered' without checking each requirement against "
                 "the backlog and existing milestones.\n\n"
             )
-            prompt = prefix + PLANNER_PROMPT
+            prompt = prefix + prompt
 
         exit_code = run_copilot("planner", prompt)
         if exit_code != 0:
@@ -97,7 +103,7 @@ def plan(requirements_changed: bool = False) -> bool:
 def check_milestone_sizes() -> None:
     """If any uncompleted milestone exceeds the task limit, ask the planner to split it."""
     oversized = [
-        ms for ms in get_tasks_per_milestone("TASKS.md")
+        ms for ms in get_tasks_per_milestone_from_dir("milestones")
         if ms["task_count"] > _MAX_TASKS_PER_MILESTONE
     ]
     for ms in oversized:
@@ -109,6 +115,7 @@ def check_milestone_sizes() -> None:
         )
         prompt = PLANNER_SPLIT_PROMPT.format(
             milestone_name=ms["name"],
+            milestone_file=ms["path"],
             task_count=ms["task_count"],
         )
         run_copilot("planner", prompt)
@@ -116,7 +123,7 @@ def check_milestone_sizes() -> None:
     # Verify once — if still oversized after one attempt, log a warning and proceed
     if oversized:
         still_oversized = [
-            ms for ms in get_tasks_per_milestone("TASKS.md")
+            ms for ms in get_tasks_per_milestone_from_dir("milestones")
             if ms["task_count"] > _MAX_TASKS_PER_MILESTONE
         ]
         for ms in still_oversized:

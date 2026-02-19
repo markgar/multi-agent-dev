@@ -383,13 +383,14 @@ def list_milestone_files(milestones_dir: str = "milestones") -> list[str]:
 def get_all_milestones(milestones_dir: str = "milestones") -> list[dict]:
     """Parse all milestone files and return milestone info for each.
 
-    Returns [{"name": str, "done": int, "total": int, "all_done": bool}, ...]
+    Returns [{"name": str, "done": int, "total": int, "all_done": bool, "path": str}, ...]
     in filename-sorted order. Skips files that fail to parse.
     """
     results = []
     for path in list_milestone_files(milestones_dir):
         ms = parse_milestone_file(path)
         if ms is not None:
+            ms["path"] = path
             results.append(ms)
     return results
 
@@ -423,11 +424,11 @@ def get_milestone_progress_from_file(path: str) -> dict | None:
 def get_tasks_per_milestone_from_dir(milestones_dir: str = "milestones") -> list[dict]:
     """Return task counts for each uncompleted milestone in the directory.
 
-    Returns [{"name": str, "task_count": int}, ...]
+    Returns [{"name": str, "task_count": int, "path": str}, ...]
     Replacement for get_tasks_per_milestone("TASKS.md").
     """
     return [
-        {"name": ms["name"], "task_count": ms["total"]}
+        {"name": ms["name"], "task_count": ms["total"], "path": ms["path"]}
         for ms in get_all_milestones(milestones_dir)
         if not ms["all_done"]
     ]

@@ -26,15 +26,18 @@ def pushd(path: str) -> Generator[None, None, None]:
 
 
 _AGENT_DIRS = {"builder", "reviewer", "tester", "validator", "watcher"}
+_BUILDER_DIR_RE = re.compile(r"^builder-\d+$")
 
 
 def find_project_root(cwd: str) -> str:
     """Determine the project root from a working directory path.
 
-    Pure function: if cwd ends in an agent directory name, returns the parent.
+    Pure function: if cwd ends in an agent directory name (including
+    numbered builder dirs like builder-1, builder-2), returns the parent.
     Otherwise returns cwd itself.
     """
-    if os.path.basename(cwd) in _AGENT_DIRS:
+    basename = os.path.basename(cwd)
+    if basename in _AGENT_DIRS or _BUILDER_DIR_RE.match(basename):
         return os.path.dirname(cwd)
     return cwd
 

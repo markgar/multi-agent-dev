@@ -1,6 +1,8 @@
 """Builder-done sentinel and reviewer checkpoint persistence."""
 
+import glob
 import os
+import re
 from datetime import datetime
 
 from agentic_dev.utils import resolve_logs_dir
@@ -8,6 +10,7 @@ from agentic_dev.utils import resolve_logs_dir
 _BUILDER_DONE_FILE = "builder.done"
 _BUILDER_LOG_FILE = "builder.log"
 _STALE_LOG_TIMEOUT_MINUTES = 30
+_BUILDER_ID_RE = re.compile(r"^builder-(\d+)\.(done|log)$")
 _REVIEWER_CHECKPOINT_FILE = "reviewer.checkpoint"
 _REVIEWER_LOG_FILE = "reviewer.log"
 _TESTER_LOG_FILE = "tester.log"
@@ -15,24 +18,33 @@ _VALIDATOR_LOG_FILE = "validator.log"
 _AGENT_IDLE_SECONDS = 120
 
 
-def write_builder_done() -> None:
-    """Write a sentinel file indicating the builder has finished."""
+def write_builder_done(builder_id: int = 1) -> None:
+    """Write logs/builder-{builder_id}.done sentinel."""
     try:
         logs_dir = resolve_logs_dir()
-        sentinel = os.path.join(logs_dir, _BUILDER_DONE_FILE)
+        sentinel = os.path.join(logs_dir, f"builder-{builder_id}.done")
         with open(sentinel, "w", encoding="utf-8") as f:
             f.write(datetime.now().strftime("%Y-%m-%d %H:%M:%S") + "\n")
     except Exception:
         pass
 
 
-def clear_builder_done() -> None:
-    """Remove the builder-done sentinel so agents don't exit prematurely."""
+def clear_builder_done(num_builders: int = 1) -> None:
+    """Remove all builder-N.done sentinels for N in 1..num_builders.
+
+    Also removes the legacy builder.done sentinel if it exists.
+    """
     try:
         logs_dir = resolve_logs_dir()
-        sentinel = os.path.join(logs_dir, _BUILDER_DONE_FILE)
-        if os.path.exists(sentinel):
-            os.remove(sentinel)
+        # Remove numbered sentinels
+        for i in range(1, num_builders + 1):
+            sentinel = os.path.join(logs_dir, f"builder-{i}.done")
+            if os.path.exists(sentinel):
+                os.remove(sentinel)
+        # Remove legacy sentinel
+        legacy = os.path.join(logs_dir, _BUILDER_DONE_FILE)
+        if os.path.exists(legacy):
+            os.remove(legacy)
     except Exception:
         pass
 
@@ -51,24 +63,78 @@ def check_builder_done_status(
     return False
 
 
+def check_all_builders_done_status(
+    builder_logs: list[str],
+    builder_dones: set[str],
+    log_ages: dict[str, float],
+    timeout_minutes: float,
+) -> bool:
+    """Determine if all builders should be considered done.
+
+    Pure function. Returns True when at least one builder log exists AND every
+    builder log has a matching done sentinel or is stale (age >= timeout).
+    """
+    if not builder_logs:
+        return False
+    for log_name in builder_logs:
+        done_name = log_name.replace(".log", ".done")
+        if done_name in builder_dones:
+            continue
+        age = log_ages.get(log_name, 0.0)
+        if age >= timeout_minutes:
+            continue
+        return False
+    return True
+
+
 def is_builder_done() -> bool:
-    """Check if the builder has finished.
+    """Check if ALL builders have finished.
+
+    Discovery-based: lists logs/builder-*.log to find active builders,
+    then checks each has a matching builder-*.done sentinel.
 
     Returns True if:
-      1. The sentinel file logs/builder.done exists, OR
-      2. logs/builder.log exists but hasn't been modified in 30+ minutes (crash fallback).
+      1. At least one builder-N.log exists AND every builder-N.log has
+         a matching builder-N.done sentinel, OR
+      2. All builder-N.log files are stale (30+ minutes without writes).
+
+    Also handles the legacy single builder.done / builder.log files.
     """
     try:
         logs_dir = resolve_logs_dir()
+        now = datetime.now().timestamp()
 
+        # Discover builder log files (builder-N.log pattern)
+        all_files = os.listdir(logs_dir)
+        builder_logs = []
+        builder_dones: set[str] = set()
+        log_ages: dict[str, float] = {}
+
+        for fname in all_files:
+            m = _BUILDER_ID_RE.match(fname)
+            if m:
+                if m.group(2) == "log":
+                    builder_logs.append(fname)
+                    path = os.path.join(logs_dir, fname)
+                    mtime = os.path.getmtime(path)
+                    log_ages[fname] = (now - mtime) / 60
+                elif m.group(2) == "done":
+                    builder_dones.add(fname)
+
+        # If numbered builders exist, use multi-builder logic
+        if builder_logs:
+            return check_all_builders_done_status(
+                builder_logs, builder_dones, log_ages, _STALE_LOG_TIMEOUT_MINUTES
+            )
+
+        # Legacy fallback: single builder.done / builder.log
         sentinel_exists = os.path.exists(os.path.join(logs_dir, _BUILDER_DONE_FILE))
-
         builder_log = os.path.join(logs_dir, _BUILDER_LOG_FILE)
         log_exists = os.path.exists(builder_log)
         log_age_minutes = 0.0
         if log_exists:
             mtime = os.path.getmtime(builder_log)
-            log_age_minutes = (datetime.now().timestamp() - mtime) / 60
+            log_age_minutes = (now - mtime) / 60
 
         return check_builder_done_status(
             sentinel_exists, log_exists, log_age_minutes, _STALE_LOG_TIMEOUT_MINUTES
