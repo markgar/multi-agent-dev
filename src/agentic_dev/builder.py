@@ -68,6 +68,21 @@ def mark_story_completed_text(content: str, story_number: int) -> str:
     return "\n".join(lines)
 
 
+def mark_story_unclaimed_text(content: str, story_number: int) -> str:
+    """Replace [~] with [ ] for the given story number in backlog text.
+
+    Pure function: returns the modified content string. Reverts a claimed
+    story back to unclaimed so another builder can pick it up.
+    """
+    lines = content.split("\n")
+    for i, line in enumerate(lines):
+        m = _BACKLOG_LINE_RE.match(line.strip())
+        if m and int(m.group(1)) == story_number and m.group(2) == "~":
+            lines[i] = line.replace("[~]", "[ ]", 1)
+            break
+    return "\n".join(lines)
+
+
 # ============================================
 # Git-based story claim and completion
 # ============================================
@@ -171,6 +186,52 @@ def mark_story_completed(story_number: int, agent_name: str, max_attempts: int =
             run_cmd(["git", "pull", "--rebase"], quiet=True)
 
     log(agent_name, f"Failed to mark story {story_number} complete after {max_attempts} attempts.", style="red")
+    return False
+
+
+def unclaim_story(story_number: int, agent_name: str, max_attempts: int = 5) -> bool:
+    """Revert a claimed story back to unclaimed in BACKLOG.md ([~] -> [ ]).
+
+    Used when the planner fails to produce a valid milestone file, so the
+    story can be retried later (possibly by another builder).
+    Uses the same git-push-as-lock pattern as claim_next_story.
+    Returns True if successfully unclaimed, False if failed after retries.
+    """
+    for attempt in range(1, max_attempts + 1):
+        run_cmd(["git", "pull", "--rebase", "-q"], quiet=True)
+
+        try:
+            with open(_BACKLOG_FILE, "r", encoding="utf-8") as f:
+                content = f.read()
+            new_content = mark_story_unclaimed_text(content, story_number)
+            if new_content == content:
+                log(agent_name, f"WARNING: Story {story_number} not in [~] state -- cannot unclaim.", style="yellow")
+                return True  # idempotent
+            with open(_BACKLOG_FILE, "w", encoding="utf-8") as f:
+                f.write(new_content)
+        except Exception as e:
+            log(agent_name, f"WARNING: Failed to update BACKLOG.md: {e}", style="yellow")
+            return False
+
+        run_cmd(["git", "add", _BACKLOG_FILE])
+        run_cmd(["git", "commit", "-m", f"[builder] Unclaim story {story_number} (milestone planning failed)"])
+
+        push_result = run_cmd(["git", "push"], capture=True)
+        if push_result.returncode == 0:
+            log(agent_name, f"Unclaimed story {story_number}.", style="yellow")
+            return True
+
+        log(
+            agent_name,
+            f"Push failed unclaiming story {story_number} (attempt {attempt}/{max_attempts}).",
+            style="yellow",
+        )
+        pull_result = run_cmd(["git", "pull", "--rebase"], capture=True)
+        if pull_result.returncode != 0:
+            run_cmd(["git", "rebase", "--abort"], quiet=True)
+            run_cmd(["git", "pull", "--rebase"], quiet=True)
+
+    log(agent_name, f"Failed to unclaim story {story_number} after {max_attempts} attempts.", style="red")
     return False
 
 
@@ -452,10 +513,11 @@ def build(
 
         milestone_file = find_milestone_file_for_story("milestones")
         if not milestone_file:
-            log(agent_name, "WARNING: Planner did not create a milestone file.", style="yellow")
-            # Mark story completed anyway to avoid blocking
-            mark_story_completed(story["number"], agent_name)
-            continue
+            log(agent_name, "ERROR: Planner did not create a milestone file with checkboxes.", style="bold red")
+            log(agent_name, "Unclaiming story and stopping builder.", style="bold red")
+            unclaim_story(story["number"], agent_name)
+            write_builder_done(builder_id)
+            return
 
         # Build the milestone
         milestones_before = {

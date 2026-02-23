@@ -6,6 +6,7 @@ from agentic_dev.builder import (
     classify_remaining_work,
     mark_story_claimed,
     mark_story_completed_text,
+    mark_story_unclaimed_text,
     find_milestone_file_for_story,
 )
 from agentic_dev.sentinel import check_agent_idle
@@ -156,6 +157,43 @@ def test_mark_story_completed_handles_dependencies():
     content = "1. [~] Setup <!-- depends: -->\n2. [ ] Feature A <!-- depends: 1 -->\n"
     result = mark_story_completed_text(content, 1)
     assert "1. [x] Setup <!-- depends: -->" in result
+    assert "2. [ ] Feature A <!-- depends: 1 -->" in result
+
+
+# ============================================
+# mark_story_unclaimed_text (pure function)
+# ============================================
+
+
+def test_unclaim_reverts_claimed_to_unclaimed():
+    result = mark_story_unclaimed_text(_SAMPLE_BACKLOG, 4)
+    assert "4. [ ] Events backend" in result
+    # Other stories unchanged
+    assert "1. [x] Project scaffolding" in result
+    assert "2. [ ] Members backend" in result
+
+
+def test_unclaim_does_not_modify_unclaimed():
+    result = mark_story_unclaimed_text(_SAMPLE_BACKLOG, 2)
+    # Story 2 is already [ ], should not change
+    assert result == _SAMPLE_BACKLOG
+
+
+def test_unclaim_does_not_modify_completed():
+    result = mark_story_unclaimed_text(_SAMPLE_BACKLOG, 1)
+    # Story 1 is [x], should not change
+    assert result == _SAMPLE_BACKLOG
+
+
+def test_unclaim_handles_no_match():
+    result = mark_story_unclaimed_text(_SAMPLE_BACKLOG, 99)
+    assert result == _SAMPLE_BACKLOG
+
+
+def test_unclaim_handles_dependencies():
+    content = "1. [~] Setup <!-- depends: -->\n2. [ ] Feature A <!-- depends: 1 -->\n"
+    result = mark_story_unclaimed_text(content, 1)
+    assert "1. [ ] Setup <!-- depends: -->" in result
     assert "2. [ ] Feature A <!-- depends: 1 -->" in result
 
 
