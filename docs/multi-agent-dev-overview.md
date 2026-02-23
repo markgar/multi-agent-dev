@@ -146,7 +146,7 @@ copilot --yolo --model claude-opus-4.6 \
 | Agent | Role | Reads | Writes |
 |---|---|---|---|
 | **Planner** | Decomposes requirements into stories & milestones | SPEC.md, REQUIREMENTS.md, codebase | BACKLOG.md, milestones/ |
-| **Builder** | Claims stories, plans milestones, writes code | milestones/, bugs/, reviews/, DEPLOY.md | Application code |
+| **Builder** | Claims stories, plans milestones, writes code | milestones/, bugs/, reviews/, DEPLOY.md, REVIEW-THEMES.md | Application code |
 | **Commit Watcher** | Per-commit code review | Git diffs | finding-*.md, note-*.md |
 | **Milestone Reviewer** | Cross-cutting milestone review + note filtering | Full milestone diff, note-*.md | finding-*.md, REVIEW-THEMES.md |
 | **Tester** | Scoped tests on milestone completion | Changed files, existing tests | Test files, bug-*.md |
@@ -262,11 +262,11 @@ Builder updates conventions as project grows → all agents read it → consiste
 Graceful multi-builder shutdown with **no orphaned work**:
 
 1. Builder finds no eligible stories → waits for downstream agents to go idle
-2. Monitors `reviewer.log`, `tester.log`, `validator.log` modification times
+2. Monitors `reviewer.log`, `milestone-reviewer.log`, `tester.log`, `validator.log` modification times
 3. Pulls latest — checks for open bugs, open findings, unchecked tasks
 4. If new work found → fix it (up to 4 cycles) → re-check
 5. All clean → writes `logs/builder-N.done`
-6. All builders done → reviewer, tester, validator see it and exit
+6. All builders done → all agents see it, drain remaining work, and exit
 7. Crash fallback: 30 min log inactivity → assume crash → shutdown
 
 ---
@@ -349,7 +349,7 @@ agentic-dev go \
   --spec-file stretto-spec.md
 ```
 
-*Watch five terminal windows coordinate to build a multi-tenant SaaS platform from a requirements document.*
+*Watch six terminal windows coordinate to build a multi-tenant SaaS platform from a requirements document.*
 
 ---
 
