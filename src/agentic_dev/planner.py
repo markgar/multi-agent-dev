@@ -7,7 +7,7 @@ import typer
 
 from agentic_dev.backlog_checker import check_backlog_quality, run_ordering_check
 from agentic_dev.git_helpers import git_push_with_retry
-from agentic_dev.milestone import get_tasks_per_milestone_from_dir, list_milestone_files
+from agentic_dev.milestone import get_tasks_per_milestone_from_dir, list_milestone_files, parse_backlog
 from agentic_dev.prompts import (
     PLANNER_COMPLETENESS_PROMPT,
     PLANNER_INITIAL_PROMPT,
@@ -17,7 +17,7 @@ from agentic_dev.prompts import (
 from agentic_dev.utils import log, run_cmd, run_copilot
 
 
-_MAX_TASKS_PER_MILESTONE = 10
+_MAX_TASKS_PER_MILESTONE = 8
 
 # Regex matching the first story line in BACKLOG.md: "1. [ ] Story name"
 _FIRST_STORY_RE = re.compile(r"^(1\.\s+)\[ \](.*)$", re.MULTILINE)
@@ -60,6 +60,25 @@ def register(app: typer.Typer) -> None:
     app.command()(plan)
 
 
+def _get_first_story_name() -> str:
+    """Extract the name of story #1 from BACKLOG.md.
+
+    Returns the story name for passing to the milestone planner prompt.
+    Falls back to a generic label if BACKLOG.md can't be read or parsed.
+    """
+    if not os.path.exists("BACKLOG.md"):
+        return "the first story"
+    try:
+        with open("BACKLOG.md", "r", encoding="utf-8") as f:
+            content = f.read()
+        stories = parse_backlog(content)
+        if stories:
+            return stories[0]["name"]
+    except (OSError, IndexError):
+        pass
+    return "the first story"
+
+
 def plan(requirements_changed: bool = False, story_name: str = "") -> bool:
     """Run the planner to create or update milestones based on SPEC.md.
 
@@ -78,8 +97,8 @@ def plan(requirements_changed: bool = False, story_name: str = "") -> bool:
     is_fresh = not os.path.exists("BACKLOG.md")
 
     if is_fresh:
-        # Case A: fresh project — create backlog and first milestone
-        log("planner", "[Backlog Planner] Fresh project — creating backlog and first milestone...", style="magenta")
+        # Case A: fresh project — create backlog, validate, then plan first milestone
+        log("planner", "[Backlog Planner] Fresh project — creating backlog...", style="magenta")
         exit_code = run_copilot("planner", PLANNER_INITIAL_PROMPT)
         if exit_code != 0:
             log("planner", "")
@@ -87,9 +106,6 @@ def plan(requirements_changed: bool = False, story_name: str = "") -> bool:
             log("planner", " Planner failed! Check errors above", style="bold red")
             log("planner", "======================================", style="bold red")
             return False
-
-        # Deterministically check off story #1 now that its milestone exists
-        _ensure_first_story_checked()
 
         # Completeness pass: validate backlog covers all requirements
         log("planner", "")
@@ -111,6 +127,19 @@ def plan(requirements_changed: bool = False, story_name: str = "") -> bool:
 
         # Ordering pass: ensure stories are in topological dependency order
         run_ordering_check()
+
+        # Plan the first milestone now that backlog quality is confirmed
+        first_story_name = _get_first_story_name()
+        log("planner", "")
+        log("planner", f"[Backlog Planner] Planning first milestone: {first_story_name}...", style="magenta")
+        milestone_prompt = PLANNER_PROMPT.format(story_name=first_story_name)
+        exit_code = run_copilot("planner", milestone_prompt)
+        if exit_code != 0:
+            log("planner", "[Backlog Planner] First milestone planning failed.", style="bold red")
+            return False
+
+        # Mark story #1 as checked now that its milestone exists
+        _ensure_first_story_checked()
     else:
         # Case B/C: continuing or evolving project
         prompt = PLANNER_PROMPT.format(story_name=story_name if story_name else "the next eligible story")

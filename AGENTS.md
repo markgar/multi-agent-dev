@@ -29,12 +29,15 @@ The planner uses different prompts depending on the project state:
 
 ### Backlog Planning (fresh project)
 
-When no BACKLOG.md exists, the planner runs two focused Copilot calls:
+When no BACKLOG.md exists, the planner runs a multi-step pipeline that separates backlog creation from milestone planning. The backlog is fully validated before any milestone is planned:
 
-1. **Backlog creation** — Reads REQUIREMENTS.md and SPEC.md, decomposes all requirements into an ordered story queue (BACKLOG.md) with dependency annotations, checks off the first story, and writes the first milestone file in `milestones/`.
+1. **Backlog creation** — Reads REQUIREMENTS.md and SPEC.md, decomposes all requirements into an ordered story queue (BACKLOG.md) with dependency annotations. Does NOT create milestone files — the backlog must pass quality checks first.
 2. **Completeness check** — A separate Copilot call reviews the backlog against REQUIREMENTS.md and SPEC.md. It walks through every section and subsection to verify coverage. Any gaps (missing feature stories, uncovered technical concerns like API client generation, seed data, navigation structure) are added as new stories.
+3. **Quality gate** — Deterministic structural checks (A1-A3, B) and LLM quality review (C1-C7, C5b) validate the backlog. If structural checks fail, the backlog planner is re-invoked. A4 (milestone checks) is skipped since no milestone exists yet.
+4. **Ordering check** — Stories are reordered for maximum parallel builder throughput.
+5. **First milestone planning** — Only after all checks pass, the milestone planner expands story #1 into a milestone file in `milestones/`. The Python orchestration then marks story #1 as `[x]`.
 
-This two-step approach prevents the LLM from self-validating — the completeness pass reviews with fresh eyes.
+This pipeline ensures the backlog is complete, well-structured, and properly ordered before any milestone is planned — preventing wasted work when quality checks would restructure the backlog.
 
 ### Milestone Planning (between milestones)
 
@@ -66,24 +69,24 @@ N. [x] Story name <!-- depends: 1, 2 -->
 - **One milestone per run.** The planner writes exactly one new milestone file in `milestones/` each time it runs. It does not plan ahead or create multiple milestones at once.
 - **Minimal dependencies for parallelism.** Multiple builders work concurrently — the dependency graph directly controls throughput. Only annotate a dependency when a story literally cannot compile without the other story's artifacts. Example: a Members API needs the Organization entity (import dependency) but does NOT need auth middleware — the controller can be built without auth, and auth is wired in when the auth story completes. The goal is the widest possible dependency graph.
 - **Detail in task descriptions.** Instead of "Create Member entity", write "Create Member entity (Id, FirstName, LastName, Email, Role enum, IsActive, OrganizationId)". The builder should not need to cross-reference SPEC.md or REQUIREMENTS.md.
-- **Story sizing = session sizing.** One story = one milestone = one Copilot CLI session. Size stories so each naturally produces 4-7 tasks. If a feature's full vertical slice (backend + frontend) fits in 6-7 tasks, keep it as one story — don't split into thin halves. If a story would produce fewer than 3 tasks, merge it into its natural neighbor. If it would produce more than 8, split it.
+- **Story sizing = session sizing.** One story = one milestone = one Copilot CLI session. Smaller milestones are better — they reduce context drift, catch issues earlier, and provide more recovery checkpoints. Target 3-5 tasks per story. If a feature's full vertical slice (backend + frontend) fits in 5 tasks, keep it as one story. If a story would produce fewer than 3 tasks, merge it into its natural neighbor. If it would produce more than 7, split it.
 - **Task sizing.** Each task describes one logical change — one concept, one concern, one commit. If a task contains "and", "with", or a comma connecting distinct work, it is too big — split it.
-- **Milestone sizing.** A well-sized milestone typically has 4-7 tasks. Under 3 suggests the story was too thin and should have been merged with another. Over 8 suggests a split point exists.
+- **Milestone sizing.** A well-sized milestone typically has 3-5 tasks. Under 3 suggests the story was too thin and should have been merged with another. Over 7 suggests a split point exists.
 - **Runnable after every milestone.** Each milestone must leave the app in a buildable, startable state.
 - **No test or container stories/tasks.** Do not create backlog stories or milestone tasks for writing tests or containerization/deployment. The tester and validator agents handle those automatically.
 - **Milestone acceptance context.** Each milestone file must contain a `> **Validates:**` blockquote describing what the validator should test — endpoint paths, HTTP methods, expected status codes, pages that should render, CLI commands. This is the validator's primary test plan.
 - **Reference files for context scoping.** Each milestone file must contain a `> **Reference files:**` blockquote listing ONE exemplar file per architectural layer (entity, repository, service, controller, page) plus shared infrastructure files. The builder reads these files to learn the project's patterns and then applies them — avoiding the need to read the entire codebase. Pick files from the most similar completed feature.
 - **Read the codebase first (cases B/C).** Match existing patterns — if a BaseRepository<T> exists, use it; if DTOs are records, make new DTOs records.
 
-> **Backlog planning prompt:** You are a planning-only orchestrator. Your job is to decompose a project's requirements into a complete backlog of stories, then plan the first milestone. [...story decomposition rules, task sizing, milestone sizing, detail requirements, containerization/testing exclusions...]
+> **Backlog planning prompt:** You are a planning-only orchestrator. Your job is to decompose a project's requirements into a complete backlog of stories. [...story decomposition rules, story sizing, dependency annotation rules, containerization/testing exclusions...] The initial prompt creates BACKLOG.md only — no milestone files. Milestone planning happens after all quality checks pass.
 
 > **Completeness check prompt:** You are a planning quality reviewer. Your ONLY job is to verify that BACKLOG.md completely covers REQUIREMENTS.md and SPEC.md. Walk through every ## and ### heading in REQUIREMENTS.md. For each section, verify at least one story covers it. Also check SPEC.md for technical decisions that require setup work. For fullstack projects, verify that features with UI requirements have frontend stories — a backend-only story does NOT satisfy a UI requirement. If gaps exist, add stories. [...gap identification, renumbering rules...]
 
 > **Milestone planning prompt:** You are a planning-only orchestrator. Your job is to manage BACKLOG.md, SPEC.md, and the milestone files in `milestones/`. ASSESS THE PROJECT STATE. Determine: (B) Continuing — find next eligible story, expand into milestone. (C) Evolving — update SPEC.md, add new stories, then do Case B. [...task sizing, milestone sizing, detail requirements, codebase reading...]
 
-**Post-plan enforcement (backlog_checker.py):** After the initial planner runs, the orchestrator runs a two-part quality gate implemented in `backlog_checker.py`:
+**Post-plan enforcement (backlog_checker.py):** After the initial planner creates BACKLOG.md (before any milestone is planned), the orchestrator runs a two-part quality gate implemented in `backlog_checker.py`:
 
-1. **Deterministic structural checks (A1-A4)** — validates BACKLOG.md format (heading, checkbox syntax, sequential numbering, first story checked), dependency graph validity (valid references, no circular deps), prohibited content (no test-only or container-only stories, no pre-planned refactoring), and milestone proportionality (milestone size vs backlog size).
+1. **Deterministic structural checks (A1-A3, B)** — validates BACKLOG.md format (heading, checkbox syntax, sequential numbering), dependency graph validity (valid references, no circular deps), prohibited content (no test-only or container-only stories, no pre-planned refactoring), and proportionality (story count reasonableness). A4 (milestone checks) is skipped since no milestone exists yet.
 2. **LLM quality review (C1-C7, C5b)** — a single Copilot call evaluates story semantics: task sizing, detail level, milestone sizing, acceptance criteria, coverage against REQUIREMENTS.md, and frontend coverage for fullstack projects (C5b — verifies that features with UI requirements have frontend stories, not just backend API stories). Evaluation criteria are defined in `docs/backlog-planner-rubric.md`.
 
 If structural checks fail, the initial planner is re-invoked. After re-plan, checks run again (non-blocking — results are logged).

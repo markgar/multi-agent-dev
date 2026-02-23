@@ -104,11 +104,12 @@ def test_story_format_bookstore_claude_passes():
     assert len(issues) == 0
 
 
-def test_story_format_first_unchecked():
+def test_story_format_first_unchecked_no_issue():
+    """Unchecked story #1 is not flagged — the orchestration handles it after milestone planning."""
     backlog = "# Backlog\n1. [ ] Story one <!-- depends: none -->\n2. [ ] Story two <!-- depends: 1 -->"
     stories = parse_backlog(backlog)
     issues = check_story_format(stories, backlog)
-    assert any("not checked" in i for i in issues)
+    assert not any("not checked" in i for i in issues)
 
 
 def test_story_format_missing_depends():
@@ -255,10 +256,10 @@ def test_milestone_two():
 
 
 def test_milestone_too_many_tasks():
-    task_lines = "\n".join(f"- [ ] Task {i}" for i in range(12))
+    task_lines = "\n".join(f"- [ ] Task {i}" for i in range(9))
     tasks = f"## Milestone: Big\n> **Validates:** stuff\n\n{task_lines}\n"
     issues = check_first_milestone(tasks)
-    assert any("max 10" in i for i in issues)
+    assert any("max 7" in i for i in issues)
 
 
 # ============================================
@@ -385,6 +386,19 @@ def test_full_pipeline_clean():
     replan, fix, warnings = run_deterministic_checks(backlog, SIMPLE_TASKS, SIMPLE_REQUIREMENTS)
     assert len(replan) == 0
     assert len(fix) == 0
+
+
+def test_full_pipeline_no_milestone_skips_a4():
+    """When no milestone file exists (empty tasks_text), A4 is skipped and backlog-only checks run."""
+    backlog = (
+        "# Backlog\n\n"
+        "1. [ ] Scaffolding — project setup <!-- depends: none -->\n"
+        "2. [ ] Books backend — CRUD endpoints <!-- depends: 1 -->\n"
+    )
+    replan, fix, warnings = run_deterministic_checks(backlog, "", SIMPLE_REQUIREMENTS)
+    # Should NOT trigger a replan for missing milestone
+    assert not any("no milestone" in r.lower() for r in replan)
+    assert not any("no tasks" in r.lower() for r in replan)
 
 
 def test_full_pipeline_stretto():

@@ -68,13 +68,6 @@ def check_story_format(stories: list[dict], backlog_text: str) -> list[str]:
         failures.append("BACKLOG.md contains no parseable stories")
         return failures
 
-    # Check that the first story is checked
-    if not stories[0]["checked"]:
-        failures.append(
-            f"Story #1 ('{stories[0]['name']}') is not checked [x] — "
-            "the first milestone won't be planned"
-        )
-
     # Check sequential numbering (warn, don't re-plan)
     expected = 1
     for story in stories:
@@ -225,13 +218,13 @@ def check_first_milestone(tasks_text: str) -> list[str]:
     task_count = first["total"]
     if task_count == 0:
         failures.append("First milestone has no tasks")
-    elif task_count > 10:
-        failures.append(
-            f"First milestone has {task_count} tasks (max 10) — split it"
-        )
     elif task_count > 7:
         failures.append(
-            f"First milestone has {task_count} tasks (preferred max 7) — "
+            f"First milestone has {task_count} tasks (max 7) — split it"
+        )
+    elif task_count > 5:
+        failures.append(
+            f"First milestone has {task_count} tasks (preferred max 5) — "
             "consider splitting"
         )
 
@@ -404,17 +397,18 @@ def run_deterministic_checks(
     for issue in prohibited:
         fix.append(issue)
 
-    # A4: First milestone
-    milestone_issues = check_first_milestone(tasks_text)
-    for issue in milestone_issues:
-        if "no milestone" in issue.lower() or "no tasks" in issue.lower():
-            replan.append(issue)
-        elif "missing" in issue.lower() and "Validates" in issue:
-            replan.append(issue)
-        elif "max 10" in issue:
-            replan.append(issue)
-        else:
-            warnings.append(issue)
+    # A4: First milestone (skip when no milestone file exists yet)
+    if tasks_text:
+        milestone_issues = check_first_milestone(tasks_text)
+        for issue in milestone_issues:
+            if "no milestone" in issue.lower() or "no tasks" in issue.lower():
+                replan.append(issue)
+            elif "missing" in issue.lower() and "Validates" in issue:
+                replan.append(issue)
+            elif "max 7" in issue:
+                replan.append(issue)
+            else:
+                warnings.append(issue)
 
     # B: Proportionality
     story_count = len(stories)
@@ -499,11 +493,7 @@ def check_backlog_quality() -> bool:
         log("planner", "[Backlog Checker] BACKLOG.md not found or empty — skipping checks.", style="yellow")
         return True
 
-    if not tasks_text:
-        log("planner", "[Backlog Checker] No milestone files found in milestones/ — skipping checks.", style="yellow")
-        return True
-
-    # Run deterministic checks
+    # Run deterministic checks (A4 is skipped internally when no milestone exists)
     log("planner", "")
     log("planner", "[Backlog Checker] Running structural checks...", style="magenta")
     replan, fix, warnings = run_deterministic_checks(backlog_text, tasks_text, requirements_text)
