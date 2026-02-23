@@ -47,12 +47,22 @@ agentic-dev go --directory /path/to/runs/20260213/my-app --model gpt-5.3-codex -
 
 `go` detects the existing repo (locally via `remote.git/`, or on GitHub via `gh repo view`) and automatically clones any missing agent directories. You can resume on a fresh machine with nothing but the repo.
 
+## Parallel Builders
+
+Launch multiple builder agents that claim and build stories concurrently:
+
+```bash
+agentic-dev go --directory my-project --model gpt-5.3-codex --builders 3
+```
+
+Each builder runs in its own `builder-N/` clone and uses git-based optimistic locking on BACKLOG.md to claim stories. Stories with minimal dependencies can be built in parallel.
+
 ## Running Agents Individually
 
 After `go` has created a project, you can run individual agents if needed:
 
 ```bash
-cd my-project/builder
+cd my-project/builder-1
 agentic-dev plan
 agentic-dev build
 agentic-dev build --loop
@@ -77,17 +87,20 @@ agentic-dev validateloop
 | `go --directory D --model M --spec-file F` | Same, but reads requirements from a markdown file | Once, from anywhere |
 | `go --directory D --model M ... --local` | Same, but uses a local bare git repo instead of GitHub | Once, from anywhere |
 | `go --directory D --model M ... --name N` | Same, but overrides the GitHub repo name (defaults to dirname) | Once, from anywhere |
+| `go --directory D --model M ... --builders N` | Same, but launches N parallel builders (default 1) | Once, from anywhere |
 | `go --directory D --model M --spec-file F` (existing) | Updates requirements, re-plans, launches agents, builds | From anywhere |
 | `go --directory D --model M` (existing) | Re-plans, launches agents, resumes building | From anywhere |
-| `plan` | Creates or updates BACKLOG.md and TASKS.md (one milestone at a time) | builder/, on demand |
-| `build` | Fixes bugs + reviews, then completes the current milestone | builder/, repeatedly |
-| `build --loop` | Loops through all milestones automatically (re-plans between each from backlog) | builder/, once |
+| `plan` | Creates or updates BACKLOG.md and milestone files in `milestones/` (one milestone at a time) | builder-1/, on demand |
+| `build` | Fixes bugs + reviews, then completes the current milestone | builder-1/, repeatedly |
+| `build --loop` | Loops through all milestones automatically (re-plans between each from backlog) | builder-1/, once |
+| `build --loop --builder-id N` | Same, but identifies this builder as builder N (for parallel builds) | builder-N/, once |
 | `commitwatch` | Polls for commits, reviews each one + milestone-level reviews | reviewer/, once |
 | `testloop` | Watches for completed milestones, runs scoped tests | tester/, once |
 | `validateloop` | Watches for completed milestones, builds containers, validates against spec | validator/, once |
 | `reviewoncommit` | Legacy: watches for commits, reviews code quality | reviewer/, once |
 | `testoncommit` | Legacy: watches for commits, runs tests, files bugs | tester/, once |
 | `status` | Shows spec, tasks, reviews, and bugs at a glance | Any clone, anytime |
+| `--version` / `-v` | Show version and build info, then exit | Anywhere |
 
 ## About `--yolo` Mode
 
@@ -100,7 +113,7 @@ Every agent invocation is logged to an append-only file in a `logs/` directory a
 ```
 myproject/
   remote.git/    ← local bare repo (only with --local)
-  builder/       ← git clone
+  builder-1/     ← git clone (primary builder)
   reviewer/      ← git clone
   tester/        ← git clone
   validator/     ← git clone
@@ -134,12 +147,12 @@ tail -f logs/builder.log
 | Scenario | What happens | Mitigation |
 |---|---|---|
 | GitHub Copilot generates bad code | Tests fail, tester files bugs, builder tries to fix them | Review commits periodically — don't let it run unattended forever |
-| Both agents edit BUGS.md at the same time | Push fails due to conflict | All prompts include `git pull --rebase` before pushing |
+| Both agents create files in `bugs/` at the same time | Push fails due to conflict | All prompts include `git pull --rebase` before pushing; `bugs/` is append-only (no edits) so concurrent new-file creations never conflict |
 | Tester starts a server and doesn't stop it | Port stays bound, next test run fails | GitHub Copilot is prompted to stop it, but if it doesn't, kill the process manually |
 | Validator container won't build | Validator files bug, builder fixes Dockerfile next cycle | Check DEPLOY.md for known issues; ensure Docker is running |
 | Orphaned Docker containers | Port conflicts or resource waste | Validator cleans up before/after each run; run `docker ps` to check |
 | Bootstrap creates wrong project structure | Tasks reference files that don't exist | Edit SPEC.md to clarify requirements, then run `plan` |
-| GitHub Copilot enters an infinite fix loop | Builder and tester keep passing bugs back and forth | Stop all agents, review BUGS.md and the code, fix the root cause |
+| GitHub Copilot enters an infinite fix loop | Builder and tester keep passing bugs back and forth | Stop all agents, review `bugs/` and the code, fix the root cause |
 | Reviewer creates endless review items | Builder fixes reviews, reviewer reviews the fix commits, repeat | The reviewer fixes [doc] issues directly and only files [code] items. Milestone reviews clean up stale/resolved items. The builder caps fix-only cycles and treats remaining reviews as best-effort after bugs and tasks are done. |
 
 ## Troubleshooting

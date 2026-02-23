@@ -4,7 +4,7 @@ An autonomous development workflow using GitHub Copilot CLI. Five agents collabo
 
 - **Planner** — creates a backlog of stories and expands them into milestones one at a time
 - **Builder** — fixes bugs, addresses review items, completes one milestone per cycle
-- **Reviewer** — reviews each commit for quality, fixes doc issues directly, files code issues to REVIEWS.md, plus cross-cutting milestone reviews with stale-item cleanup
+- **Reviewer** — reviews each commit for quality, fixes doc issues directly, files code issues to `reviews/`, plus cross-cutting milestone reviews with stale-item cleanup
 - **Tester** — runs scoped tests when milestones complete, files bugs
 - **Validator** — builds the app in a Docker container, runs it, and validates it against the spec
 
@@ -51,14 +51,14 @@ agentic-dev go --directory hello-world --model gpt-5.3-codex \
 ```
 
 That's it. `go` will:
-1. **Bootstrap** — create the project, SPEC.md, git repo, GitHub remote, and four clones (builder/, reviewer/, tester/, validator/)
-2. **Plan** — generate BACKLOG.md (story queue) and the first milestone in TASKS.md
+1. **Bootstrap** — create the project, SPEC.md, git repo, GitHub remote, and agent clones (builder-1/, reviewer/, tester/, validator/)
+2. **Plan** — generate BACKLOG.md (story queue) and the first milestone in `milestones/`
 3. **Launch reviewer** — in a new terminal window, reviewing each commit and completed milestones
 4. **Launch tester** — in a new terminal window, testing each completed milestone
 5. **Launch validator** — in a new terminal window, building containers and validating against the spec
 6. **Start building** — in your current terminal, completing milestones one at a time
 
-Four windows will be running. Watch the Builder work through milestones while the Reviewer, Tester, and Validator react to each commit and milestone completion. Run `agentic-dev status` anytime in the builder directory to check progress.
+Multiple windows will be running. Watch the Builder work through milestones while the Reviewer, Tester, and Validator react to each commit and milestone completion. Run `agentic-dev status` anytime in a builder directory to check progress.
 
 ### Continuing with New Requirements
 
@@ -86,7 +86,7 @@ Point `--directory` at any existing project directory, even from a test harness 
 agentic-dev go --directory /path/to/runs/20260213/my-app --model gpt-5.3-codex --local
 ```
 
-`go` detects the existing repo (locally via `remote.git/`, or on GitHub via `gh repo view`) and automatically clones any missing agent directories. You can resume on a fresh machine with nothing but the repo — no pre-existing `builder/`, `reviewer/`, `tester/`, or `validator/` directories needed.
+`go` detects the existing repo (locally via `remote.git/`, or on GitHub via `gh repo view`) and automatically clones any missing agent directories. You can resume on a fresh machine with nothing but the repo — no pre-existing `builder-1/`, `reviewer/`, `tester/`, or `validator/` directories needed.
 
 ### Local Mode (no GitHub)
 
@@ -109,26 +109,26 @@ See [EXAMPLES.md](EXAMPLES.md) for ready-to-run commands — Hello World, REST A
 ## How It Works
 
 ```
-Planner ──TASKS.md──→ Builder ──git push──→ Reviewer ──REVIEWS.md──→ Builder
-                         ↑                                              
-                         │         Builder ──git push──→ Tester
-                         │                                  │
-                         │         Builder ──git push──→ Validator
-                         │                                  │
-                         └──────────── BUGS.md ←────────────┘
+Planner ──milestones/──→ Builder ──git push──→ Reviewer ──reviews/──→ Builder
+                           ↑                                              
+                           │         Builder ──git push──→ Tester
+                           │                                  │
+                           │         Builder ──git push──→ Validator
+                           │                                  │
+                           └──────────── bugs/ ←──────────────┘
 ```
 
 | From | To | Mechanism | What it says |
 |---|---|---|---|
 | Bootstrap | Planner | `SPEC.md` | Here's the technical decisions for how to build the project |
-| Planner | Builder | `BACKLOG.md`, `TASKS.md` | Here's the next milestone to build |
+| Planner | Builder | `BACKLOG.md`, `milestones/` | Here's the next milestone to build |
 | Builder | Reviewer | `git push` | I finished a commit or milestone, review it |
 | Builder | Tester | `milestones.log` | A milestone is complete, test it |
 | Builder | Validator | `milestones.log` | A milestone is complete, validate it in a container |
-| Reviewer | Builder | `REVIEWS.md` | I found code-level issues, address these |
+| Reviewer | Builder | `reviews/` | I found code-level issues, address these |
 | Reviewer | (self) | direct commit | I found a doc issue (stale comment, inaccurate README), fixed it myself |
-| Tester | Builder | `BUGS.md` | I found test failures, fix these |
-| Validator | Builder | `BUGS.md` | The app failed validation in a container, fix these |
+| Tester | Builder | `bugs/` | I found test failures, fix these |
+| Validator | Builder | `bugs/` | The app failed validation in a container, fix these |
 | Validator | Builder | `DEPLOY.md` | Here's what I learned about deploying this app |
 
 ### Positive Feedback Loops

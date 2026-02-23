@@ -4,6 +4,20 @@
 
 This software is entirely written by GitHub Copilot. The code is structured to be readable, modifiable, and extendable by Copilot (and other LLM-based agents). Every design decision should reinforce that.
 
+### Meta-context: this project builds other projects
+
+This is a **meta-tool** — a multi-agent orchestrator that creates, plans, builds, reviews, tests, and validates *other* software projects. Almost every reference to project artifacts in the source code refers to files inside **target projects** (the projects this tool generates), not to this project itself.
+
+Key distinctions:
+
+- **`copilot-instructions.md` in the source code** — `_generate_copilot_instructions()`, `COPILOT_INSTRUCTIONS_TEMPLATE`, and prompt references to `.github/copilot-instructions.md` all deal with a file generated *inside target project repos* for the builder agent to follow. They are not self-referential to this file.
+- **`SPEC.md`, `BACKLOG.md`, `milestones/`, `DEPLOY.md`, `REVIEW-THEMES.md`** — planning and coordination artifacts that exist *inside target project repos*. This project does not have these files itself.
+- **`bugs/`, `reviews/`** — append-only directories created *inside target project clones* for cross-agent communication. They are not part of this project's directory structure.
+- **`builder/`, `reviewer/`, `tester/`, `validator/`** — separate git clone directories of the *target project*, one per agent. These are working copies created at runtime, not subdirectories of this project.
+- **Prompt templates in `src/agentic_dev/prompts/`** — instructions sent to Copilot CLI agents operating *on the target project*. They reference target-project files and conventions, not this project's internals.
+
+When editing this codebase, keep this two-level structure in mind: the Python code here is orchestration logic; the prompts and templates describe work that happens in a *different* repo.
+
 ### Guidelines for Copilot-friendly code
 
 - **Flat, explicit control flow.** Prefer straightforward if/else and early returns over deeply nested logic, complex inheritance hierarchies, or metaprogramming. Every function should be understandable from its source alone.
@@ -22,15 +36,16 @@ This software is entirely written by GitHub Copilot. The code is structured to b
 
 - **Source code lives in `src/agentic_dev/`** — this is the only directory to edit.
 - **`tests/`** contains unit tests and the end-to-end test harness (`tests/harness/`).
+- **`docs/`** contains rubrics for evaluating planner output quality (`backlog-planner-rubric.md`, `planner-quality-rubric.md`). These are specifications used by the automated backlog checker.
 - **`build/`** is a stale setuptools artifact. Delete it if present; use `pip install -e .` for development.
 - **`pyproject.toml`** defines the package. The project uses a `src/` layout with the package name `agentic_dev`.
 
 ## Key files
 
-- `src/agentic_dev/cli.py` — App definition and command registration: `status`.
+- `src/agentic_dev/cli.py` — App definition and command registration: `status`, `--version`.
 - `src/agentic_dev/orchestrator.py` — The `go` command: project detection, agent launching, copilot-instructions generation.
 - `src/agentic_dev/bootstrap.py` — Project scaffolding: repo creation, cloning reviewer/tester/validator copies.
-- `src/agentic_dev/planner.py` — Backlog planner and milestone planner: `plan`, `check_milestone_sizes`.
+- `src/agentic_dev/planner.py` — Backlog planner and milestone planner: `plan` command, `check_milestone_sizes()` helper.
 - `src/agentic_dev/builder.py` — Build loop: milestone completion, retry logic.
 - `src/agentic_dev/watcher.py` — Commit watcher: per-commit reviews, milestone-level reviews.
 - `src/agentic_dev/tester.py` — Test loop: milestone-triggered testing.
@@ -42,14 +57,16 @@ This software is entirely written by GitHub Copilot. The code is structured to b
 - `src/agentic_dev/sentinel.py` — Builder-done sentinel, agent-idle detection, and reviewer checkpoint persistence.
 - `src/agentic_dev/milestone.py` — Milestone parsing, boundary tracking, and per-agent milestone checkpoints.
 - `src/agentic_dev/config.py` — Language/stack configurations and thresholds for tree-sitter code analysis.
-- `src/agentic_dev/code_analysis.py` — Tree-sitter code analysis for target projects: structural checks across Python, JS/TS, and C#.
+- `src/agentic_dev/backlog_checker.py` — Backlog quality gate: deterministic structural checks (A1-A4) and LLM quality review (C1-C7) on BACKLOG.md and milestone files. Also runs story ordering checks for parallel builder throughput.
+- `src/agentic_dev/code_analysis.py` — Tree-sitter code analysis for target projects: structural checks across Python, JS/TS, and C#. Invoked by the watcher during milestone reviews.
+- `src/agentic_dev/version.py` — Package version and git-based build info for the `--version` flag.
 - `src/agentic_dev/legacy_watchers.py` — Deprecated `reviewoncommit` and `testoncommit` commands (not used by `go`).
 
 ## Architecture
 
 This is a multi-agent orchestrator that uses GitHub Copilot CLI (`copilot --yolo`) as the execution engine. Agents (builder, planner, reviewer, tester, validator) run as separate processes in separate git clones of the same repo. They coordinate through:
 
-- **Markdown files** (`TASKS.md`, `BUGS.md`, `REVIEWS.md`, `DEPLOY.md`, `REVIEW-THEMES.md`) — shared state via git push/pull.
+- **Markdown files** (`BACKLOG.md`, `milestones/`, `bugs/`, `reviews/`, `DEPLOY.md`, `REVIEW-THEMES.md`) — shared state via git push/pull.
 - **Log files** (`logs/`) — local coordination signals like `builder.done`, `reviewer.checkpoint`, `milestones.log`, `validator.milestone`.
 
 The build loop (Python code in `builder.py`) handles deterministic orchestration — milestone boundary tracking, SHA recording, shutdown signals. The LLM agents handle creative work — writing code, reviewing diffs, writing tests.
@@ -60,103 +77,16 @@ The build loop (Python code in `builder.py`) handles deterministic orchestration
 - **Use pytest.** No unittest classes. Plain functions with descriptive names.
 - **Test the contract, not the implementation.** A test should describe expected behavior in terms a user would understand — not mirror the code's internal branching. If the test would break when you refactor internals without changing behavior, it's too tightly coupled.
 - **Name tests as behavioral expectations.** `test_stuck_milestone_stops_after_three_retries` not `test_update_milestone_retry_state_returns_true`. The test name should read like a requirement.
-- **Use realistic inputs.** Feed a real-looking TASKS.md with multiple milestones, not a minimal one-line synthetic string. Edge cases should be things that could actually happen — corrupted log lines, empty files, milestones with zero tasks.
+- **Use realistic inputs.** Feed a real-looking milestone file with multiple tasks, not a minimal one-line synthetic string. Edge cases should be things that could actually happen — corrupted log lines, empty files, milestones with zero tasks.
 - **Prefer regression tests.** When a bug is found, write the test that would have caught it before fixing it. This is the highest-value test you can write.
 - **Don't test I/O wrappers.** Functions that just read a file and call a pure helper don't need their own tests — test the pure helper directly. Functions that just call subprocess don't need unit tests — they're validated by integration/end-to-end runs.
 - **No mocking unless unavoidable.** The pure functions extracted for testability exist specifically so you don't need mocks. If you find yourself mocking, consider whether you should be testing a different function.
 
-## Test harness (end-to-end runs)
+## Test harness
 
-A test harness at `tests/harness/run_test.sh` runs the full orchestration end-to-end using `--local` mode (local bare git repo, no GitHub). It handles all setup automatically.
+End-to-end tests run via `tests/harness/run_test.sh` using `--local` mode. See AGENTS.md § "Test harness" for full options (`--model`, `--name`, `--spec-file`, `--resume`). Run output lands in `tests/harness/runs/<timestamp>/<project-name>/` with subdirectories for each agent clone and a `logs/` directory capturing all prompts, output, and results.
 
-### Running the harness
-
-```bash
-# Default: sample CLI calculator spec
-./tests/harness/run_test.sh --model gpt-5.3-codex
-
-# Custom spec
-./tests/harness/run_test.sh --model gpt-5.3-codex --name hello-world --spec-file /path/to/spec.md
-```
-
-### What it does (in order)
-
-1. Removes stale `build/` directory if present
-2. Runs `pip install -e .` to install the latest source
-3. Runs `pytest tests/` to catch regressions before starting
-4. Creates a timestamped run directory at `tests/harness/runs/<timestamp>/`
-5. Launches `agentic-dev go --local` with the given spec, language, and project name
-6. Prints log locations when the run completes
-
-### Output structure
-
-```
-tests/harness/runs/<timestamp>/
-└── <project-name>/
-    ├── remote.git/       ← local bare repo (replaces GitHub)
-    ├── builder/          ← builder clone
-    ├── reviewer/         ← reviewer clone (commitwatch terminal)
-    ├── tester/           ← tester clone (testloop terminal)
-    ├── validator/        ← validator clone (validateloop terminal)
-    └── logs/             ← all logs for post-mortem analysis
-```
-
-### Key files for analysis
-
-- `logs/builder.log` — every copilot invocation, prompts and output
-- `logs/planner.log` — planner decisions and task list changes
-- `logs/reviewer.log` — per-commit and milestone reviews
-- `logs/tester.log` — test runs and bug reports
-- `logs/validator.log` — container builds and acceptance test results
-- `logs/validation-*.txt` — per-milestone PASS/FAIL test results from the validator
-- `logs/milestones.log` — milestone boundaries (name|start_sha|end_sha)
-- `logs/orchestrator.log` — high-level orchestration status
-
-### Options
-
-| Flag | Default | Description |
-|---|---|---|
-| `--model` | (required) | Copilot model to use (e.g. `gpt-5.3-codex`, `claude-opus-4.6`) |
-| `--name` | `test-run` | Project name (directory name) |
-| `--spec-file` | `tests/harness/sample_spec_cli_calculator.md` | Path to requirements spec |
-| `--resume` | `false` | Find the latest run with the given `--name`, delete agent clone directories, and resume from the repo |
-
-### Resuming a run
-
-```bash
-# Resume with new requirements
-./tests/harness/run_test.sh --model gpt-5.3-codex --name hello-world --spec-file new-features.md --resume
-
-# Resume without new requirements
-./tests/harness/run_test.sh --model gpt-5.3-codex --name hello-world --resume
-```
-
-On resume, the harness deletes `builder/`, `reviewer/`, `tester/`, `validator/` and keeps `remote.git/` and `logs/` intact. This simulates a fresh-machine resume where only the repo exists — matching production behavior against GitHub. `go` detects the existing repo, clones all agent directories from it, and continues.
-
-### Sample spec
-
-Sample specs are included in `tests/harness/`:
-- `sample_spec_cli_calculator.md` — simple CLI calculator (single file, no dependencies)
-- `sample_spec_bookstore_api.md` — REST API with CRUD, validation, and tests
-- `sample_spec_bookstore_fullstack.md` — full-stack bookstore with web frontend
-- `sample_spec_fieldcraft.md` — complex domain app
-- `sample_spec_stretto.md` — large multi-feature application
-- `sample_specs_notes/` — iterative development example (base → add delete → add timestamps)
-
-Create your own spec files for different test scenarios.
-
-### Running the harness with Copilot monitoring
-
-When a user asks Copilot to help run the test harness, **do not run it in a background terminal**. Instead:
-
-1. **Have the user run it themselves** in a visible terminal so they can watch the builder's Copilot output stream in real-time:
-   ```bash
-   ./tests/harness/run_test.sh --model gpt-5.3-codex
-   ```
-2. **Monitor progress by reading log files** in the latest run directory (`tests/harness/runs/<timestamp>/`). The logs capture everything — full prompts, output, diffs, commands, and costs.
-3. **Check on demand** when the user asks "what's the builder doing?" or "how far along is it?" by reading `logs/builder.log`, `logs/orchestrator.log`, `logs/reviewer.log`, and `logs/tester.log`.
-
-This gives the user visibility into the live Copilot session while Copilot retains full access to progress and results via the persistent logs.
+When asked to run or monitor the harness, do NOT run it in a background terminal. Have the user run it in a visible terminal and monitor progress by reading log files (`builder.log`, `orchestrator.log`, `reviewer.log`, `tester.log`) in the run's `logs/` directory.
 
 ## Conventions
 

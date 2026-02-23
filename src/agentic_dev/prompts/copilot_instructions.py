@@ -120,7 +120,7 @@ COPILOT_INSTRUCTIONS_PROMPT = (
     "this). Do NOT include architectural decisions or file location predictions.\n\n"
     "IMPORTANT: This file is a STYLE GUIDE, not a spec or blueprint. It should help "
     "the builder write code that fits the project's patterns, NOT tell the builder what "
-    "code to write. SPEC.md and TASKS.md already do that. If you find yourself "
+    "code to write. SPEC.md and the milestone files already do that. If you find yourself "
     "describing data structures, specific classes, or where to put specific logic, "
     "you've gone too far — pull back to the pattern level.\n\n"
     "Here is the template to use:\n\n"

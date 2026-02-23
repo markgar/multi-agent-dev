@@ -79,7 +79,16 @@ N. [x] Story name <!-- depends: 1, 2 -->
 
 > **Milestone planning prompt:** You are a planning-only orchestrator. Your job is to manage BACKLOG.md, SPEC.md, and the milestone files in `milestones/`. ASSESS THE PROJECT STATE. Determine: (B) Continuing — find next eligible story, expand into milestone. (C) Evolving — update SPEC.md, add new stories, then do Case B. [...task sizing, milestone sizing, detail requirements, codebase reading...]
 
-**Post-plan enforcement:** After the planner runs, the build loop checks milestone sizes and story ordering. If any uncompleted milestone exceeds 10 tasks, the planner is re-invoked with a targeted split prompt. If still oversized after one retry, a warning is logged and the build proceeds. Story ordering is checked to maximize parallel builder throughput — stories on the critical path (longest dependency chain) are prioritized early, stories that unblock the most downstream work come before those that unblock fewer, and vertical feature slices are kept together (backend + frontend adjacent, not separated into backend-only and frontend-only blocks).
+**Post-plan enforcement (backlog_checker.py):** After the initial planner runs, the orchestrator runs a two-part quality gate implemented in `backlog_checker.py`:
+
+1. **Deterministic structural checks (A1-A4)** — validates BACKLOG.md format (heading, checkbox syntax, sequential numbering, first story checked), dependency graph validity (valid references, no circular deps), prohibited content (no test-only or container-only stories, no pre-planned refactoring), and milestone proportionality (milestone size vs backlog size).
+2. **LLM quality review (C1-C7)** — a single Copilot call evaluates story semantics: task sizing, detail level, milestone sizing, acceptance criteria, and coverage against REQUIREMENTS.md. Evaluation criteria are defined in `docs/backlog-planner-rubric.md`.
+
+If structural checks fail, the initial planner is re-invoked. After re-plan, checks run again (non-blocking — results are logged).
+
+3. **Story ordering check** — an LLM call verifies stories are ordered for maximum parallel builder throughput: stories on the critical path (longest dependency chain) are prioritized early, stories that unblock the most downstream work come before those that unblock fewer, and vertical feature slices are kept together (backend + frontend adjacent, not separated into backend-only and frontend-only blocks).
+
+**Milestone size enforcement:** After every planner run (initial or between-milestone), `check_milestone_sizes()` checks for oversized milestones. If any uncompleted milestone exceeds 10 tasks, the planner is re-invoked with a targeted split prompt. If still oversized after one retry, a warning is logged and the build proceeds.
 
 **Between-milestone re-planning:** After each milestone completes, the build loop calls the milestone planner again to expand the next backlog story. If no eligible story exists (all remaining stories have unmet dependencies), a dependency deadlock warning is logged. If the backlog is empty, the build is done.
 
@@ -94,7 +103,7 @@ N. [x] Story name <!-- depends: 1, 2 -->
 
 Runs once automatically after the first planner run. Skipped if `.github/copilot-instructions.md` already exists.
 
-> You are a documentation generator. You must NOT write any application code or modify any source files other than .github/copilot-instructions.md. Read SPEC.md to understand the tech stack, language, and architecture. Read TASKS.md to understand the planned components and milestones. Read REQUIREMENTS.md for the original project intent. Now create the file .github/copilot-instructions.md (create the .github directory if it doesn't exist). Fill in the project-specific sections (Project structure, Key files, Architecture, Conventions) based on SPEC.md and TASKS.md. Keep the coding guidelines and testing conventions sections exactly as provided in the template. Commit with message 'Add copilot instructions', run git pull --rebase, and push.
+> You are a documentation generator. You must NOT write any application code or modify any source files other than .github/copilot-instructions.md. Read SPEC.md to understand the tech stack, language, and architecture. Read the milestone files in `milestones/` to understand the planned components and milestones. Read REQUIREMENTS.md for the original project intent. Now create the file .github/copilot-instructions.md (create the .github directory if it doesn't exist). Fill in the project-specific sections (Project structure, Key files, Architecture, Conventions) based on SPEC.md and the milestone files. Keep the coding guidelines and testing conventions sections exactly as provided in the template. Commit with message 'Add copilot instructions', run git pull --rebase, and push.
 
 The generated file includes:
 - **LLM-friendly coding guidelines** — universal rules for flat control flow, small functions, descriptive naming, no magic, etc.
@@ -103,7 +112,7 @@ The generated file includes:
 - **Testing conventions** — universal rules for behavioral test naming, realistic inputs, regression tests, no mocking.
 
 **Creates:** `.github/copilot-instructions.md`  
-**Reads:** SPEC.md, TASKS.md, REQUIREMENTS.md  
+**Reads:** SPEC.md, `milestones/`, REQUIREMENTS.md  
 **Writes code:** No
 
 ---
@@ -149,6 +158,8 @@ For each new commit detected, the watcher enumerates all commits since the last 
 > ...reviews the combined diff... Same severity-based filing: `finding-*.md` for [bug]/[security], `note-*.md` for [cleanup]/[robustness]. Commit with message 'Code review: {base_sha:.8}..{head_sha:.8}', run git pull --rebase, and push.
 
 **Milestone reviews:** When the watcher detects that all tasks in a milestone file in `milestones/` are checked, it triggers a cross-cutting review of the entire milestone's diff. This catches issues that per-commit reviews miss: inconsistent patterns across files, API mismatches, duplicated logic introduced across separate commits, and architectural problems in how pieces fit together. Each milestone is only reviewed once (tracked in `logs/reviewer.milestone`). The milestone reviewer also cleans up stale findings — creating `resolved-*.md` files for issues already fixed in the code.
+
+**Code analysis:** Before the milestone review prompt runs, the watcher invokes `run_milestone_analysis()` from `code_analysis.py` — a tree-sitter-based structural analysis of all files changed in the milestone. It checks for long functions, deeply nested code, large files, and other structural issues across Python, JS/TS, and C#. The analysis results are included in the milestone review prompt so the reviewer has both diff context and structural quality data.
 
 **Milestone frequency filter:** The milestone review reads all `note-*.md` files from per-commit reviews and applies a frequency filter before filing findings for the builder:
 - [bug] and [security]: Always filed as `finding-*.md` regardless of frequency

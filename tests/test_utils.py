@@ -204,6 +204,14 @@ def test_validate_model_accepts_opus_cli_name():
     assert validate_model("claude-opus-4.6") == "claude-opus-4.6"
 
 
+def test_validate_model_accepts_opus_fast_friendly_name():
+    assert validate_model("Claude Opus 4.6 Fast") == "claude-opus-4.6-fast"
+
+
+def test_validate_model_accepts_opus_fast_cli_name():
+    assert validate_model("claude-opus-4.6-fast") == "claude-opus-4.6-fast"
+
+
 def test_validate_model_rejects_unknown_model():
     with pytest.raises(SystemExit) as exc_info:
         validate_model("GPT-4.1")
@@ -215,6 +223,8 @@ def test_allowed_models_accepts_both_formats():
     assert "gpt-5.3-codex" in ALLOWED_MODELS
     assert "Claude Opus 4.6" in ALLOWED_MODELS
     assert "claude-opus-4.6" in ALLOWED_MODELS
+    assert "Claude Opus 4.6 Fast" in ALLOWED_MODELS
+    assert "claude-opus-4.6-fast" in ALLOWED_MODELS
 
 
 # --- auth failure detection ---

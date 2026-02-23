@@ -102,6 +102,7 @@ def _stream_process_output(proc: subprocess.Popen, log_file: str) -> None:
 MODEL_NAME_MAP = {
     "GPT-5.3-Codex": "gpt-5.3-codex",
     "Claude Opus 4.6": "claude-opus-4.6",
+    "Claude Opus 4.6 Fast": "claude-opus-4.6-fast",
 }
 
 # Set of all accepted inputs (friendly names + CLI names).

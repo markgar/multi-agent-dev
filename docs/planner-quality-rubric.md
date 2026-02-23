@@ -1,6 +1,6 @@
 # Planner Quality Rubric
 
-A measuring stick for evaluating planner output. Use this to grade TASKS.md, SPEC.md, and related documents produced by a planning run. Each criterion is scored Pass / Partial / Fail with concrete indicators.
+A measuring stick for evaluating planner output. Use this to grade milestone files in `milestones/`, SPEC.md, and related documents produced by a planning run. Each criterion is scored Pass / Partial / Fail with concrete indicators.
 
 This rubric describes what good planner output looks like — not how to build the planner.
 
@@ -16,7 +16,7 @@ A task is the atomic unit of work: one commit, one focused coding session.
 | **Right-sized** | Builder can understand, code, and commit the task in one pass without context overflow | Task is slightly large but still completable (e.g. 2-3 closely related files) | Task packs 4+ endpoints, 4+ entities, or 4+ pages into one line |
 | **Self-contained description** | Task includes all detail the builder needs: field names, types, enum values, relationships, endpoint paths | Task names the thing to create but omits some detail (e.g. "Create Member entity" with only half the fields listed) | Task is a vague stub ("Create member functionality") that requires cross-referencing other docs |
 | **No test or container tasks** | Milestone contains zero tasks for writing tests, Dockerfiles, or docker-compose | One task mixes a small test with feature work | Standalone testing or containerization milestones exist |
-| **No cleanup-only tasks** | Cleanup items from REVIEWS.md are folded into the next feature milestone | Minor cleanup milestone with 1-2 items | Standalone "refactor" or "cleanup" milestone with no feature work |
+| **No cleanup-only tasks** | Cleanup items from `reviews/` are folded into the next feature milestone | Minor cleanup milestone with 1-2 items | Standalone "refactor" or "cleanup" milestone with no feature work |
 
 ### Anti-patterns to flag
 
@@ -86,7 +86,7 @@ The roadmap is the high-level story list that guides progressive expansion.
 | **Dependency ordering** | Stories are ordered so dependent features come after prerequisites (e.g. Members before Attendance) | Mostly ordered with 1-2 out-of-order items | No clear ordering; features appear randomly |
 | **Proportional count** | Story count is proportional to app complexity (see sizing guide below) | Count is slightly over or under for the app's tier | Count is wildly mismatched — trivial app with 20+ stories, or complex app with 3 stories |
 | **Stable across re-plans** | Completed stories stay struck through; unstarted stories can be reordered but aren't duplicated or dropped | Minor rewording of unstarted stories | Completed stories get lost or unchecked; stories appear and disappear between re-plans |
-| **Progressive expansion** | Only 1-2 unstarted `## Milestone:` headings exist in TASKS.md — the rest are backlog stories expanded on demand | 3 unstarted milestones detailed | All stories are expanded into milestones upfront (defeats progressive planning) |
+| **Progressive expansion** | Only 1-2 unstarted milestones exist in `milestones/` — the rest are backlog stories expanded on demand | 3 unstarted milestones detailed | All stories are expanded into milestones upfront (defeats progressive planning) |
 
 ### App sizing guide
 

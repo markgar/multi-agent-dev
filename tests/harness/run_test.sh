@@ -108,7 +108,7 @@ done
 # --- Require --model ---
 if [[ -z "$MODEL" ]]; then
     echo "ERROR: --model is required."
-    echo "Allowed models: gpt-5.3-codex, claude-opus-4.6"
+    echo "Allowed models: gpt-5.3-codex, claude-opus-4.6, claude-opus-4.6-fast"
     echo "Usage: $0 --model 'gpt-5.3-codex' [--spec-file <path>] [--name <project>] [--resume]"
     exit 1
 fi

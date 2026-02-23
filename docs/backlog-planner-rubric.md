@@ -1,6 +1,6 @@
 # Backlog Planner Rubric
 
-Evaluation criteria for the output of the **backlog planner**: the initial planner run that creates BACKLOG.md and the first milestone in TASKS.md. This is the quality gate that runs after `PLANNER_INITIAL_PROMPT` (and optionally after `PLANNER_COMPLETENESS_PROMPT`), before the build starts.
+Evaluation criteria for the output of the **backlog planner**: the initial planner run that creates BACKLOG.md and the first milestone file in `milestones/`. This is the quality gate that runs after `PLANNER_INITIAL_PROMPT` (and optionally after `PLANNER_COMPLETENESS_PROMPT`), before the build starts.
 
 Not a rubric for humans — this is a specification for an automated checker.
 
@@ -11,7 +11,7 @@ Not a rubric for humans — this is a specification for an automated checker.
 The checker reads three files from the builder directory:
 
 - **BACKLOG.md** — the story queue
-- **TASKS.md** — containing the first `## Milestone:` section
+- **`milestones/`** — containing the first milestone file
 - **REQUIREMENTS.md** — the original spec (for proportionality and coverage checks)
 
 ---
@@ -53,7 +53,8 @@ Detection: scan story text for keywords `test`, `dockerfile`, `docker-compose`, 
 
 | Check | Pass | Fail | Action on fail |
 |---|---|---|---|
-| TASKS.md contains exactly one `## Milestone:` heading | One heading | Zero or 2+ headings | **Re-plan** — should plan exactly one milestone |
+| The first milestone file in `milestones/` exists | File present | No milestone file | **Re-plan** — should plan exactly one milestone |
+| There is exactly one milestone file in `milestones/` | One file | Zero or 2+ files | **Re-plan** — should plan exactly one milestone |
 | Milestone has `> **Validates:**` block immediately after heading | Block present | Missing | **Re-plan** — validator needs acceptance criteria |
 | Milestone has 3-7 tasks | In range | Out of range | **Re-plan** if 0 or 10+; **Warn** if 1-2 or 8-9 |
 | All tasks have `- [ ]` checkbox format | All match | Missing checkboxes | **Warn** — builder tracks completion via checkboxes |
