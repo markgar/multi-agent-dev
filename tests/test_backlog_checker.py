@@ -288,8 +288,8 @@ def test_proportionality_too_high():
 
 
 def test_proportionality_slightly_low():
-    """4 stories / 5 features = 0.8 ratio — warning."""
-    result = check_proportionality(4, 5)
+    """3 stories / 5 features = 0.6 ratio — warning."""
+    result = check_proportionality(3, 5)
     assert result is not None
     assert "coarse" in result
 

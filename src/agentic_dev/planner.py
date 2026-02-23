@@ -61,12 +61,30 @@ def plan(requirements_changed: bool = False, story_name: str = "") -> bool:
         quality_ok = check_backlog_quality()
         if not quality_ok:
             log("planner", "[Backlog Planner] Structural issues detected — re-running initial planner...", style="yellow")
-            exit_code = run_copilot("planner", PLANNER_INITIAL_PROMPT)
+            try:
+                exit_code = run_copilot("planner", PLANNER_INITIAL_PROMPT)
+            except Exception as e:
+                log("planner", f"[Backlog Planner] Re-plan crashed: {e}", style="bold red")
+                log("planner", "")
+                log("planner", "======================================", style="bold red")
+                log("planner", " Planner could not produce a valid plan. Stopping.", style="bold red")
+                log("planner", "======================================", style="bold red")
+                return False
             if exit_code != 0:
-                log("planner", "[Backlog Planner] Re-plan failed. Continuing with existing backlog.", style="bold yellow")
-            else:
-                # Re-check after re-plan (non-blocking — just log results)
-                check_backlog_quality()
+                log("planner", "")
+                log("planner", "======================================", style="bold red")
+                log("planner", " Re-plan failed. Planner could not produce a valid plan. Stopping.", style="bold red")
+                log("planner", "======================================", style="bold red")
+                return False
+
+            # Re-check after re-plan — if still failing, stop
+            quality_ok_2 = check_backlog_quality()
+            if not quality_ok_2:
+                log("planner", "")
+                log("planner", "======================================", style="bold red")
+                log("planner", " Planner could not resolve structural issues after re-plan. Stopping.", style="bold red")
+                log("planner", "======================================", style="bold red")
+                return False
 
         # Ordering pass: ensure stories are in topological dependency order
         run_ordering_check()

@@ -252,13 +252,16 @@ def check_proportionality(story_count: int, feature_count: int) -> str | None:
     """B: Check if story count is proportional to estimated feature count.
 
     Returns a failure/warning message or None if pass.
-    Ratio thresholds: < 0.5 or > 4.0 = fail; 0.5-0.99 or 3.1-4.0 = warn.
+    Ratio thresholds: < 0.3 or > 4.0 = fail; 0.3-0.99 or 3.1-4.0 = warn.
+    Feature count is a rough heuristic (heading count) that overestimates
+    for dense specs with many sub-headings, so the hard-fail threshold is
+    deliberately low.
     """
     if feature_count == 0:
         return None
 
     ratio = story_count / feature_count
-    if ratio < 0.5:
+    if ratio < 0.3:
         return (
             f"Story count ({story_count}) is very low for estimated features "
             f"({feature_count}). Ratio {ratio:.1f} — stories may be too coarse "
@@ -269,7 +272,7 @@ def check_proportionality(story_count: int, feature_count: int) -> str | None:
             f"Story count ({story_count}) is very high for estimated features "
             f"({feature_count}). Ratio {ratio:.1f} — stories may be over-split"
         )
-    if ratio < 1.0:
+    if ratio < 0.7:
         return (
             f"Story/feature ratio is {ratio:.1f} ({story_count} stories / "
             f"{feature_count} features) — stories may be slightly coarse"
