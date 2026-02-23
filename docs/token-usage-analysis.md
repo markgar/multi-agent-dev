@@ -4,6 +4,8 @@
 
 Each builder milestone runs as a single Copilot CLI session (`copilot --allow-all-tools -p <prompt>`). This analysis measures how input token consumption scales across milestones as the target codebase grows, identifies what drives the growth, and documents the fixes applied to control it.
 
+**Why this matters:** GitHub Copilot is flat-rate — token usage doesn't affect cost. The concern is **context window headroom**. Every token consumed by reading irrelevant files is a token unavailable for reasoning about the actual task. As input tokens grow, the model approaches context limits and may need to summarize its conversation mid-session, losing coherence and degrading code quality. Keeping token usage flat across milestones means later features get the same quality as early ones, regardless of codebase size.
+
 ## Baseline Run
 
 **Run:** `tests/harness/runs/20260219-092624/stretto-claude-2`
@@ -65,11 +67,11 @@ None of these are relevant to building a notification service.
 
 ### 4. Prompt caching is nearly 100%
 
-Cached tokens consistently represent 95-99% of input tokens. The Copilot CLI heavily leverages prompt caching, so the marginal cost of repeated context is low in dollar terms — but it still consumes context window capacity and session time.
+Cached tokens consistently represent 95-99% of input tokens. The Copilot CLI heavily leverages prompt caching. While caching reduces latency, it does not reduce context window consumption — every cached token still occupies space in the model's context window, leaving less room for reasoning about the actual task.
 
-### 5. No mid-session summarization occurs
+### 5. No mid-session summarization occurs (yet)
 
-Zero evidence of context truncation, compression, or mid-session summarization across all 29 milestone sessions. Each session runs to natural completion. With 4-7 tasks per milestone, sessions stay well within the context window (sessions complete in 6-25 minutes).
+Zero evidence of context truncation, compression, or mid-session summarization across all 29 milestone sessions in the baseline run. Each session runs to natural completion. However, the 21M-token final session is approaching the point where summarization would be triggered. As target projects grow larger (more features, more files), unconstrained file reading would push sessions past context limits, forcing mid-session summarization — which degrades the model's ability to maintain consistency across tasks within a milestone.
 
 ### 6. Copilot CLI creates internal plans
 
@@ -169,4 +171,4 @@ With reference files and context scoping, later milestones should show:
 - **Fewer file read operations** — target ~15-25 reads per session regardless of codebase size
 - **Consistent session times** — 5-15 minutes rather than scaling to 25+ minutes
 
-The Copilot CLI's own workspace indexing will still contribute some baseline token cost that grows with codebase size — this is outside our control. But the explicit file reads (which doubled the token count in later sessions) should be constrained by the reference file pattern.
+The Copilot CLI's own workspace indexing will still contribute some baseline token cost that grows with codebase size — this is outside our control. But the explicit file reads (which drove the 4x token growth in later sessions) should be constrained by the reference file pattern. The goal is to keep every milestone session well within context window limits so the model never needs to summarize its conversation — ensuring consistent code quality from the first feature to the last.
