@@ -83,14 +83,14 @@ N. [x] Story name <!-- depends: 1, 2 -->
 
 **Post-plan enforcement (backlog_checker.py):** After the initial planner runs, the orchestrator runs a two-part quality gate implemented in `backlog_checker.py`:
 
-1. **Deterministic structural checks (A1-A4)** — validates BACKLOG.md format (heading, checkbox syntax, sequential numbering, first story checked), dependency graph validity (valid references, no circular deps), prohibited content (no test-only or container-only stories, no pre-planned refactoring), and milestone proportionality (milestone size vs backlog size).
+1. **Deterministic structural checks (A1-A4)** — validates BACKLOG.md format (heading, checkbox syntax, sequential numbering), dependency graph validity (valid references, no circular deps), prohibited content (no test-only or container-only stories, no pre-planned refactoring), and milestone proportionality (milestone size vs backlog size).
 2. **LLM quality review (C1-C7)** — a single Copilot call evaluates story semantics: task sizing, detail level, milestone sizing, acceptance criteria, and coverage against REQUIREMENTS.md. Evaluation criteria are defined in `docs/backlog-planner-rubric.md`.
 
 If structural checks fail, the initial planner is re-invoked. After re-plan, checks run again (non-blocking — results are logged).
 
 3. **Story ordering check** — an LLM call verifies stories are ordered for maximum parallel builder throughput: stories on the critical path (longest dependency chain) are prioritized early, stories that unblock the most downstream work come before those that unblock fewer, and vertical feature slices are kept together (backend + frontend adjacent, not separated into backend-only and frontend-only blocks).
 
-**Milestone size enforcement:** After every planner run (initial or between-milestone), `check_milestone_sizes()` checks for oversized milestones. If any uncompleted milestone exceeds 10 tasks, the planner is re-invoked with a targeted split prompt. If still oversized after one retry, a warning is logged and the build proceeds.
+**Milestone size enforcement:** After every planner run (initial or between-milestone), `check_milestone_sizes()` checks for oversized milestones. If any uncompleted milestone exceeds 8 tasks, the planner is re-invoked with a targeted split prompt. If still oversized after one retry, a warning is logged and the build proceeds.
 
 **Between-milestone re-planning:** After each milestone completes, the build loop calls the milestone planner again to expand the next backlog story. If no eligible story exists (all remaining stories have unmet dependencies), a dependency deadlock warning is logged. If the backlog is empty, the build is done.
 
@@ -105,7 +105,7 @@ If structural checks fail, the initial planner is re-invoked. After re-plan, che
 
 Runs once automatically after the first planner run. Skipped if `.github/copilot-instructions.md` already exists.
 
-> You are a documentation generator. You must NOT write any application code or modify any source files other than .github/copilot-instructions.md. Read SPEC.md to understand the tech stack, language, and architecture. Read the milestone files in `milestones/` to understand the planned components and milestones. Read REQUIREMENTS.md for the original project intent. Now create the file .github/copilot-instructions.md (create the .github directory if it doesn't exist). Fill in the project-specific sections (Project structure, Key files, Architecture, Conventions) based on SPEC.md and the milestone files. Keep the coding guidelines and testing conventions sections exactly as provided in the template. Commit with message 'Add copilot instructions', run git pull --rebase, and push.
+> You are a documentation generator. You must NOT write any application code or modify any source files other than .github/copilot-instructions.md. Read SPEC.md to understand the tech stack, language, and architecture. Read the milestone files in `milestones/` to understand the planned components and milestones. Read REQUIREMENTS.md for the original project intent. Now create the file .github/copilot-instructions.md (create the .github directory if it doesn't exist). Fill in the project-specific sections (Project structure, Key files, Architecture, Conventions) based on SPEC.md and the milestone files. Keep the coding guidelines and testing conventions sections exactly as provided in the template. Commit with message '[planner] Add copilot instructions', run git pull --rebase, and push.
 
 The generated file includes:
 - **LLM-friendly coding guidelines** — universal rules for flat control flow, small functions, descriptive naming, no magic, etc.
@@ -204,13 +204,13 @@ For each newly completed milestone:
 
 > Read SPEC.md and the milestone files in `milestones/` to understand the project. A milestone — '{milestone_name}' — has just been completed. Pull the latest code with `git pull --rebase`. Run `git diff {milestone_start_sha} {milestone_end_sha} --name-only` to see which files changed in this milestone. Build the project. Run all existing tests. Testing has two priorities: (1) test the new milestone's code — features with no tests, missing error handling, missing validation; (2) test integration with existing code — look for missing tests that span multiple components or layers (e.g. form → API service → backend endpoint → UI update), and review existing test files for cross-feature gaps that accumulated over prior milestones. The more milestones completed, the more important integration tests become. Prioritize integration tests over unit tests. Each test should verify a distinct user-facing behavior. Do not test internal implementation details, getters/setters, or trivially obvious code. Write at most 20 new tests per run. Do NOT start the application, start servers, or test live endpoints — a separate validator agent handles runtime testing in containers. Focus exclusively on running the test suite. For any test that fails, create a `bug-<timestamp>.md` file in `bugs/` with what failed, steps to reproduce, and which milestone. Do not edit or delete existing files in `bugs/`. Commit new tests and new bug files, run git pull --rebase, and push. If the push fails, run git pull --rebase and push again (retry up to 3 times). If everything passes and no new tests are needed, do nothing.
 
-When the builder finishes, the tester sees `logs/builder.done` and exits.
+When the builder finishes, the tester sees `logs/builder.done`, drains any remaining untested milestones, and exits.
 
 **Trigger:** Polls `logs/milestones.log` every 10 seconds (configurable via `--interval`)  
 **Scope:** New milestone's changed files + integration with existing code  
 **Checkpoint:** `logs/tester.milestone` (set of milestones already tested)  
 **Runs from:** `tester/` clone  
-**Shutdown:** Checks for `logs/builder.done`; exits when builder is done  
+**Shutdown:** Checks for `logs/builder.done`; drains remaining milestones before exiting  
 **Writes code:** Tests only  
 **Commits:** When it writes new tests or finds bugs
 
@@ -234,13 +234,13 @@ For each newly completed milestone:
 
 **Validation results log:** After each milestone, the validator writes `validation-results.txt` in the repo root (not committed). The Python orchestration copies it to `logs/validation-<milestone-name>.txt` for post-run analysis. Each line is `PASS` or `FAIL` with a description of what was tested (container build, startup, endpoints, error cases).
 
-When the builder finishes, the validator sees `logs/builder.done` and exits.
+When the builder finishes, the validator sees `logs/builder.done`, drains any remaining unvalidated milestones, and exits.
 
 **Trigger:** Polls `logs/milestones.log` every 10 seconds (configurable via `--interval`)  
 **Scope:** All SPEC.md requirements that should work at the current milestone  
 **Checkpoint:** `logs/validator.milestone` (set of milestones already validated)  
 **Runs from:** `validator/` clone  
-**Shutdown:** Checks for `logs/builder.done`; exits when builder is done  
+**Shutdown:** Checks for `logs/builder.done`; drains remaining milestones before exiting  
 **Writes code:** Dockerfile, docker-compose.yml (if needed), DEPLOY.md, Playwright tests (if frontend detected)  
 **Commits:** When it creates/updates deployment files, finds bugs, or updates DEPLOY.md
 
@@ -286,7 +286,7 @@ The builder updates the project's copilot-instructions.md whenever project struc
 - **Commit message tagging:** Every agent prefixes its commit messages with its name in brackets — `[builder]`, `[reviewer]`, `[tester]`, `[validator]`, `[planner]`, `[bootstrap]`. This makes it easy to see who did what in `git log`.
 - The **Planner** runs on demand via `plan`. It assesses project state (fresh / continuing / evolving), manages BACKLOG.md (story queue with three-state tracking: `[ ]` unclaimed, `[~]` claimed, `[x]` completed), updates SPEC.md if new requirements are detected, then writes one milestone file per story in `milestones/`. It never writes application code.
 - The **Builder** runs in a claim loop. Each builder claims a story from BACKLOG.md (`[~]`), calls the planner to expand it into a milestone, completes all tasks, marks the story done (`[x]`), and loops. When no eligible stories remain, writes `logs/builder-N.done`.
-- The **Commit Watcher** reviews each commit individually. Non-code issues ([doc]: stale docs, misleading comments) are fixed directly (except DEPLOY.md — that gets filed as a finding). [bug]/[security] issues are filed as `finding-*.md` for the builder; [cleanup]/[robustness] issues are filed as `note-*.md` for the milestone reviewer to evaluate.
+- The **Commit Watcher** reviews new commits (individually, or as a batch when multiple accumulate). Non-code issues ([doc]: stale docs, misleading comments) are fixed directly (except DEPLOY.md — that gets filed as a finding). [bug]/[security] issues are filed as `finding-*.md` for the builder; [cleanup]/[robustness] issues are filed as `note-*.md` for the milestone reviewer to evaluate.
 - The **Milestone Reviewer** runs cross-cutting reviews when a milestone completes. It reads accumulated `note-*.md` files, promotes recurring patterns to `finding-*.md`, and cleans up stale findings by creating `resolved-*.md` files. It also updates REVIEW-THEMES.md.
 - The **Tester** runs scoped tests when a milestone completes, focusing on changed files. It runs the test suite only — it does not start the app or test live endpoints. Files bugs in `bugs/`. Exits when the builder finishes.
 - The **Validator** builds the app in a Docker container after each milestone, starts it, and tests it against SPEC.md acceptance criteria. Files bugs in `bugs/`. Persists deployment knowledge in DEPLOY.md. Exits when the builder finishes.
@@ -335,7 +335,7 @@ Multi-builder shutdown uses per-builder sentinel files:
 3. **Check work lists:** The builder pulls latest and scans `bugs/` for open bugs (bug-* without fixed-*), `reviews/` for open findings (finding-* without resolved-*), and milestone files for unchecked items.
 4. **Fix or exit:** If new work was filed, the builder fixes it (up to 4 fix-only cycles) and loops back to step 2. If checklists are clean and agents are idle, writes `logs/builder-N.done`.
 5. **All builders done:** `is_builder_done()` discovers all `builder-*.done` files in `logs/` and returns True only when all expected builders have finished.
-6. **Agents shut down:** The commit watcher, milestone reviewer, tester, and validator see all builders done on their next poll cycle. The milestone reviewer drains any remaining milestone reviews before exiting.
+6. **Agents shut down:** The commit watcher, milestone reviewer, tester, and validator see all builders done on their next poll cycle. The milestone reviewer, tester, and validator each drain any remaining milestones before exiting.
 7. **Crash fallback:** If `logs/builder.log` hasn't been modified in 30+ minutes, agents assume the builder crashed and shut down.
 8. **Startup cleanup:** `go` calls `clear_builder_done(num_builders)` to remove stale sentinel files before launching agents.
 9. **Timeout safety:** If agents don't go idle within 10 minutes, the builder writes its sentinel and exits anyway.

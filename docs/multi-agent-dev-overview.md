@@ -323,7 +323,7 @@ All with **zero human intervention** from spec to deployed app.
 | Container testing | Docker, docker-compose, Playwright |
 | Target languages | .NET/C#, Python, Node.js |
 
-**~2,500 lines of Python** orchestrating **~1,500 lines of prompt templates**.
+**~4,900 lines of Python** orchestrating **~1,200 lines of prompt templates**.
 
 ---
 
