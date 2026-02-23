@@ -98,6 +98,29 @@ def testloop(
         raise
 
 
+def _drain_remaining_milestones() -> None:
+    """Process all remaining milestones after the builder has finished.
+
+    Keeps pulling and testing until no untested milestones remain.
+    This ensures milestones completed while the tester was busy are not skipped.
+    """
+    while True:
+        run_cmd(["git", "pull", "--rebase", "-q"], quiet=True)
+        boundaries = load_milestone_boundaries()
+        tested = load_reviewed_milestones(checkpoint_file=_TESTER_MILESTONE_CHECKPOINT)
+        remaining = find_untested_milestones(boundaries, tested)
+        if not remaining:
+            break
+        now = datetime.now().strftime("%H:%M:%S")
+        log(
+            "tester",
+            f"[{now}] Draining {len(remaining)} remaining milestone(s)...",
+            style="yellow",
+        )
+        for boundary in remaining:
+            _test_milestone(boundary)
+
+
 def _testloop_inner(interval: int) -> None:
     """Inner loop for testloop, separated for crash-logging wrapper."""
     while True:
@@ -115,6 +138,8 @@ def _testloop_inner(interval: int) -> None:
             _test_milestone(boundary)
 
         if builder_done:
+            # Drain any milestones that appeared while we were testing
+            _drain_remaining_milestones()
             now = datetime.now().strftime("%H:%M:%S")
             log("tester", f"[{now}] Builder finished. Shutting down.", style="bold green")
             break

@@ -188,9 +188,64 @@ Admins can schedule events (rehearsals and performances) for each project and tr
   - Use **Vite** as the build tool for fast development.
   - Use **React Router** for client-side routing.
   - Enable **TypeScript strict mode** for maximum type safety.
+  - Use **shadcn/ui** as the component library for all UI elements (buttons, cards, tables, dialogs, forms, dropdowns, etc.). Initialize with `npx shadcn@latest init` and add components as needed with `npx shadcn@latest add <component>`. shadcn/ui copies components into the project as source files — customize them when needed but prefer the defaults for consistency.
+  - Use **Tailwind CSS** for all styling (required by shadcn/ui). Use utility classes directly — no separate CSS files or CSS-in-JS. Follow a mobile-first approach with Tailwind's responsive prefixes (`sm:`, `md:`, `lg:`).
+  - Use **React Hook Form** with **Zod** for all forms. shadcn/ui's `<Form>` component is built on these — every form in the app should follow the same pattern: define a Zod schema, create a form with `useForm<z.infer<typeof schema>>`, and use shadcn `<FormField>` components. No ad-hoc `useState`-based form handling.
+  - Use **Tanstack Query (React Query)** for all API data fetching and mutations. Every API call should go through `useQuery` or `useMutation` — no raw `useEffect` + `fetch` patterns. This provides consistent loading/error states, caching, and automatic refetching.
+  - Use **Tanstack Table** for all data tables and grids (member lists, project lists, utilization grid, audition slots). shadcn/ui's `<DataTable>` component is built on Tanstack Table. Use it for sorting, filtering, and pagination.
+  - Use **Zustand** for lightweight global state (auth context, current organization, current program year). Prefer Zustand stores over React Context for cross-cutting state.
+  - Use **date-fns** for all date/time formatting, parsing, and manipulation. Do not use `moment.js` or raw `Date` methods.
+  - Use **Lucide React** for all icons (bundled with shadcn/ui). Do not add other icon libraries.
   - Components should use semantic HTML elements and `data-testid` attributes to enable reliable element selection by AI agents and automated tests.
   - Prefer simple, page-based navigation with clearly labeled forms and controls.
-  - The application must be **fully responsive** and work well on both **desktop browsers** and **mobile phones**. Use a mobile-first approach to CSS, and ensure all views — including the utilization grid, calendars, forms, and navigation — are usable on small screens without horizontal scrolling or broken layouts.
+  - The application must be **fully responsive** and work well on both **desktop browsers** and **mobile phones**. Ensure all views — including the utilization grid, calendars, forms, and navigation — are usable on small screens without horizontal scrolling or broken layouts.
+
+### UI & Design
+
+The application should look like a modern, professional SaaS tool — clean, spacious, and consistent. The following guidelines ensure the AI agent produces a cohesive UI without needing a designer.
+
+#### Color & Theme
+
+- Use a **neutral base** (white/light gray backgrounds, dark gray text) with a single **brand accent color** (indigo, e.g., Tailwind's `indigo-600`) for primary actions, active nav items, and links.
+- Use semantic status colors consistently everywhere: green for success/active/present, yellow/amber for warnings/pending, red for errors/absent/rejected, gray for archived/inactive.
+- Audition slot statuses should be color-coded: Pending = amber, Accepted = green, Rejected = red, Waitlisted = blue.
+- Attendance status badges should use subtle background tints (e.g., `bg-green-100 text-green-800` for Present) rather than solid blocks of color.
+
+#### Layout
+
+- **Desktop (≥1024px)**: Fixed left sidebar (240px) with navigation, content area fills remaining width. Sidebar shows the organization name at the top, nav links in the middle, and the current user's name/role at the bottom.
+- **Tablet (768–1023px)**: Collapsible sidebar — collapsed to icons by default, expands on hover or tap.
+- **Mobile (<768px)**: No sidebar. Use a **bottom tab bar** for primary navigation (4–5 tabs max). Secondary pages are accessed via back navigation. The top bar shows the page title and the organization name.
+- All pages should have a max content width (e.g., `max-w-7xl`) centered on wide screens so content doesn't stretch uncomfortably on ultrawide monitors.
+
+#### Components & Patterns
+
+- **Cards**: Use cards (white background, subtle border or shadow, rounded corners) as the primary container for content sections — project details, member profiles, event info, dashboard summary tiles.
+- **Tables**: Use clean, striped tables for list views (members, projects, events, audition slots). Include column headers, hover highlighting, and pagination. On mobile, tables should collapse into a **card-per-row** layout rather than a horizontally scrolling table.
+- **Forms**: Labels above inputs. Inputs should be full-width within their container. Group related fields visually. Use inline validation messages (red text below the field). Primary submit button is the accent color; secondary/cancel buttons are neutral.
+- **Buttons**: Three tiers — primary (accent color, solid), secondary (outlined or light background), and destructive (red). Minimum tap target of 44×44px on mobile.
+- **Modals/Dialogs**: Use for confirmations and quick-edit forms (e.g., assigning members, creating events). Keep modals focused — one task per modal, no scrolling if avoidable.
+- **Empty States**: Every list view should have a friendly empty state (icon + message + call-to-action button, e.g., "No projects yet — create your first project").
+- **Loading States**: Show skeleton loaders (pulsing placeholder shapes) for page content while API calls are in flight. Never show a blank page.
+- **Error States**: API errors should show an inline error banner with a retry button — not a full-page error.
+- **Toast Notifications**: Use brief toast messages (bottom-right on desktop, top on mobile) for action confirmations ("Member added", "Event created", "Attendance recorded").
+
+#### Utilization Grid Specific
+
+- The utilization grid is the highest-density view. On desktop, show the full member × project matrix with filled/empty cells. Each row shows the member name and a utilization count/percentage. Column headers show project names (truncated with tooltip on hover if long).
+- On mobile, the utilization grid should switch to a **list view grouped by member** — each member is a collapsible section showing their assigned projects.
+- Use the accent color for filled cells and a light gray for empty cells. High-utilization members should be visually distinct (e.g., bold row or subtle background highlight).
+
+#### Member Check-In Specific
+
+- The QR-code check-in page should be minimal and mobile-optimized — large "I'm here" button, event name, and venue. No navigation chrome.
+- The check-in button should be full-width, tall (56px+), and use a strong green color with a checkmark icon on success.
+
+#### Typography & Spacing
+
+- Use Tailwind's default font stack (system fonts). No custom web fonts — they slow page load and add complexity.
+- Use consistent heading sizes: page titles `text-2xl font-bold`, section headings `text-lg font-semibold`, card titles `text-base font-medium`.
+- Use Tailwind's spacing scale consistently — `p-4` / `p-6` for card padding, `gap-4` / `gap-6` for grid gaps, `space-y-4` for stacked elements.
 
 ### API Contract
 

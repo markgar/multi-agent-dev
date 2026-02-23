@@ -306,15 +306,36 @@ def commitwatch(
         raise
 
 
+def _drain_remaining_milestone_reviews() -> None:
+    """Process all remaining milestone reviews after the builder has finished.
+
+    Keeps pulling and reviewing until no unreviewed milestones remain.
+    This ensures milestones completed while the reviewer was busy are not skipped.
+    """
+    while True:
+        run_cmd(["git", "pull", "-q"], capture=True)
+        boundaries = load_milestone_boundaries()
+        reviewed = load_reviewed_milestones()
+        remaining = find_unreviewed_milestones(boundaries, reviewed)
+        if not remaining:
+            break
+        now = datetime.now().strftime("%H:%M:%S")
+        log(
+            "commit-watcher",
+            f"[{now}] Draining {len(remaining)} remaining milestone review(s)...",
+            style="yellow",
+        )
+        _check_milestone_reviews()
+
+
 def _commitwatch_loop() -> None:
     """Inner loop for commitwatch, separated for crash-logging wrapper."""
     last_sha = _initialize_watcher_checkpoint()
 
     while True:
         if is_builder_done():
-            # Builder is done — but finish any remaining milestone reviews first.
-            run_cmd(["git", "pull", "-q"], capture=True)
-            _check_milestone_reviews()
+            # Builder is done — drain all remaining milestone reviews.
+            _drain_remaining_milestone_reviews()
             now = datetime.now().strftime("%H:%M:%S")
             log("commit-watcher", "")
             log("commit-watcher", f"[{now}] Builder finished. Shutting down.", style="bold green")
@@ -328,9 +349,8 @@ def _commitwatch_loop() -> None:
         if _has_new_commits(current_head, last_sha):
             builder_finished = _review_new_commits(last_sha, current_head)
             if builder_finished:
-                # Builder finished mid-review — still do final milestone reviews.
-                run_cmd(["git", "pull", "-q"], capture=True)
-                _check_milestone_reviews()
+                # Builder finished mid-review — drain remaining milestone reviews.
+                _drain_remaining_milestone_reviews()
                 return
 
         last_sha = current_head if current_head else last_sha

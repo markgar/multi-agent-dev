@@ -271,8 +271,14 @@ A summary view for admins showing key business metrics.
   - Use **Vite** as the build tool for fast development.
   - Use **React Router** for client-side routing.
   - Enable **TypeScript strict mode** for maximum type safety.
-  - Use **Tailwind CSS** for styling. No custom CSS files unless absolutely necessary — use Tailwind utility classes directly on elements.
-  - Use **Headless UI** (`@headlessui/react`) for accessible interactive components (dropdowns, modals, comboboxes, dialogs). These provide behavior and accessibility without opinionated styling, so they pair well with Tailwind.
+  - Use **shadcn/ui** as the component library for all UI elements (buttons, cards, tables, dialogs, forms, dropdowns, comboboxes, etc.). Initialize with `npx shadcn@latest init` and add components as needed with `npx shadcn@latest add <component>`. shadcn/ui copies components into the project as source files — customize them when needed but prefer the defaults for consistency. Do not use Headless UI separately — shadcn/ui uses Radix UI primitives internally for accessibility.
+  - Use **Tailwind CSS** for all styling (required by shadcn/ui). Use utility classes directly — no separate CSS files or CSS-in-JS. Follow a mobile-first approach with Tailwind's responsive prefixes (`sm:`, `md:`, `lg:`).
+  - Use **React Hook Form** with **Zod** for all forms. shadcn/ui's `<Form>` component is built on these — every form in the app should follow the same pattern: define a Zod schema, create a form with `useForm<z.infer<typeof schema>>`, and use shadcn `<FormField>` components. No ad-hoc `useState`-based form handling.
+  - Use **Tanstack Query (React Query)** for all API data fetching and mutations. Every API call should go through `useQuery` or `useMutation` — no raw `useEffect` + `fetch` patterns. This provides consistent loading/error states, caching, and automatic refetching.
+  - Use **Tanstack Table** for all data tables and grids (job lists, customer lists, invoice tables, dispatch board, inventory). shadcn/ui's `<DataTable>` component is built on Tanstack Table. Use it for sorting, filtering, and pagination.
+  - Use **Zustand** for lightweight global state (auth context, current company, dispatch board filters). Prefer Zustand stores over React Context for cross-cutting state.
+  - Use **date-fns** for all date/time formatting, parsing, and manipulation. Do not use `moment.js` or raw `Date` methods.
+  - Use **Lucide React** for all icons (bundled with shadcn/ui). Do not add other icon libraries.
   - Components should use semantic HTML elements and `data-testid` attributes to enable reliable element selection by AI agents and automated tests.
   - Prefer simple, page-based navigation with clearly labeled forms and controls.
   - The application must be **fully responsive** and work well on both **desktop browsers** and **mobile phones**. Use a mobile-first approach to CSS. The technician mobile view must be optimized for one-hand use — large tap targets, minimal scrolling, clear status buttons.

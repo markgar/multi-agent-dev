@@ -56,6 +56,7 @@ N. [x] Story name <!-- depends: 1, 2 -->
 - `[ ]` = in backlog (unclaimed), `[~]` = claimed by a builder (in progress), `[x]` = completed
 - `<!-- depends: N -->` = HTML comment listing story numbers this depends on
 - Dependencies require `[x]` (completed) — `[~]` (claimed) does NOT satisfy dependencies
+- Dependencies must be **minimal** — only mark a dependency when the story cannot compile or function without the other story's code artifacts (imports, types, interfaces). Do NOT add dependencies for eventual integration — integration happens in whichever story is built second.
 - The first story is always scaffolding (project structure, entry point, health endpoint)
 - Stories are ordered so each builds on predecessors, preferring vertical feature slices — each story delivers one feature through all layers (entity → repository → service → API → frontend) rather than building one layer across all features.
 - The builder claims stories via git-based optimistic locking: mark `[~]`, commit, push. If push fails (another builder claimed first), pull and try the next eligible story.
@@ -63,6 +64,7 @@ N. [x] Story name <!-- depends: 1, 2 -->
 ### Planning Rules
 
 - **One milestone per run.** The planner writes exactly one new milestone file in `milestones/` each time it runs. It does not plan ahead or create multiple milestones at once.
+- **Minimal dependencies for parallelism.** Multiple builders work concurrently — the dependency graph directly controls throughput. Only annotate a dependency when a story literally cannot compile without the other story's artifacts. Example: a Members API needs the Organization entity (import dependency) but does NOT need auth middleware — the controller can be built without auth, and auth is wired in when the auth story completes. The goal is the widest possible dependency graph.
 - **Detail in task descriptions.** Instead of "Create Member entity", write "Create Member entity (Id, FirstName, LastName, Email, Role enum, IsActive, OrganizationId)". The builder should not need to cross-reference SPEC.md or REQUIREMENTS.md.
 - **Task sizing.** Each task describes one logical change — one concept, one concern, one commit. If a task contains "and", "with", or a comma connecting distinct work, it is too big — split it.
 - **Milestone sizing.** A well-sized milestone typically has 3-7 tasks. Under 3 suggests tasks might be too coarse. Over 8 suggests a natural split point exists.
@@ -77,7 +79,7 @@ N. [x] Story name <!-- depends: 1, 2 -->
 
 > **Milestone planning prompt:** You are a planning-only orchestrator. Your job is to manage BACKLOG.md, SPEC.md, and the milestone files in `milestones/`. ASSESS THE PROJECT STATE. Determine: (B) Continuing — find next eligible story, expand into milestone. (C) Evolving — update SPEC.md, add new stories, then do Case B. [...task sizing, milestone sizing, detail requirements, codebase reading...]
 
-**Post-plan enforcement:** After the planner runs, the build loop checks milestone sizes. If any uncompleted milestone exceeds 10 tasks, the planner is re-invoked with a targeted split prompt. If still oversized after one retry, a warning is logged and the build proceeds.
+**Post-plan enforcement:** After the planner runs, the build loop checks milestone sizes and story ordering. If any uncompleted milestone exceeds 10 tasks, the planner is re-invoked with a targeted split prompt. If still oversized after one retry, a warning is logged and the build proceeds. Story ordering is checked to maximize parallel builder throughput — stories on the critical path (longest dependency chain) are prioritized early, stories that unblock the most downstream work come before those that unblock fewer, and vertical feature slices are kept together (backend + frontend adjacent, not separated into backend-only and frontend-only blocks).
 
 **Between-milestone re-planning:** After each milestone completes, the build loop calls the milestone planner again to expand the next backlog story. If no eligible story exists (all remaining stories have unmet dependencies), a dependency deadlock warning is logged. If the backlog is empty, the build is done.
 

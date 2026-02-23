@@ -307,6 +307,29 @@ def validateloop(
         raise
 
 
+def _drain_remaining_milestones(project_name: str) -> None:
+    """Process all remaining milestones after the builder has finished.
+
+    Keeps pulling and validating until no unvalidated milestones remain.
+    This ensures milestones completed while the validator was busy are not skipped.
+    """
+    while True:
+        run_cmd(["git", "pull", "--rebase", "-q"], quiet=True)
+        boundaries = load_milestone_boundaries()
+        validated = load_reviewed_milestones(checkpoint_file=_VALIDATOR_MILESTONE_CHECKPOINT)
+        remaining = find_unvalidated_milestones(boundaries, validated)
+        if not remaining:
+            break
+        now = datetime.now().strftime("%H:%M:%S")
+        log(
+            "validator",
+            f"[{now}] Draining {len(remaining)} remaining milestone(s)...",
+            style="yellow",
+        )
+        for boundary in remaining:
+            _validate_milestone(boundary, project_name)
+
+
 def _validateloop_inner(interval: int, project_name: str) -> None:
     """Inner loop for validateloop, separated for crash-logging wrapper."""
     while True:
@@ -324,6 +347,8 @@ def _validateloop_inner(interval: int, project_name: str) -> None:
             _validate_milestone(boundary, project_name)
 
         if builder_done:
+            # Drain any milestones that appeared while we were validating
+            _drain_remaining_milestones(project_name)
             now = datetime.now().strftime("%H:%M:%S")
             log("validator", f"[{now}] Builder finished. Shutting down.", style="bold green")
             break

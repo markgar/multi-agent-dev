@@ -219,12 +219,6 @@ if [[ "$RESUME" == true ]]; then
     echo "============================================"
     echo ""
 
-    read -rp "Proceed? [Y/n] " CONFIRM
-    if [[ "${CONFIRM:-Y}" =~ ^[Nn] ]]; then
-        echo "Aborted."
-        exit 0
-    fi
-
     # Delete agent clone directories to simulate a fresh machine.
     # Keep remote.git (the repo) and logs/ (checkpoints) intact.
     for agent_dir in builder reviewer tester validator; do
@@ -263,12 +257,6 @@ else
     echo "  Project:    $PROJECT_NAME"
     echo "============================================"
     echo ""
-
-    read -rp "Proceed? [Y/n] " CONFIRM
-    if [[ "${CONFIRM:-Y}" =~ ^[Nn] ]]; then
-        echo "Aborted."
-        exit 0
-    fi
 
     mkdir -p "$RUN_DIR"
 
