@@ -2,7 +2,7 @@
 
 Runs after the backlog planner creates BACKLOG.md and the first milestone in milestones/.
 Deterministic checks (A1-A4, B) validate structure and proportionality.
-LLM quality check (C1-C7) evaluates story semantics via a single Copilot call.
+LLM quality check (C1-C7, C5b) evaluates story semantics via a single Copilot call.
 """
 
 import os

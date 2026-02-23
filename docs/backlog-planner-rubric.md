@@ -128,6 +128,18 @@ A single CRUD feature (one entity with list/create/read/update/delete) should no
 **Pass:** "Books — backend API" + "Books — storefront page" (2 stories, 1 feature)
 **Fail:** "Books — list endpoint" + "Books — create endpoint" + "Books — update/delete endpoints" (3 stories, 1 feature's CRUD operations split unnecessarily)
 
+#### C5b. Frontend coverage (fullstack projects only)
+
+When REQUIREMENTS.md describes UI elements (pages, forms, navigation, admin views, responsive layouts), verify that the backlog includes stories to build those pages — not just the backend APIs they consume.
+
+For each feature that has a backend story with "Backend" or "API" in the name, check whether a corresponding frontend story exists (same feature name with "Frontend", "Pages", "UI", or a vertical slice that includes both). If a feature has backend-only coverage but REQUIREMENTS.md describes UI for that feature, flag it.
+
+**Pass:** "Members — Backend" + "Members — Frontend" (both halves exist)
+**Pass:** "Members Management" with tasks covering entity, service, API, admin list page, edit form (vertical slice)
+**Fail:** "Members — Backend" with no corresponding frontend story, but REQUIREMENTS.md describes an admin members page with search, add member form, edit form, and deactivate toggle
+
+Skip this check if REQUIREMENTS.md and SPEC.md describe an API-only project with no frontend.
+
 #### C6. First milestone task quality
 
 For each task in the first milestone:

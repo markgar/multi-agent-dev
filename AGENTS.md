@@ -77,14 +77,14 @@ N. [x] Story name <!-- depends: 1, 2 -->
 
 > **Backlog planning prompt:** You are a planning-only orchestrator. Your job is to decompose a project's requirements into a complete backlog of stories, then plan the first milestone. [...story decomposition rules, task sizing, milestone sizing, detail requirements, containerization/testing exclusions...]
 
-> **Completeness check prompt:** You are a planning quality reviewer. Your ONLY job is to verify that BACKLOG.md completely covers REQUIREMENTS.md and SPEC.md. Walk through every ## and ### heading in REQUIREMENTS.md. For each section, verify at least one story covers it. Also check SPEC.md for technical decisions that require setup work. If gaps exist, add stories. [...gap identification, renumbering rules...]
+> **Completeness check prompt:** You are a planning quality reviewer. Your ONLY job is to verify that BACKLOG.md completely covers REQUIREMENTS.md and SPEC.md. Walk through every ## and ### heading in REQUIREMENTS.md. For each section, verify at least one story covers it. Also check SPEC.md for technical decisions that require setup work. For fullstack projects, verify that features with UI requirements have frontend stories — a backend-only story does NOT satisfy a UI requirement. If gaps exist, add stories. [...gap identification, renumbering rules...]
 
 > **Milestone planning prompt:** You are a planning-only orchestrator. Your job is to manage BACKLOG.md, SPEC.md, and the milestone files in `milestones/`. ASSESS THE PROJECT STATE. Determine: (B) Continuing — find next eligible story, expand into milestone. (C) Evolving — update SPEC.md, add new stories, then do Case B. [...task sizing, milestone sizing, detail requirements, codebase reading...]
 
 **Post-plan enforcement (backlog_checker.py):** After the initial planner runs, the orchestrator runs a two-part quality gate implemented in `backlog_checker.py`:
 
 1. **Deterministic structural checks (A1-A4)** — validates BACKLOG.md format (heading, checkbox syntax, sequential numbering, first story checked), dependency graph validity (valid references, no circular deps), prohibited content (no test-only or container-only stories, no pre-planned refactoring), and milestone proportionality (milestone size vs backlog size).
-2. **LLM quality review (C1-C7)** — a single Copilot call evaluates story semantics: task sizing, detail level, milestone sizing, acceptance criteria, and coverage against REQUIREMENTS.md. Evaluation criteria are defined in `docs/backlog-planner-rubric.md`.
+2. **LLM quality review (C1-C7, C5b)** — a single Copilot call evaluates story semantics: task sizing, detail level, milestone sizing, acceptance criteria, coverage against REQUIREMENTS.md, and frontend coverage for fullstack projects (C5b — verifies that features with UI requirements have frontend stories, not just backend API stories). Evaluation criteria are defined in `docs/backlog-planner-rubric.md`.
 
 If structural checks fail, the initial planner is re-invoked. After re-plan, checks run again (non-blocking — results are logged).
 
