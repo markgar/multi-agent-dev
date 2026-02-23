@@ -342,6 +342,10 @@ def test_find_project_root_recognizes_builder_numbered_dirs():
     assert find_project_root("/home/user/project/builder-10") == "/home/user/project"
 
 
+def test_find_project_root_recognizes_milestone_reviewer():
+    assert find_project_root("/home/user/project/milestone-reviewer") == "/home/user/project"
+
+
 def test_find_project_root_ignores_non_matching_builder_dirs():
     # These should NOT be treated as agent directories
     assert find_project_root("/home/user/project/builder-") == "/home/user/project/builder-"

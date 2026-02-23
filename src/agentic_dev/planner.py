@@ -1,13 +1,11 @@
 """Planner commands: backlog planning and milestone planning."""
 
 import os
-import re
 
 import typer
 
 from agentic_dev.backlog_checker import check_backlog_quality, run_ordering_check
-from agentic_dev.git_helpers import git_push_with_retry
-from agentic_dev.milestone import get_tasks_per_milestone_from_dir, list_milestone_files, parse_backlog
+from agentic_dev.milestone import get_tasks_per_milestone_from_dir
 from agentic_dev.prompts import (
     PLANNER_COMPLETENESS_PROMPT,
     PLANNER_INITIAL_PROMPT,
@@ -19,64 +17,9 @@ from agentic_dev.utils import log, run_cmd, run_copilot
 
 _MAX_TASKS_PER_MILESTONE = 8
 
-# Regex matching the first story line in BACKLOG.md: "1. [ ] Story name"
-_FIRST_STORY_RE = re.compile(r"^(1\.\s+)\[ \](.*)$", re.MULTILINE)
-
-
-def _ensure_first_story_checked() -> None:
-    """Mark story #1 as [x] in BACKLOG.md if a milestone file exists.
-
-    The planner prompt tells the LLM not to manage checkboxes — the Python
-    orchestration owns that. After the initial plan creates BACKLOG.md and
-    the first milestone file, this function checks off story #1 so the
-    structural checker passes and the builder knows story #1 is planned.
-    """
-    if not os.path.exists("BACKLOG.md"):
-        return
-    if not list_milestone_files("milestones"):
-        return
-
-    with open("BACKLOG.md", "r", encoding="utf-8") as f:
-        content = f.read()
-
-    if not _FIRST_STORY_RE.search(content):
-        return  # Already checked or no matching line
-
-    updated = _FIRST_STORY_RE.sub(r"\1[x]\2", content, count=1)
-    with open("BACKLOG.md", "w", encoding="utf-8") as f:
-        f.write(updated)
-
-    run_cmd(["git", "add", "BACKLOG.md"], quiet=True)
-    run_cmd(
-        ["git", "commit", "-m", "[planner] Check off story #1 (milestone planned)"],
-        quiet=True,
-    )
-    git_push_with_retry("planner")
-    log("planner", "[Planner] Checked off story #1 in BACKLOG.md", style="green")
-
-
 def register(app: typer.Typer) -> None:
     """Register planner commands on the shared app."""
     app.command()(plan)
-
-
-def _get_first_story_name() -> str:
-    """Extract the name of story #1 from BACKLOG.md.
-
-    Returns the story name for passing to the milestone planner prompt.
-    Falls back to a generic label if BACKLOG.md can't be read or parsed.
-    """
-    if not os.path.exists("BACKLOG.md"):
-        return "the first story"
-    try:
-        with open("BACKLOG.md", "r", encoding="utf-8") as f:
-            content = f.read()
-        stories = parse_backlog(content)
-        if stories:
-            return stories[0]["name"]
-    except (OSError, IndexError):
-        pass
-    return "the first story"
 
 
 def plan(requirements_changed: bool = False, story_name: str = "") -> bool:
@@ -128,18 +71,8 @@ def plan(requirements_changed: bool = False, story_name: str = "") -> bool:
         # Ordering pass: ensure stories are in topological dependency order
         run_ordering_check()
 
-        # Plan the first milestone now that backlog quality is confirmed
-        first_story_name = _get_first_story_name()
-        log("planner", "")
-        log("planner", f"[Backlog Planner] Planning first milestone: {first_story_name}...", style="magenta")
-        milestone_prompt = PLANNER_PROMPT.format(story_name=first_story_name)
-        exit_code = run_copilot("planner", milestone_prompt)
-        if exit_code != 0:
-            log("planner", "[Backlog Planner] First milestone planning failed.", style="bold red")
-            return False
-
-        # Mark story #1 as checked now that its milestone exists
-        _ensure_first_story_checked()
+        # Builders will claim story #1 and plan its milestone — no milestone
+        # planning here. The orchestrator only owns backlog creation.
     else:
         # Case B/C: continuing or evolving project
         prompt = PLANNER_PROMPT.format(story_name=story_name if story_name else "the next eligible story")

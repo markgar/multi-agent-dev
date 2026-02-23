@@ -29,15 +29,12 @@ The planner uses different prompts depending on the project state:
 
 ### Backlog Planning (fresh project)
 
-When no BACKLOG.md exists, the planner runs a multi-step pipeline that separates backlog creation from milestone planning. The backlog is fully validated before any milestone is planned:
+When no BACKLOG.md exists, the planner runs two focused Copilot calls:
 
-1. **Backlog creation** — Reads REQUIREMENTS.md and SPEC.md, decomposes all requirements into an ordered story queue (BACKLOG.md) with dependency annotations. Does NOT create milestone files — the backlog must pass quality checks first.
+1. **Backlog creation** — Reads REQUIREMENTS.md and SPEC.md, decomposes all requirements into an ordered story queue (BACKLOG.md) with dependency annotations, checks off the first story, and writes the first milestone file in `milestones/`.
 2. **Completeness check** — A separate Copilot call reviews the backlog against REQUIREMENTS.md and SPEC.md. It walks through every section and subsection to verify coverage. Any gaps (missing feature stories, uncovered technical concerns like API client generation, seed data, navigation structure) are added as new stories.
-3. **Quality gate** — Deterministic structural checks (A1-A3, B) and LLM quality review (C1-C7, C5b) validate the backlog. If structural checks fail, the backlog planner is re-invoked. A4 (milestone checks) is skipped since no milestone exists yet.
-4. **Ordering check** — Stories are reordered for maximum parallel builder throughput.
-5. **First milestone planning** — Only after all checks pass, the milestone planner expands story #1 into a milestone file in `milestones/`. The Python orchestration then marks story #1 as `[x]`.
 
-This pipeline ensures the backlog is complete, well-structured, and properly ordered before any milestone is planned — preventing wasted work when quality checks would restructure the backlog.
+This two-step approach prevents the LLM from self-validating — the completeness pass reviews with fresh eyes.
 
 ### Milestone Planning (between milestones)
 
@@ -69,25 +66,25 @@ N. [x] Story name <!-- depends: 1, 2 -->
 - **One milestone per run.** The planner writes exactly one new milestone file in `milestones/` each time it runs. It does not plan ahead or create multiple milestones at once.
 - **Minimal dependencies for parallelism.** Multiple builders work concurrently — the dependency graph directly controls throughput. Only annotate a dependency when a story literally cannot compile without the other story's artifacts. Example: a Members API needs the Organization entity (import dependency) but does NOT need auth middleware — the controller can be built without auth, and auth is wired in when the auth story completes. The goal is the widest possible dependency graph.
 - **Detail in task descriptions.** Instead of "Create Member entity", write "Create Member entity (Id, FirstName, LastName, Email, Role enum, IsActive, OrganizationId)". The builder should not need to cross-reference SPEC.md or REQUIREMENTS.md.
-- **Story sizing = session sizing.** One story = one milestone = one Copilot CLI session. Smaller milestones are better — they reduce context drift, catch issues earlier, and provide more recovery checkpoints. Target 3-5 tasks per story. If a feature's full vertical slice (backend + frontend) fits in 5 tasks, keep it as one story. If a story would produce fewer than 3 tasks, merge it into its natural neighbor. If it would produce more than 7, split it.
+- **Story sizing = session sizing.** One story = one milestone = one Copilot CLI session. Size stories so each naturally produces 4-7 tasks. If a feature's full vertical slice (backend + frontend) fits in 6-7 tasks, keep it as one story — don't split into thin halves. If a story would produce fewer than 3 tasks, merge it into its natural neighbor. If it would produce more than 8, split it.
 - **Task sizing.** Each task describes one logical change — one concept, one concern, one commit. If a task contains "and", "with", or a comma connecting distinct work, it is too big — split it.
-- **Milestone sizing.** A well-sized milestone typically has 3-5 tasks. Under 3 suggests the story was too thin and should have been merged with another. Over 7 suggests a split point exists.
+- **Milestone sizing.** A well-sized milestone typically has 4-7 tasks. Under 3 suggests the story was too thin and should have been merged with another. Over 8 suggests a split point exists.
 - **Runnable after every milestone.** Each milestone must leave the app in a buildable, startable state.
 - **No test or container stories/tasks.** Do not create backlog stories or milestone tasks for writing tests or containerization/deployment. The tester and validator agents handle those automatically.
 - **Milestone acceptance context.** Each milestone file must contain a `> **Validates:**` blockquote describing what the validator should test — endpoint paths, HTTP methods, expected status codes, pages that should render, CLI commands. This is the validator's primary test plan.
 - **Reference files for context scoping.** Each milestone file must contain a `> **Reference files:**` blockquote listing ONE exemplar file per architectural layer (entity, repository, service, controller, page) plus shared infrastructure files. The builder reads these files to learn the project's patterns and then applies them — avoiding the need to read the entire codebase. Pick files from the most similar completed feature.
 - **Read the codebase first (cases B/C).** Match existing patterns — if a BaseRepository<T> exists, use it; if DTOs are records, make new DTOs records.
 
-> **Backlog planning prompt:** You are a planning-only orchestrator. Your job is to decompose a project's requirements into a complete backlog of stories. [...story decomposition rules, story sizing, dependency annotation rules, containerization/testing exclusions...] The initial prompt creates BACKLOG.md only — no milestone files. Milestone planning happens after all quality checks pass.
+> **Backlog planning prompt:** You are a planning-only orchestrator. Your job is to decompose a project's requirements into a complete backlog of stories, then plan the first milestone. [...story decomposition rules, task sizing, milestone sizing, detail requirements, containerization/testing exclusions...]
 
-> **Completeness check prompt:** You are a planning quality reviewer. Your ONLY job is to verify that BACKLOG.md completely covers REQUIREMENTS.md and SPEC.md. Walk through every ## and ### heading in REQUIREMENTS.md. For each section, verify at least one story covers it. Also check SPEC.md for technical decisions that require setup work. For fullstack projects, verify that features with UI requirements have frontend stories — a backend-only story does NOT satisfy a UI requirement. If gaps exist, add stories. [...gap identification, renumbering rules...]
+> **Completeness check prompt:** You are a planning quality reviewer. Your ONLY job is to verify that BACKLOG.md completely covers REQUIREMENTS.md and SPEC.md. Walk through every ## and ### heading in REQUIREMENTS.md. For each section, verify at least one story covers it. Also check SPEC.md for technical decisions that require setup work. If gaps exist, add stories. [...gap identification, renumbering rules...]
 
 > **Milestone planning prompt:** You are a planning-only orchestrator. Your job is to manage BACKLOG.md, SPEC.md, and the milestone files in `milestones/`. ASSESS THE PROJECT STATE. Determine: (B) Continuing — find next eligible story, expand into milestone. (C) Evolving — update SPEC.md, add new stories, then do Case B. [...task sizing, milestone sizing, detail requirements, codebase reading...]
 
-**Post-plan enforcement (backlog_checker.py):** After the initial planner creates BACKLOG.md (before any milestone is planned), the orchestrator runs a two-part quality gate implemented in `backlog_checker.py`:
+**Post-plan enforcement (backlog_checker.py):** After the initial planner runs, the orchestrator runs a two-part quality gate implemented in `backlog_checker.py`:
 
-1. **Deterministic structural checks (A1-A3, B)** — validates BACKLOG.md format (heading, checkbox syntax, sequential numbering), dependency graph validity (valid references, no circular deps), prohibited content (no test-only or container-only stories, no pre-planned refactoring), and proportionality (story count reasonableness). A4 (milestone checks) is skipped since no milestone exists yet.
-2. **LLM quality review (C1-C7, C5b)** — a single Copilot call evaluates story semantics: task sizing, detail level, milestone sizing, acceptance criteria, coverage against REQUIREMENTS.md, and frontend coverage for fullstack projects (C5b — verifies that features with UI requirements have frontend stories, not just backend API stories). Evaluation criteria are defined in `docs/backlog-planner-rubric.md`.
+1. **Deterministic structural checks (A1-A4)** — validates BACKLOG.md format (heading, checkbox syntax, sequential numbering, first story checked), dependency graph validity (valid references, no circular deps), prohibited content (no test-only or container-only stories, no pre-planned refactoring), and milestone proportionality (milestone size vs backlog size).
+2. **LLM quality review (C1-C7)** — a single Copilot call evaluates story semantics: task sizing, detail level, milestone sizing, acceptance criteria, and coverage against REQUIREMENTS.md. Evaluation criteria are defined in `docs/backlog-planner-rubric.md`.
 
 If structural checks fail, the initial planner is re-invoked. After re-plan, checks run again (non-blocking — results are logged).
 
@@ -142,9 +139,9 @@ Runs via `build --loop --builder-id N`. Multiple builders can run in parallel, e
 
 ---
 
-## Commit Reviewer
+## Commit Watcher
 
-Runs continuously via `commitwatch`, launched automatically by `go`. Polls for new commits and reviews each one. Runs from the `reviewer/` clone.
+Runs continuously via `commitwatch`, launched automatically by `go`. Polls for new commits and spawns a scoped reviewer for each one.
 
 **Persistent checkpoint:** The last-reviewed commit SHA is saved to `logs/reviewer.checkpoint` after each commit is processed. On restart, the watcher resumes from the checkpoint — no commits are ever missed or re-reviewed.
 
@@ -152,7 +149,7 @@ Runs continuously via `commitwatch`, launched automatically by `go`. Polls for n
 
 For each new commit detected, the watcher enumerates all commits since the last checkpoint (`git log {last_sha}..HEAD --format=%H --reverse`), filters out skippable commits (merges, reviewer-only, coordination-only), and reviews the remaining ones. If there is a single reviewable commit, it reviews that commit individually. If there are multiple reviewable commits (e.g. the builder pushed several commits while the reviewer was busy), it reviews them as a single batch using the combined diff — one Copilot call instead of N:
 
-**Severity-based filing:** Per-commit and batch reviews use a split filing strategy. [bug] and [security] issues are filed as `finding-<timestamp>.md` so the builder sees and fixes them immediately. [cleanup] and [robustness] issues are filed as `note-<timestamp>.md` — per-commit observations that the milestone reviewer later evaluates for recurring patterns and only promotes to `finding-*.md` if the same class of issue appeared in 2+ locations. This reduces noise while ensuring critical issues reach the builder without delay.
+**Severity-based filing:** Per-commit and batch reviews use a split filing strategy. [bug] and [security] issues are filed as `finding-<timestamp>.md` so the builder sees and fixes them immediately. [cleanup] and [robustness] issues are filed as `note-<timestamp>.md` — per-commit observations that the builder does not act on directly. The milestone review later evaluates notes for recurring patterns and only promotes them to `finding-*.md` if the same class of issue appeared in 2+ locations. This reduces noise while ensuring critical issues reach the builder without delay.
 
 **Single commit prompt:**
 
@@ -162,23 +159,9 @@ For each new commit detected, the watcher enumerates all commits since the last 
 
 > ...reviews the combined diff... Same severity-based filing: `finding-*.md` for [bug]/[security], `note-*.md` for [cleanup]/[robustness]. Commit with message 'Code review: {base_sha:.8}..{head_sha:.8}', run git pull --rebase, and push.
 
-**Trigger:** Polls every 10 seconds for new commits  
-**Scope:** Per-commit or batched commit diffs  
-**Checkpoint:** `logs/reviewer.checkpoint` (last reviewed SHA)  
-**Skips:** Merge commits, coordination-only commits (milestone files only, or reviews/ and bugs/ only)  
-**Runs from:** `reviewer/` clone  
-**Shutdown:** Checks for `logs/builder.done` each cycle; exits when builder is done  
-**Writes code:** [doc] fixes only (comments, README). Never changes application logic or DEPLOY.md directly.
+**Milestone reviews:** When the watcher detects that all tasks in a milestone file in `milestones/` are checked, it triggers a cross-cutting review of the entire milestone's diff. This catches issues that per-commit reviews miss: inconsistent patterns across files, API mismatches, duplicated logic introduced across separate commits, and architectural problems in how pieces fit together. Each milestone is only reviewed once (tracked in `logs/reviewer.milestone`). The milestone reviewer also cleans up stale findings — creating `resolved-*.md` files for issues already fixed in the code.
 
----
-
-## Milestone Reviewer
-
-Runs via `milestonewatch`, launched automatically by `go`. Watches `logs/milestones.log` for newly completed milestones and runs cross-cutting reviews for each one. Runs from the `milestone-reviewer/` clone.
-
-When a milestone completes, the milestone reviewer runs a cross-cutting review of the entire milestone's diff. This catches issues that per-commit reviews miss: inconsistent patterns across files, API mismatches, duplicated logic introduced across separate commits, and architectural problems in how pieces fit together. Each milestone is only reviewed once (tracked in `logs/reviewer.milestone`). The milestone reviewer also cleans up stale findings — creating `resolved-*.md` files for issues already fixed in the code.
-
-**Code analysis:** Before the milestone review prompt runs, the reviewer invokes `run_milestone_analysis()` from `code_analysis.py` — a tree-sitter-based structural analysis of all files changed in the milestone. It checks for long functions, deeply nested code, large files, and other structural issues across Python, JS/TS, and C#. The analysis results are included in the milestone review prompt so the reviewer has both diff context and structural quality data.
+**Code analysis:** Before the milestone review prompt runs, the watcher invokes `run_milestone_analysis()` from `code_analysis.py` — a tree-sitter-based structural analysis of all files changed in the milestone. It checks for long functions, deeply nested code, large files, and other structural issues across Python, JS/TS, and C#. The analysis results are included in the milestone review prompt so the reviewer has both diff context and structural quality data.
 
 **Milestone frequency filter:** The milestone review reads all `note-*.md` files from per-commit reviews and applies a frequency filter before filing findings for the builder:
 - [bug] and [security]: Always filed as `finding-*.md` regardless of frequency
@@ -187,11 +170,12 @@ When a milestone completes, the milestone reviewer runs a cross-cutting review o
 
 > ...reviews the full milestone diff... Reads `note-*.md` files for per-commit observations. Files `finding-*.md` for [bug]/[security] always, and for [cleanup]/[robustness] only when the pattern recurs in 2+ locations. Cleans up stale findings. Commit with message 'Milestone review: {milestone_name}', run git pull --rebase, and push.
 
-**Trigger:** Polls `logs/milestones.log` every 10 seconds  
-**Scope:** Full milestone diff + cross-cutting analysis  
-**Checkpoint:** `logs/reviewer.milestone` (set of milestones already reviewed)  
-**Runs from:** `milestone-reviewer/` clone  
-**Shutdown:** Checks for `logs/builder.done`; drains remaining milestone reviews before exiting  
+**Trigger:** Polls every 10 seconds for new commits  
+**Scope:** Per-commit diff for individual reviews; full milestone diff for milestone reviews  
+**Checkpoint:** `logs/reviewer.checkpoint` (per-commit), `logs/reviewer.milestone` (per-milestone)  
+**Skips:** Merge commits, coordination-only commits (milestone files only, or reviews/ and bugs/ only)  
+**Runs from:** `reviewer/` clone  
+**Shutdown:** Checks for `logs/builder.done` each cycle; completes any remaining milestone reviews before exiting  
 **Writes code:** [doc] fixes only (comments, README). Never changes application logic or DEPLOY.md directly.  
 **Updates:** REVIEW-THEMES.md (rolling summary of top recurring review patterns, replaced each milestone review)
 
@@ -287,15 +271,14 @@ The builder updates the project's copilot-instructions.md whenever project struc
 - **Commit message tagging:** Every agent prefixes its commit messages with its name in brackets — `[builder]`, `[reviewer]`, `[tester]`, `[validator]`, `[planner]`, `[bootstrap]`. This makes it easy to see who did what in `git log`.
 - The **Planner** runs on demand via `plan`. It assesses project state (fresh / continuing / evolving), manages BACKLOG.md (story queue with three-state tracking: `[ ]` unclaimed, `[~]` claimed, `[x]` completed), updates SPEC.md if new requirements are detected, then writes one milestone file per story in `milestones/`. It never writes application code.
 - The **Builder** runs in a claim loop. Each builder claims a story from BACKLOG.md (`[~]`), calls the planner to expand it into a milestone, completes all tasks, marks the story done (`[x]`), and loops. When no eligible stories remain, writes `logs/builder-N.done`.
-- The **Commit Reviewer** reviews each commit individually (or batches when behind). [bug] and [security] issues are filed as `finding-*.md` for the builder to fix immediately. [cleanup] and [robustness] issues are filed as `note-*.md` for the milestone reviewer to evaluate.
-- The **Milestone Reviewer** runs a cross-cutting review when a milestone completes. Promotes recurring patterns from notes to findings, cleans up stale findings by creating `resolved-*.md` files, and updates REVIEW-THEMES.md.
+- The **Reviewer** reviews each commit individually, plus a cross-cutting review when a milestone completes. Non-code issues ([doc]: stale docs, misleading comments) are fixed directly by the reviewer (except DEPLOY.md — that gets filed as a finding). Code-level issues ([code]) are filed as `finding-*.md` files in `reviews/` for the builder. Milestone reviews clean up stale findings by creating `resolved-*.md` files.
 - The **Tester** runs scoped tests when a milestone completes, focusing on changed files. It runs the test suite only — it does not start the app or test live endpoints. Files bugs in `bugs/`. Exits when the builder finishes.
 - The **Validator** builds the app in a Docker container after each milestone, starts it, and tests it against SPEC.md acceptance criteria. Files bugs in `bugs/`. Persists deployment knowledge in DEPLOY.md. Exits when the builder finishes.
 - Agents never edit or delete existing files in `reviews/` or `bugs/` — they only create new files. This eliminates merge conflicts on those directories.
 - All agents run `git pull --rebase` before pushing to avoid merge conflicts. Since `reviews/` and `bugs/` are append-only directories (no file is ever edited), concurrent new-file creations never conflict.
 - `SPEC.md` is the source of truth for technical decisions. `BACKLOG.md` is the story queue. Edit either anytime to steer the project — run `plan` to adapt.
 - Each milestone file in `milestones/` is exclusively owned by one builder — no two builders edit the same file.
-- `REVIEW-THEMES.md` is a cumulative knowledge base of recurring review patterns, owned by the milestone reviewer. The milestone reviewer updates it after each milestone review, adding new themes but never removing old ones. Themes persist forever as lessons learned. The builder reads it to avoid repeating patterns but never modifies it.
+- `REVIEW-THEMES.md` is a cumulative knowledge base of recurring review patterns, owned by the reviewer. The reviewer updates it after each milestone review, adding new themes but never removing old ones. Themes persist forever as lessons learned. The builder reads it to avoid repeating patterns but never modifies it.
 
 ---
 

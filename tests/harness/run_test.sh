@@ -69,7 +69,7 @@ to_python_path() {
 
 # Defaults
 SPEC_FILE="$HARNESS_DIR/sample_spec_cli_calculator.md"
-PROJECT_NAME="test-run"
+PROJECT_NAME=""
 RESUME=false
 MODEL=""
 BUILDERS=1
@@ -110,6 +110,13 @@ if [[ -z "$MODEL" ]]; then
     echo "ERROR: --model is required."
     echo "Allowed models: gpt-5.3-codex, claude-opus-4.6, claude-opus-4.6-fast"
     echo "Usage: $0 --model 'gpt-5.3-codex' [--spec-file <path>] [--name <project>] [--resume]"
+    exit 1
+fi
+
+# --- Require --name ---
+if [[ -z "$PROJECT_NAME" ]]; then
+    echo "ERROR: --name is required."
+    echo "Usage: $0 --name 'my-project' --model 'claude-opus-4.6' [--spec-file <path>] [--builders <N>] [--resume]"
     exit 1
 fi
 

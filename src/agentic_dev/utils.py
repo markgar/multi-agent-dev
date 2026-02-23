@@ -25,7 +25,7 @@ def pushd(path: str) -> Generator[None, None, None]:
         os.chdir(prev)
 
 
-_AGENT_DIRS = {"builder", "reviewer", "tester", "validator", "watcher"}
+_AGENT_DIRS = {"builder", "reviewer", "milestone-reviewer", "tester", "validator", "watcher"}
 _BUILDER_DIR_RE = re.compile(r"^builder-\d+$")
 
 
