@@ -21,6 +21,11 @@ style: |
     background: #2d2d44 !important;
     border-radius: 8px;
     padding: 16px !important;
+    color: #e0e0e0;
+  }
+  pre code {
+    background: transparent;
+    color: #e0e0e0;
   }
   strong {
     color: #f0f0f0;
