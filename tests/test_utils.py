@@ -13,7 +13,7 @@ from agentic_dev.utils import (
 )
 from agentic_dev.git_helpers import is_reviewer_only_files, is_coordination_only_files
 from agentic_dev.terminal import build_agent_script
-from agentic_dev.utils import count_open_items_in_dir, _extract_item_ids
+from agentic_dev.utils import count_open_items_in_dir, count_partitioned_open_items, _extract_item_ids
 from agentic_dev.milestone_reviewer import find_unreviewed_milestones
 from agentic_dev.tester import find_untested_milestones
 
@@ -332,6 +332,53 @@ def test_count_open_bugs(tmp_path):
     (d / "fixed-20260215-120000.md").write_text("patched")
     (d / ".gitkeep").write_text("")
     assert count_open_items_in_dir(str(d), "bug-", "fixed-") == 1
+
+
+# --- count_partitioned_open_items ---
+
+def test_partitioned_count_single_builder_returns_all(tmp_path):
+    d = tmp_path / "reviews"
+    d.mkdir()
+    (d / "finding-20260223-165300.md").touch()  # ends in 0
+    (d / "finding-20260223-165301.md").touch()  # ends in 1
+    assert count_partitioned_open_items(str(d), "finding-", "resolved-", 1, 1) == 2
+
+
+def test_partitioned_count_two_builders_splits_evenly(tmp_path):
+    d = tmp_path / "bugs"
+    d.mkdir()
+    (d / "bug-20260223-165300.md").touch()  # ends in 0 -> builder-1
+    (d / "bug-20260223-165301.md").touch()  # ends in 1 -> builder-2
+    (d / "bug-20260223-165302.md").touch()  # ends in 2 -> builder-1
+    (d / "bug-20260223-165303.md").touch()  # ends in 3 -> builder-2
+    assert count_partitioned_open_items(str(d), "bug-", "fixed-", 1, 2) == 2
+    assert count_partitioned_open_items(str(d), "bug-", "fixed-", 2, 2) == 2
+
+
+def test_partitioned_count_excludes_closed_items(tmp_path):
+    d = tmp_path / "bugs"
+    d.mkdir()
+    (d / "bug-20260223-165300.md").touch()  # ends in 0 -> builder-1
+    (d / "fixed-20260223-165300.md").touch()  # closes it
+    (d / "bug-20260223-165302.md").touch()  # ends in 2 -> builder-1
+    assert count_partitioned_open_items(str(d), "bug-", "fixed-", 1, 2) == 1
+
+
+def test_partitioned_count_nonexistent_dir():
+    assert count_partitioned_open_items("/nonexistent", "bug-", "fixed-", 1, 2) == 0
+
+
+def test_partitioned_count_three_builders(tmp_path):
+    d = tmp_path / "reviews"
+    d.mkdir()
+    for i in range(10):
+        (d / f"finding-20260223-16530{i}.md").touch()
+    # builder-1 gets 0,3,6,9 = 4 items
+    assert count_partitioned_open_items(str(d), "finding-", "resolved-", 1, 3) == 4
+    # builder-2 gets 1,4,7 = 3 items
+    assert count_partitioned_open_items(str(d), "finding-", "resolved-", 2, 3) == 3
+    # builder-3 gets 2,5,8 = 3 items
+    assert count_partitioned_open_items(str(d), "finding-", "resolved-", 3, 3) == 3
 
 
 # --- builder-N directory recognition ---

@@ -21,7 +21,7 @@ from agentic_dev.milestone import (
 )
 from agentic_dev.prompts import BUILDER_PROMPT
 from agentic_dev.sentinel import are_agents_idle, write_builder_done
-from agentic_dev.utils import count_open_items_in_dir, log, run_cmd, run_copilot
+from agentic_dev.utils import count_open_items_in_dir, count_partitioned_open_items, log, run_cmd, run_copilot
 
 
 def register(app: typer.Typer) -> None:
@@ -264,6 +264,23 @@ def find_milestone_file_for_story(milestones_dir: str = "milestones") -> str | N
     return candidates[0][1]
 
 
+def _build_partition_filter(builder_id: int, num_builders: int) -> str:
+    """Build the prompt text that tells this builder which bugs/findings to fix.
+
+    When num_builders is 1, returns empty string (no filtering).
+    Otherwise returns a sentence listing the assigned last digits.
+    """
+    if num_builders <= 1:
+        return ""
+    assigned = [d for d in range(10) if d % num_builders == (builder_id - 1)]
+    digits_str = ", ".join(str(d) for d in assigned)
+    return (
+        f"You are builder {builder_id} of {num_builders}. Only fix bugs/findings "
+        f"whose filename ends in one of these digits (before `.md`): {digits_str}. "
+        "Skip all others — another builder will handle them. "
+    )
+
+
 # ============================================
 # Build loop helpers
 # ============================================
@@ -364,15 +381,22 @@ def _log_all_done(agent_name: str) -> None:
     log(agent_name, "======================================", style="bold green")
 
 
-def _check_remaining_work(state: BuildState, agent_name: str, milestone_file: str) -> str:
+def _check_remaining_work(
+    state: BuildState, agent_name: str, milestone_file: str,
+    builder_id: int = 1, num_builders: int = 1,
+) -> str:
     """Wait for agents to finish, then check work lists. Return 'done' or 'continue'."""
     wait_cycle = 0
 
     while wait_cycle < _AGENT_WAIT_MAX_CYCLES:
         run_cmd(["git", "pull", "--rebase", "-q"], quiet=True)
 
-        remaining_bugs = count_open_items_in_dir("bugs", "bug-", "fixed-")
-        remaining_reviews = count_open_items_in_dir("reviews", "finding-", "resolved-")
+        remaining_bugs = count_partitioned_open_items(
+            "bugs", "bug-", "fixed-", builder_id, num_builders,
+        )
+        remaining_reviews = count_partitioned_open_items(
+            "reviews", "finding-", "resolved-", builder_id, num_builders,
+        )
         # Check the builder's own milestone file for unchecked tasks
         progress = get_milestone_progress_from_file(milestone_file)
         remaining_tasks = 0 if progress is None else (progress["total"] - progress["done"])
@@ -412,12 +436,13 @@ def _check_remaining_work(state: BuildState, agent_name: str, milestone_file: st
 
 def _run_fix_only_cycle(
     state: BuildState, agent_name: str, milestone_file: str,
+    builder_id: int = 1, num_builders: int = 1,
 ) -> str:
     """Handle a fix-only cycle when the milestone is complete but work remains.
 
     Returns 'done', 'limit', or 'continue'.
     """
-    signal = _check_remaining_work(state, agent_name, milestone_file)
+    signal = _check_remaining_work(state, agent_name, milestone_file, builder_id, num_builders)
     if signal == "done":
         return "done"
     state.fix_only_cycles += 1
@@ -431,7 +456,10 @@ def _run_fix_only_cycle(
         f"(fix-only cycle {state.fix_only_cycles}/{_MAX_FIX_ONLY_CYCLES})...",
         style="green")
     log(agent_name, "")
-    prompt = BUILDER_PROMPT.format(milestone_file=milestone_file)
+    prompt = BUILDER_PROMPT.format(
+        milestone_file=milestone_file,
+        partition_filter=_build_partition_filter(builder_id, num_builders),
+    )
     run_copilot(agent_name, prompt)
     return "continue"
 
@@ -444,6 +472,7 @@ def _run_fix_only_cycle(
 def build(
     loop: Annotated[bool, typer.Option(help="Run continuously until all work is done")] = False,
     builder_id: Annotated[int, typer.Option(help="Builder instance number (1-based)")] = 1,
+    num_builders: Annotated[int, typer.Option(help="Total number of builder instances")] = 1,
 ) -> None:
     """Claim stories from BACKLOG.md, fix bugs, address reviews, complete milestones.
 
@@ -465,7 +494,10 @@ def build(
         log(agent_name, f"[Builder] Starting work on {milestone_file}...", style="green")
         log(agent_name, "")
 
-        prompt = BUILDER_PROMPT.format(milestone_file=milestone_file)
+        prompt = BUILDER_PROMPT.format(
+            milestone_file=milestone_file,
+            partition_filter=_build_partition_filter(builder_id, num_builders),
+        )
         exit_code = run_copilot(agent_name, prompt)
         if exit_code != 0:
             log(agent_name, "Builder failed! Check errors above.", style="bold red")
@@ -492,13 +524,13 @@ def build(
 
             # Enter shutdown: wait for agents, fix remaining bugs/reviews
             milestone_file = find_milestone_file_for_story("milestones") or "milestones/done.md"
-            signal = _check_remaining_work(state, agent_name, milestone_file)
+            signal = _check_remaining_work(state, agent_name, milestone_file, builder_id, num_builders)
             if signal == "done":
                 write_builder_done(builder_id)
                 return
             # Still work to do -- run fix-only cycles
             while True:
-                action = _run_fix_only_cycle(state, agent_name, milestone_file)
+                action = _run_fix_only_cycle(state, agent_name, milestone_file, builder_id, num_builders)
                 if action in ("done", "limit"):
                     write_builder_done(builder_id)
                     return
@@ -528,7 +560,10 @@ def build(
         log(agent_name, f"[Builder] Starting work on {milestone_file}...", style="green")
         log(agent_name, "")
 
-        prompt = BUILDER_PROMPT.format(milestone_file=milestone_file)
+        prompt = BUILDER_PROMPT.format(
+            milestone_file=milestone_file,
+            partition_filter=_build_partition_filter(builder_id, num_builders),
+        )
         exit_code = run_copilot(agent_name, prompt)
 
         if exit_code != 0:

@@ -36,7 +36,7 @@ PROMPT_FORMAT_CASES = [
     ("PLANNER_COMPLETENESS_PROMPT", PLANNER_COMPLETENESS_PROMPT, {}),
     ("PLANNER_PROMPT", PLANNER_PROMPT, {"story_name": "Members backend"}),
     ("PLANNER_SPLIT_PROMPT", PLANNER_SPLIT_PROMPT, {"milestone_name": "M1", "milestone_file": "milestones/milestone-01-scaffolding.md", "task_count": 8}),
-    ("BUILDER_PROMPT", BUILDER_PROMPT, {"milestone_file": "milestones/milestone-01-scaffolding.md"}),
+    ("BUILDER_PROMPT", BUILDER_PROMPT, {"milestone_file": "milestones/milestone-01-scaffolding.md", "partition_filter": ""}),
     ("REVIEWER_PROMPT", REVIEWER_PROMPT, {}),
     ("REVIEWER_COMMIT_PROMPT", REVIEWER_COMMIT_PROMPT, {"prev_sha": "aaa", "commit_sha": "bbb"}),
     ("REVIEWER_BATCH_PROMPT", REVIEWER_BATCH_PROMPT, {"commit_count": 3, "base_sha": "aaa", "head_sha": "bbb"}),

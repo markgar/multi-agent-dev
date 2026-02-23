@@ -213,7 +213,7 @@ def _launch_agents_and_build(
     # otherwise both race on the same story.
     for i in range(1, num_builders + 1):
         builder_dir = os.path.join(parent_dir, f"builder-{i}")
-        builder_cmd = f"build --loop --builder-id {i}"
+        builder_cmd = f"build --loop --builder-id {i} --num-builders {num_builders}"
         log("orchestrator", f"Launching builder-{i}...", style="yellow")
         spawn_agent_in_terminal(builder_dir, builder_cmd)
         if i < num_builders:

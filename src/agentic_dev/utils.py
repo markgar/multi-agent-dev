@@ -327,3 +327,33 @@ def count_open_items_in_dir(directory: str, open_prefix: str, closed_prefix: str
     open_ids = _extract_item_ids(filenames, open_prefix)
     closed_ids = _extract_item_ids(filenames, closed_prefix)
     return len(open_ids - closed_ids)
+
+
+def count_partitioned_open_items(
+    directory: str, open_prefix: str, closed_prefix: str,
+    builder_id: int, num_builders: int,
+) -> int:
+    """Count open items assigned to this builder by last-digit partitioning.
+
+    Items are partitioned across builders by the last digit of their ID
+    (the timestamp portion of the filename). An item belongs to builder N
+    when: last_digit % num_builders == (builder_id - 1).
+
+    When num_builders is 1, returns the same result as count_open_items_in_dir.
+    """
+    if not os.path.isdir(directory):
+        return 0
+    try:
+        filenames = os.listdir(directory)
+    except OSError:
+        return 0
+    open_ids = _extract_item_ids(filenames, open_prefix)
+    closed_ids = _extract_item_ids(filenames, closed_prefix)
+    unclosed = open_ids - closed_ids
+    if num_builders <= 1:
+        return len(unclosed)
+    return sum(
+        1 for item_id in unclosed
+        if item_id and item_id[-1].isdigit()
+        and int(item_id[-1]) % num_builders == (builder_id - 1)
+    )

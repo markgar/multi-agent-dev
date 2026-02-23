@@ -3,6 +3,7 @@
 from agentic_dev.builder import (
     BuildState,
     _MAX_FIX_ONLY_CYCLES,
+    _build_partition_filter,
     classify_remaining_work,
     mark_story_claimed,
     mark_story_completed_text,
@@ -246,3 +247,33 @@ def test_find_milestone_file_returns_none_when_all_complete(tmp_path):
 def test_find_milestone_file_returns_none_when_dir_missing(tmp_path):
     result = find_milestone_file_for_story(str(tmp_path / "nonexistent"))
     assert result is None
+
+
+# ============================================
+# _build_partition_filter (pure function)
+# ============================================
+
+
+def test_partition_filter_single_builder_returns_empty():
+    assert _build_partition_filter(1, 1) == ""
+
+
+def test_partition_filter_two_builders_lists_correct_digits():
+    result = _build_partition_filter(1, 2)
+    assert "0, 2, 4, 6, 8" in result
+    assert "builder 1 of 2" in result
+
+    result = _build_partition_filter(2, 2)
+    assert "1, 3, 5, 7, 9" in result
+    assert "builder 2 of 2" in result
+
+
+def test_partition_filter_three_builders():
+    result = _build_partition_filter(1, 3)
+    assert "0, 3, 6, 9" in result
+
+    result = _build_partition_filter(2, 3)
+    assert "1, 4, 7" in result
+
+    result = _build_partition_filter(3, 3)
+    assert "2, 5, 8" in result
