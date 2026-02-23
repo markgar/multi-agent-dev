@@ -200,12 +200,18 @@ def _launch_agents_and_build(
     validator_cmd = f"validateloop --project-name {project_name}" if project_name else "validateloop"
     spawn_agent_in_terminal(os.path.join(parent_dir, "validator"), validator_cmd)
 
-    # Spawn builders as terminal processes
+    # Spawn builders as terminal processes with staggered starts.
+    # Builder-1 needs time to claim story #1 and push before builder-2 starts,
+    # otherwise both race on the same story.
     for i in range(1, num_builders + 1):
         builder_dir = os.path.join(parent_dir, f"builder-{i}")
         builder_cmd = f"build --loop --builder-id {i}"
         log("orchestrator", f"Launching builder-{i}...", style="yellow")
         spawn_agent_in_terminal(builder_dir, builder_cmd)
+        if i < num_builders:
+            delay = 30
+            log("orchestrator", f"Waiting {delay}s before launching next builder...", style="yellow")
+            time.sleep(delay)
 
     log("orchestrator", "")
     log("orchestrator", "======================================", style="bold green")
