@@ -1,21 +1,58 @@
 """Planner commands: backlog planning and milestone planning."""
 
 import os
+import re
 
 import typer
 
 from agentic_dev.backlog_checker import check_backlog_quality, run_ordering_check
-from agentic_dev.milestone import get_tasks_per_milestone_from_dir
+from agentic_dev.git_helpers import git_push_with_retry
+from agentic_dev.milestone import get_tasks_per_milestone_from_dir, list_milestone_files
 from agentic_dev.prompts import (
     PLANNER_COMPLETENESS_PROMPT,
     PLANNER_INITIAL_PROMPT,
     PLANNER_PROMPT,
     PLANNER_SPLIT_PROMPT,
 )
-from agentic_dev.utils import log, run_copilot
+from agentic_dev.utils import log, run_cmd, run_copilot
 
 
 _MAX_TASKS_PER_MILESTONE = 10
+
+# Regex matching the first story line in BACKLOG.md: "1. [ ] Story name"
+_FIRST_STORY_RE = re.compile(r"^(1\.\s+)\[ \](.*)$", re.MULTILINE)
+
+
+def _ensure_first_story_checked() -> None:
+    """Mark story #1 as [x] in BACKLOG.md if a milestone file exists.
+
+    The planner prompt tells the LLM not to manage checkboxes — the Python
+    orchestration owns that. After the initial plan creates BACKLOG.md and
+    the first milestone file, this function checks off story #1 so the
+    structural checker passes and the builder knows story #1 is planned.
+    """
+    if not os.path.exists("BACKLOG.md"):
+        return
+    if not list_milestone_files("milestones"):
+        return
+
+    with open("BACKLOG.md", "r", encoding="utf-8") as f:
+        content = f.read()
+
+    if not _FIRST_STORY_RE.search(content):
+        return  # Already checked or no matching line
+
+    updated = _FIRST_STORY_RE.sub(r"\1[x]\2", content, count=1)
+    with open("BACKLOG.md", "w", encoding="utf-8") as f:
+        f.write(updated)
+
+    run_cmd(["git", "add", "BACKLOG.md"], quiet=True)
+    run_cmd(
+        ["git", "commit", "-m", "[planner] Check off story #1 (milestone planned)"],
+        quiet=True,
+    )
+    git_push_with_retry("planner")
+    log("planner", "[Planner] Checked off story #1 in BACKLOG.md", style="green")
 
 
 def register(app: typer.Typer) -> None:
@@ -50,6 +87,9 @@ def plan(requirements_changed: bool = False, story_name: str = "") -> bool:
             log("planner", " Planner failed! Check errors above", style="bold red")
             log("planner", "======================================", style="bold red")
             return False
+
+        # Deterministically check off story #1 now that its milestone exists
+        _ensure_first_story_checked()
 
         # Completeness pass: validate backlog covers all requirements
         log("planner", "")
