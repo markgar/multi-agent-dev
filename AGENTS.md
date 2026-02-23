@@ -4,6 +4,56 @@ Each agent is a `copilot --yolo` call with a specific prompt. Here's exactly wha
 
 ---
 
+## Orchestrator
+
+The `go` command is the single entry point. It detects project state, bootstraps or resumes, and launches all agents. Users never call individual agent commands directly — `go` handles everything.
+
+### New project flow
+
+When no repo exists (requires `--spec-file` or `--description`):
+
+1. **Bootstrap** — runs Copilot to create the repo (README.md, SPEC.md, REQUIREMENTS.md, reviews/, bugs/)
+2. **Migrate builder** — renames `builder/` to `builder-1/` for multi-builder consistency
+3. **Clone additional builders** — if `--builders N` with N > 1, clones `builder-2/` through `builder-N/`
+4. **Launch agents and build** — see launch sequence below
+
+### Existing project flow
+
+When the repo already exists (detected via `remote.git/` locally or `gh repo view` on GitHub):
+
+1. **Migrate legacy builder** — renames `builder/` to `builder-1/` if needed
+2. **Clone all agents** — creates any missing agent directories (`builder-N/`, `reviewer/`, `milestone-reviewer/`, `tester/`, `validator/`) from the repo
+3. **Pull all clones** — `git pull --rebase` on every agent directory
+4. **Update requirements** — if `--spec-file` or `--description` provided, overwrites `REQUIREMENTS.md`, commits, and pushes
+5. **Launch agents and build** — see launch sequence below
+
+### Launch sequence
+
+`_launch_agents_and_build()` runs the following steps in order:
+
+1. **Clear sentinels** — removes stale `logs/builder-N.done` files from previous runs
+2. **Run backlog planner** — creates `BACKLOG.md` (fresh project) or plans the next milestone (continuing project). If planning fails, aborts.
+3. **Check milestone sizes** — splits any milestone exceeding 8 tasks
+4. **Generate copilot-instructions** — creates `.github/copilot-instructions.md` if it doesn't exist (skipped on resume)
+5. **Spawn agents in terminal windows** — one terminal per agent, in this order:
+   - Commit watcher (`reviewer/` clone → `commitwatch`)
+   - Milestone reviewer (`milestone-reviewer/` clone → `milestonewatch`)
+   - Tester (`tester/` clone → `testloop`)
+   - Validator (`validator/` clone → `validateloop --project-name <name>`)
+   - Builder-1 through Builder-N (`builder-N/` clone → `build --loop --builder-id N`)
+6. **Stagger builders** — 30-second delay between each builder launch so builder-1 reliably claims story #1 before builder-2 starts
+7. **Wait for completion** — polls `is_builder_done()` every 15 seconds until all builders have written their sentinel files
+
+### Model and environment
+
+The `--model` flag is validated against allowed models (`gpt-5.3-codex`, `claude-opus-4.6`, `claude-opus-4.6-fast`) and exported as `COPILOT_MODEL` for all agent subprocesses to use.
+
+**Implements:** `src/agentic_dev/orchestrator.py`  
+**Delegates to:** `bootstrap.py`, `planner.py`, `sentinel.py`, `terminal.py`  
+**Writes code:** No
+
+---
+
 ## Bootstrap
 
 Runs once internally when you call `go`. Do not run `bootstrap` directly — it is deprecated and will error.
