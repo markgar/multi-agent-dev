@@ -75,7 +75,7 @@ def _find_existing_repo(parent_dir: str, name: str, local: bool) -> str:
 def _clone_all_agents(parent_dir: str, clone_source: str, num_builders: int = 1) -> None:
     """Clone any missing agent directories from the given source."""
     os.makedirs(parent_dir, exist_ok=True)
-    agents = [f"builder-{i}" for i in range(1, num_builders + 1)] + ["reviewer", "tester", "validator"]
+    agents = [f"builder-{i}" for i in range(1, num_builders + 1)] + ["reviewer", "milestone-reviewer", "tester", "validator"]
     for agent in agents:
         agent_dir = os.path.join(parent_dir, agent)
         if not os.path.exists(agent_dir):
@@ -89,7 +89,7 @@ def _pull_all_clones(parent_dir: str, num_builders: int = 1) -> None:
     """Pull latest on all agent clones. Create any missing clones."""
     clone_source = _detect_clone_source(parent_dir)
 
-    agents = [f"builder-{i}" for i in range(1, num_builders + 1)] + ["reviewer", "tester", "validator"]
+    agents = [f"builder-{i}" for i in range(1, num_builders + 1)] + ["reviewer", "milestone-reviewer", "tester", "validator"]
     for agent in agents:
         agent_dir = os.path.join(parent_dir, agent)
         if not os.path.exists(agent_dir):
@@ -192,6 +192,9 @@ def _launch_agents_and_build(
     log("orchestrator", "")
     log("orchestrator", "Launching commit watcher (per-commit reviewer)...", style="yellow")
     spawn_agent_in_terminal(os.path.join(parent_dir, "reviewer"), "commitwatch")
+
+    log("orchestrator", "Launching milestone reviewer...", style="yellow")
+    spawn_agent_in_terminal(os.path.join(parent_dir, "milestone-reviewer"), "milestonewatch")
 
     log("orchestrator", "Launching tester (milestone-triggered)...", style="yellow")
     spawn_agent_in_terminal(os.path.join(parent_dir, "tester"), "testloop")

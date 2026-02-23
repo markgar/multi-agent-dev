@@ -139,9 +139,9 @@ Runs via `build --loop --builder-id N`. Multiple builders can run in parallel, e
 
 ---
 
-## Commit Watcher
+## Commit Reviewer
 
-Runs continuously via `commitwatch`, launched automatically by `go`. Polls for new commits and spawns a scoped reviewer for each one.
+Runs continuously via `commitwatch`, launched automatically by `go`. Polls for new commits and reviews each one. Runs from the `reviewer/` clone.
 
 **Persistent checkpoint:** The last-reviewed commit SHA is saved to `logs/reviewer.checkpoint` after each commit is processed. On restart, the watcher resumes from the checkpoint — no commits are ever missed or re-reviewed.
 
@@ -149,7 +149,7 @@ Runs continuously via `commitwatch`, launched automatically by `go`. Polls for n
 
 For each new commit detected, the watcher enumerates all commits since the last checkpoint (`git log {last_sha}..HEAD --format=%H --reverse`), filters out skippable commits (merges, reviewer-only, coordination-only), and reviews the remaining ones. If there is a single reviewable commit, it reviews that commit individually. If there are multiple reviewable commits (e.g. the builder pushed several commits while the reviewer was busy), it reviews them as a single batch using the combined diff — one Copilot call instead of N:
 
-**Severity-based filing:** Per-commit and batch reviews use a split filing strategy. [bug] and [security] issues are filed as `finding-<timestamp>.md` so the builder sees and fixes them immediately. [cleanup] and [robustness] issues are filed as `note-<timestamp>.md` — per-commit observations that the builder does not act on directly. The milestone review later evaluates notes for recurring patterns and only promotes them to `finding-*.md` if the same class of issue appeared in 2+ locations. This reduces noise while ensuring critical issues reach the builder without delay.
+**Severity-based filing:** Per-commit and batch reviews use a split filing strategy. [bug] and [security] issues are filed as `finding-<timestamp>.md` so the builder sees and fixes them immediately. [cleanup] and [robustness] issues are filed as `note-<timestamp>.md` — per-commit observations that the milestone reviewer later evaluates for recurring patterns and only promotes to `finding-*.md` if the same class of issue appeared in 2+ locations. This reduces noise while ensuring critical issues reach the builder without delay.
 
 **Single commit prompt:**
 
@@ -159,9 +159,23 @@ For each new commit detected, the watcher enumerates all commits since the last 
 
 > ...reviews the combined diff... Same severity-based filing: `finding-*.md` for [bug]/[security], `note-*.md` for [cleanup]/[robustness]. Commit with message 'Code review: {base_sha:.8}..{head_sha:.8}', run git pull --rebase, and push.
 
-**Milestone reviews:** When the watcher detects that all tasks in a milestone file in `milestones/` are checked, it triggers a cross-cutting review of the entire milestone's diff. This catches issues that per-commit reviews miss: inconsistent patterns across files, API mismatches, duplicated logic introduced across separate commits, and architectural problems in how pieces fit together. Each milestone is only reviewed once (tracked in `logs/reviewer.milestone`). The milestone reviewer also cleans up stale findings — creating `resolved-*.md` files for issues already fixed in the code.
+**Trigger:** Polls every 10 seconds for new commits  
+**Scope:** Per-commit or batched commit diffs  
+**Checkpoint:** `logs/reviewer.checkpoint` (last reviewed SHA)  
+**Skips:** Merge commits, coordination-only commits (milestone files only, or reviews/ and bugs/ only)  
+**Runs from:** `reviewer/` clone  
+**Shutdown:** Checks for `logs/builder.done` each cycle; exits when builder is done  
+**Writes code:** [doc] fixes only (comments, README). Never changes application logic or DEPLOY.md directly.
 
-**Code analysis:** Before the milestone review prompt runs, the watcher invokes `run_milestone_analysis()` from `code_analysis.py` — a tree-sitter-based structural analysis of all files changed in the milestone. It checks for long functions, deeply nested code, large files, and other structural issues across Python, JS/TS, and C#. The analysis results are included in the milestone review prompt so the reviewer has both diff context and structural quality data.
+---
+
+## Milestone Reviewer
+
+Runs via `milestonewatch`, launched automatically by `go`. Watches `logs/milestones.log` for newly completed milestones and runs cross-cutting reviews for each one. Runs from the `milestone-reviewer/` clone.
+
+When a milestone completes, the milestone reviewer runs a cross-cutting review of the entire milestone's diff. This catches issues that per-commit reviews miss: inconsistent patterns across files, API mismatches, duplicated logic introduced across separate commits, and architectural problems in how pieces fit together. Each milestone is only reviewed once (tracked in `logs/reviewer.milestone`). The milestone reviewer also cleans up stale findings — creating `resolved-*.md` files for issues already fixed in the code.
+
+**Code analysis:** Before the milestone review prompt runs, the reviewer invokes `run_milestone_analysis()` from `code_analysis.py` — a tree-sitter-based structural analysis of all files changed in the milestone. It checks for long functions, deeply nested code, large files, and other structural issues across Python, JS/TS, and C#. The analysis results are included in the milestone review prompt so the reviewer has both diff context and structural quality data.
 
 **Milestone frequency filter:** The milestone review reads all `note-*.md` files from per-commit reviews and applies a frequency filter before filing findings for the builder:
 - [bug] and [security]: Always filed as `finding-*.md` regardless of frequency
@@ -170,12 +184,11 @@ For each new commit detected, the watcher enumerates all commits since the last 
 
 > ...reviews the full milestone diff... Reads `note-*.md` files for per-commit observations. Files `finding-*.md` for [bug]/[security] always, and for [cleanup]/[robustness] only when the pattern recurs in 2+ locations. Cleans up stale findings. Commit with message 'Milestone review: {milestone_name}', run git pull --rebase, and push.
 
-**Trigger:** Polls every 10 seconds for new commits  
-**Scope:** Per-commit diff for individual reviews; full milestone diff for milestone reviews  
-**Checkpoint:** `logs/reviewer.checkpoint` (per-commit), `logs/reviewer.milestone` (per-milestone)  
-**Skips:** Merge commits, coordination-only commits (milestone files only, or reviews/ and bugs/ only)  
-**Runs from:** `reviewer/` clone  
-**Shutdown:** Checks for `logs/builder.done` each cycle; completes any remaining milestone reviews before exiting  
+**Trigger:** Polls `logs/milestones.log` every 10 seconds  
+**Scope:** Full milestone diff + cross-cutting analysis  
+**Checkpoint:** `logs/reviewer.milestone` (set of milestones already reviewed)  
+**Runs from:** `milestone-reviewer/` clone  
+**Shutdown:** Checks for `logs/builder.done`; drains remaining milestone reviews before exiting  
 **Writes code:** [doc] fixes only (comments, README). Never changes application logic or DEPLOY.md directly.  
 **Updates:** REVIEW-THEMES.md (rolling summary of top recurring review patterns, replaced each milestone review)
 
@@ -271,14 +284,15 @@ The builder updates the project's copilot-instructions.md whenever project struc
 - **Commit message tagging:** Every agent prefixes its commit messages with its name in brackets — `[builder]`, `[reviewer]`, `[tester]`, `[validator]`, `[planner]`, `[bootstrap]`. This makes it easy to see who did what in `git log`.
 - The **Planner** runs on demand via `plan`. It assesses project state (fresh / continuing / evolving), manages BACKLOG.md (story queue with three-state tracking: `[ ]` unclaimed, `[~]` claimed, `[x]` completed), updates SPEC.md if new requirements are detected, then writes one milestone file per story in `milestones/`. It never writes application code.
 - The **Builder** runs in a claim loop. Each builder claims a story from BACKLOG.md (`[~]`), calls the planner to expand it into a milestone, completes all tasks, marks the story done (`[x]`), and loops. When no eligible stories remain, writes `logs/builder-N.done`.
-- The **Reviewer** reviews each commit individually, plus a cross-cutting review when a milestone completes. Non-code issues ([doc]: stale docs, misleading comments) are fixed directly by the reviewer (except DEPLOY.md — that gets filed as a finding). Code-level issues ([code]) are filed as `finding-*.md` files in `reviews/` for the builder. Milestone reviews clean up stale findings by creating `resolved-*.md` files.
+- The **Commit Reviewer** reviews each commit individually (or batches when behind). [bug] and [security] issues are filed as `finding-*.md` for the builder to fix immediately. [cleanup] and [robustness] issues are filed as `note-*.md` for the milestone reviewer to evaluate.
+- The **Milestone Reviewer** runs a cross-cutting review when a milestone completes. Promotes recurring patterns from notes to findings, cleans up stale findings by creating `resolved-*.md` files, and updates REVIEW-THEMES.md.
 - The **Tester** runs scoped tests when a milestone completes, focusing on changed files. It runs the test suite only — it does not start the app or test live endpoints. Files bugs in `bugs/`. Exits when the builder finishes.
 - The **Validator** builds the app in a Docker container after each milestone, starts it, and tests it against SPEC.md acceptance criteria. Files bugs in `bugs/`. Persists deployment knowledge in DEPLOY.md. Exits when the builder finishes.
 - Agents never edit or delete existing files in `reviews/` or `bugs/` — they only create new files. This eliminates merge conflicts on those directories.
 - All agents run `git pull --rebase` before pushing to avoid merge conflicts. Since `reviews/` and `bugs/` are append-only directories (no file is ever edited), concurrent new-file creations never conflict.
 - `SPEC.md` is the source of truth for technical decisions. `BACKLOG.md` is the story queue. Edit either anytime to steer the project — run `plan` to adapt.
 - Each milestone file in `milestones/` is exclusively owned by one builder — no two builders edit the same file.
-- `REVIEW-THEMES.md` is a cumulative knowledge base of recurring review patterns, owned by the reviewer. The reviewer updates it after each milestone review, adding new themes but never removing old ones. Themes persist forever as lessons learned. The builder reads it to avoid repeating patterns but never modifies it.
+- `REVIEW-THEMES.md` is a cumulative knowledge base of recurring review patterns, owned by the milestone reviewer. The milestone reviewer updates it after each milestone review, adding new themes but never removing old ones. Themes persist forever as lessons learned. The builder reads it to avoid repeating patterns but never modifies it.
 
 ---
 

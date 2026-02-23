@@ -13,6 +13,7 @@ _STALE_LOG_TIMEOUT_MINUTES = 30
 _BUILDER_ID_RE = re.compile(r"^builder-(\d+)\.(done|log)$")
 _REVIEWER_CHECKPOINT_FILE = "reviewer.checkpoint"
 _REVIEWER_LOG_FILE = "reviewer.log"
+_MILESTONE_REVIEWER_LOG_FILE = "milestone-reviewer.log"
 _TESTER_LOG_FILE = "tester.log"
 _VALIDATOR_LOG_FILE = "validator.log"
 _AGENT_IDLE_SECONDS = 120
@@ -194,6 +195,10 @@ def are_agents_idle() -> bool:
         reviewer_exists = os.path.exists(reviewer_log)
         reviewer_age = (now - os.path.getmtime(reviewer_log)) if reviewer_exists else 0.0
 
+        milestone_reviewer_log = os.path.join(logs_dir, _MILESTONE_REVIEWER_LOG_FILE)
+        milestone_reviewer_exists = os.path.exists(milestone_reviewer_log)
+        milestone_reviewer_age = (now - os.path.getmtime(milestone_reviewer_log)) if milestone_reviewer_exists else 0.0
+
         tester_log = os.path.join(logs_dir, _TESTER_LOG_FILE)
         tester_exists = os.path.exists(tester_log)
         tester_age = (now - os.path.getmtime(tester_log)) if tester_exists else 0.0
@@ -204,6 +209,7 @@ def are_agents_idle() -> bool:
 
         return (
             check_agent_idle(reviewer_exists, reviewer_age, _AGENT_IDLE_SECONDS)
+            and check_agent_idle(milestone_reviewer_exists, milestone_reviewer_age, _AGENT_IDLE_SECONDS)
             and check_agent_idle(tester_exists, tester_age, _AGENT_IDLE_SECONDS)
             and check_agent_idle(validator_exists, validator_age, _AGENT_IDLE_SECONDS)
         )

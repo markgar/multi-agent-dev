@@ -7,23 +7,16 @@ from typing import Annotated
 
 import typer
 
-from agentic_dev.code_analysis import run_milestone_analysis
 from agentic_dev.git_helpers import (
     git_push_with_retry,
     is_coordination_only_commit,
     is_merge_commit,
     is_reviewer_only_commit,
 )
-from agentic_dev.milestone import (
-    load_milestone_boundaries,
-    load_reviewed_milestones,
-    save_milestone_checkpoint,
-)
 from agentic_dev.legacy_watchers import reviewoncommit, testoncommit
 from agentic_dev.prompts import (
     REVIEWER_BATCH_PROMPT,
     REVIEWER_COMMIT_PROMPT,
-    REVIEWER_MILESTONE_PROMPT,
 )
 from agentic_dev.sentinel import (
     is_builder_done,
@@ -195,82 +188,7 @@ def _review_new_commits(last_sha: str, current_head: str) -> bool:
     return False
 
 
-def find_unreviewed_milestones(boundaries: list[dict], reviewed: set[str]) -> list[dict]:
-    """Return milestone boundaries that have not yet been reviewed.
 
-    Pure function: filters boundaries by membership in the reviewed set.
-    """
-    return [b for b in boundaries if b["name"] not in reviewed]
-
-
-def _save_analysis_log(milestone_name: str, analysis_text: str) -> None:
-    """Write code analysis findings to logs/analysis-<milestone>.txt."""
-    safe_name = milestone_name.replace(" ", "-").replace("/", "-").lower()
-    try:
-        logs_dir = resolve_logs_dir()
-        filepath = os.path.join(logs_dir, f"analysis-{safe_name}.txt")
-        with open(filepath, "w", encoding="utf-8") as f:
-            f.write(f"Code analysis: {milestone_name}\n")
-            f.write(f"{'=' * 40}\n\n")
-            f.write(analysis_text)
-            f.write("\n")
-    except OSError:
-        pass
-
-
-def _check_milestone_reviews() -> None:
-    """Run cross-cutting reviews for any newly completed milestones.
-
-    Loads milestone boundaries written by the build loop and compares against
-    already-reviewed milestones. Invokes a milestone-scoped reviewer for each
-    unreviewed milestone and saves the checkpoint.
-    """
-    boundaries = load_milestone_boundaries()
-    reviewed = load_reviewed_milestones()
-
-    for boundary in find_unreviewed_milestones(boundaries, reviewed):
-
-        now = datetime.now().strftime("%H:%M:%S")
-        log(
-            "commit-watcher",
-            f"[{now}] Milestone completed: {boundary['name']}! Running cross-cutting review...",
-            style="bold magenta",
-        )
-
-        try:
-            analysis_text = run_milestone_analysis(
-                boundary["start_sha"], boundary["end_sha"]
-            )
-        except Exception:
-            analysis_text = "No structural issues detected by static analysis."
-
-        _save_analysis_log(boundary["name"], analysis_text)
-
-        milestone_prompt = REVIEWER_MILESTONE_PROMPT.format(
-            milestone_name=boundary["name"],
-            milestone_start_sha=boundary["start_sha"],
-            milestone_end_sha=boundary["end_sha"],
-            code_analysis_findings=analysis_text,
-        )
-        exit_code = run_copilot("reviewer", milestone_prompt)
-
-        if exit_code != 0:
-            now = datetime.now().strftime("%H:%M:%S")
-            log(
-                "commit-watcher",
-                f"[{now}] WARNING: Milestone review of '{boundary['name']}' exited with errors",
-                style="red",
-            )
-
-        git_push_with_retry("commit-watcher")
-        save_milestone_checkpoint(boundary["name"])
-
-        now = datetime.now().strftime("%H:%M:%S")
-        log(
-            "commit-watcher",
-            f"[{now}] Milestone review complete: {boundary['name']}",
-            style="bold magenta",
-        )
 
 
 def commitwatch(
@@ -306,36 +224,12 @@ def commitwatch(
         raise
 
 
-def _drain_remaining_milestone_reviews() -> None:
-    """Process all remaining milestone reviews after the builder has finished.
-
-    Keeps pulling and reviewing until no unreviewed milestones remain.
-    This ensures milestones completed while the reviewer was busy are not skipped.
-    """
-    while True:
-        run_cmd(["git", "pull", "-q"], capture=True)
-        boundaries = load_milestone_boundaries()
-        reviewed = load_reviewed_milestones()
-        remaining = find_unreviewed_milestones(boundaries, reviewed)
-        if not remaining:
-            break
-        now = datetime.now().strftime("%H:%M:%S")
-        log(
-            "commit-watcher",
-            f"[{now}] Draining {len(remaining)} remaining milestone review(s)...",
-            style="yellow",
-        )
-        _check_milestone_reviews()
-
-
 def _commitwatch_loop() -> None:
     """Inner loop for commitwatch, separated for crash-logging wrapper."""
     last_sha = _initialize_watcher_checkpoint()
 
     while True:
         if is_builder_done():
-            # Builder is done — drain all remaining milestone reviews.
-            _drain_remaining_milestone_reviews()
             now = datetime.now().strftime("%H:%M:%S")
             log("commit-watcher", "")
             log("commit-watcher", f"[{now}] Builder finished. Shutting down.", style="bold green")
@@ -349,12 +243,8 @@ def _commitwatch_loop() -> None:
         if _has_new_commits(current_head, last_sha):
             builder_finished = _review_new_commits(last_sha, current_head)
             if builder_finished:
-                # Builder finished mid-review — drain remaining milestone reviews.
-                _drain_remaining_milestone_reviews()
                 return
 
         last_sha = current_head if current_head else last_sha
-
-        _check_milestone_reviews()
 
         time.sleep(10)

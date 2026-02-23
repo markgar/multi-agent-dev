@@ -59,6 +59,7 @@ from agentic_dev import builder as _builder_mod
 from agentic_dev import orchestrator as _orchestrator_mod
 from agentic_dev import planner as _planner_mod
 from agentic_dev import watcher as _watcher_mod
+from agentic_dev import milestone_reviewer as _milestone_reviewer_mod
 from agentic_dev import tester as _tester_mod
 from agentic_dev import validator as _validator_mod
 
@@ -67,6 +68,7 @@ _builder_mod.register(app)
 _orchestrator_mod.register(app)
 _planner_mod.register(app)
 _watcher_mod.register(app)
+_milestone_reviewer_mod.register(app)
 _tester_mod.register(app)
 _validator_mod.register(app)
 

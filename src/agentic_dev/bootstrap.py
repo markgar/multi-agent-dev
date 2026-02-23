@@ -124,7 +124,8 @@ separate clones of the project repo, each used by a different agent.
 |---|---|
 | `builder-1/` | Builder agent 1 — writes code, fixes bugs, completes milestones |
 | `builder-N/` | Additional builder agents (when `--builders N` > 1) |
-| `reviewer/` | Reviewer agent — reviews each commit and milestone for quality |
+| `reviewer/` | Commit reviewer agent — reviews each commit for quality |
+| `milestone-reviewer/` | Milestone reviewer agent — cross-cutting review when milestones complete |
 | `tester/` | Tester agent — runs scoped tests after each milestone |
 | `validator/` | Validator agent — builds Docker containers and validates against spec |
 | `remote.git/` | Local bare git repo (local mode only; replaced by GitHub in production) |
@@ -152,7 +153,8 @@ They coordinate through git push/pull and shared markdown files.
 |---|---|
 | `logs/builder.log` | Every Copilot invocation — prompts and output |
 | `logs/planner.log` | Planner decisions and task list changes |
-| `logs/reviewer.log` | Per-commit and milestone reviews |
+| `logs/reviewer.log` | Per-commit reviews |
+| `logs/milestone-reviewer.log` | Milestone cross-cutting reviews |
 | `logs/tester.log` | Test runs and bug reports |
 | `logs/validator.log` | Container builds and acceptance test results |
 | `logs/milestones.log` | Milestone boundaries (name, start SHA, end SHA) |
@@ -167,8 +169,9 @@ They coordinate through git push/pull and shared markdown files.
 
 1. The **planner** reads SPEC.md and REQUIREMENTS.md, creates BACKLOG.md (story queue) and the first milestone file in `milestones/`
 2. Each **builder** claims a story from BACKLOG.md (`[~]`), plans its milestone, completes all tasks, marks the story done (`[x]`), and loops
-3. The **reviewer** watches for new commits and reviews them for quality
-4. The **tester** runs scoped tests when a milestone completes
+3. The **commit reviewer** watches for new commits and reviews them for quality
+4. The **milestone reviewer** runs cross-cutting reviews when a milestone completes
+5. The **tester** runs scoped tests when a milestone completes
 5. The **validator** builds the app in Docker and tests against SPEC.md acceptance criteria
 6. When the backlog is empty and all builders are done, downstream agents see the sentinel files and shut down
 
@@ -217,7 +220,7 @@ def _clone_agent_copies(local: bool, gh_user: str, name: str) -> None:
     else:
         clone_source = f"https://github.com/{gh_user}/{name}"
     log("bootstrap", "")
-    for agent_name in ("reviewer", "tester", "validator"):
+    for agent_name in ("reviewer", "milestone-reviewer", "tester", "validator"):
         log("bootstrap", f"Cloning {agent_name} copy...", style="cyan")
         run_cmd(["git", "clone", clone_source, agent_name])
 

@@ -14,7 +14,7 @@ from agentic_dev.utils import (
 from agentic_dev.git_helpers import is_reviewer_only_files, is_coordination_only_files
 from agentic_dev.terminal import build_agent_script
 from agentic_dev.utils import count_open_items_in_dir, _extract_item_ids
-from agentic_dev.watcher import find_unreviewed_milestones
+from agentic_dev.milestone_reviewer import find_unreviewed_milestones
 from agentic_dev.tester import find_untested_milestones
 
 
