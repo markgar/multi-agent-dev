@@ -129,8 +129,8 @@ def parse_milestones_from_text(content: str) -> list[dict]:
     Returns a list of dicts in document order:
         [{"name": str, "done": int, "total": int}, ...]
 
-    A milestone section starts with '## Milestone: <name>' and contains
-    checkbox lines like '- [x] ...' or '- [ ] ...'.
+    A milestone section starts with '# Milestone: <name>' or '## Milestone: <name>'
+    and contains checkbox lines like '- [x] ...' or '- [ ] ...'.
     """
     milestones = []
     current_name = None
@@ -138,7 +138,7 @@ def parse_milestones_from_text(content: str) -> list[dict]:
     done = 0
 
     for line in content.split("\n"):
-        heading_match = re.match(r"^##\s+Milestone:\s*(.+)$", line, re.IGNORECASE)
+        heading_match = re.match(r"^#{1,2}\s+Milestone:\s*(.+)$", line, re.IGNORECASE)
         if heading_match:
             if current_name and total > 0:
                 milestones.append({"name": current_name, "done": done, "total": total})
@@ -344,8 +344,8 @@ def parse_milestone_file(path: str) -> dict | None:
     Returns {"name": str, "done": int, "total": int, "all_done": bool}
     or None if the file doesn't exist or has no tasks.
 
-    The file format is the same as a ## Milestone: section in TASKS.md —
-    a heading, optional validates block, and checkbox lines.
+    The file format has a # Milestone: or ## Milestone: heading,
+    an optional validates block, and checkbox lines.
     """
     try:
         if not os.path.exists(path):

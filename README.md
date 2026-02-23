@@ -1,10 +1,11 @@
 # Multi-Agent Flow
 
-An autonomous development workflow using GitHub Copilot CLI. Five agents collaborate through files in a shared GitHub repo to build projects in **.NET/C#**, **Python**, or **Node.js**:
+An autonomous development workflow using GitHub Copilot CLI. Six agents collaborate through files in a shared GitHub repo to build projects in **.NET/C#**, **Python**, or **Node.js**:
 
 - **Planner** — creates a backlog of stories and expands them into milestones one at a time
 - **Builder** — fixes bugs, addresses review items, completes one milestone per cycle
-- **Reviewer** — reviews each commit for quality, fixes doc issues directly, files code issues to `reviews/`, plus cross-cutting milestone reviews with stale-item cleanup
+- **Commit Watcher** — reviews each commit for quality, fixes doc issues directly, files code issues to `reviews/`
+- **Milestone Reviewer** — cross-cutting milestone reviews with frequency-filtered findings and stale-item cleanup
 - **Tester** — runs scoped tests when milestones complete, files bugs
 - **Validator** — builds the app in a Docker container, runs it, and validates it against the spec
 
@@ -51,12 +52,13 @@ agentic-dev go --directory hello-world --model gpt-5.3-codex \
 ```
 
 That's it. `go` will:
-1. **Bootstrap** — create the project, SPEC.md, git repo, GitHub remote, and agent clones (builder-1/, reviewer/, tester/, validator/)
-2. **Plan** — generate BACKLOG.md (story queue) and the first milestone in `milestones/`
-3. **Launch reviewer** — in a new terminal window, reviewing each commit and completed milestones
-4. **Launch tester** — in a new terminal window, testing each completed milestone
-5. **Launch validator** — in a new terminal window, building containers and validating against the spec
-6. **Start building** — in your current terminal, completing milestones one at a time
+1. **Bootstrap** — create the project, SPEC.md, git repo, GitHub remote, and agent clones (builder-1/, reviewer/, milestone-reviewer/, tester/, validator/)
+2. **Plan** — generate BACKLOG.md (story queue)
+3. **Launch commit watcher** — in a new terminal window, reviewing each commit
+4. **Launch milestone reviewer** — in a new terminal window, cross-cutting reviews when milestones complete
+5. **Launch tester** — in a new terminal window, testing each completed milestone
+6. **Launch validator** — in a new terminal window, building containers and validating against the spec
+7. **Start building** — in your current terminal, completing milestones one at a time
 
 Multiple windows will be running. Watch the Builder work through milestones while the Reviewer, Tester, and Validator react to each commit and milestone completion. Run `agentic-dev status` anytime in a builder directory to check progress.
 

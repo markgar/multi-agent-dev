@@ -64,6 +64,25 @@ def test_handles_case_insensitive_checkboxes():
     assert result[0] == {"name": "Mixed case", "done": 2, "total": 3}
 
 
+def test_single_hash_milestone_heading():
+    """LLM sometimes generates '# Milestone:' instead of '## Milestone:'."""
+    content = "# Milestone: Project Scaffolding\n- [ ] Create solution\n- [ ] Add domain project\n"
+    result = parse_milestones_from_text(content)
+    assert len(result) == 1
+    assert result[0] == {"name": "Project Scaffolding", "done": 0, "total": 2}
+
+
+def test_single_and_double_hash_milestones_mixed():
+    content = (
+        "# Milestone: First\n- [x] Task A\n\n"
+        "## Milestone: Second\n- [ ] Task B\n"
+    )
+    result = parse_milestones_from_text(content)
+    assert len(result) == 2
+    assert result[0]["name"] == "First"
+    assert result[1]["name"] == "Second"
+
+
 def test_parses_milestone_log_with_multiple_entries():
     log_text = (
         "Project scaffolding|abc1234|def5678\n"

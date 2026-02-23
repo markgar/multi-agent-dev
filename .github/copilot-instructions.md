@@ -13,7 +13,7 @@ Key distinctions:
 - **`copilot-instructions.md` in the source code** — `_generate_copilot_instructions()`, `COPILOT_INSTRUCTIONS_TEMPLATE`, and prompt references to `.github/copilot-instructions.md` all deal with a file generated *inside target project repos* for the builder agent to follow. They are not self-referential to this file.
 - **`SPEC.md`, `BACKLOG.md`, `milestones/`, `DEPLOY.md`, `REVIEW-THEMES.md`** — planning and coordination artifacts that exist *inside target project repos*. This project does not have these files itself.
 - **`bugs/`, `reviews/`** — append-only directories created *inside target project clones* for cross-agent communication. They are not part of this project's directory structure.
-- **`builder/`, `reviewer/`, `tester/`, `validator/`** — separate git clone directories of the *target project*, one per agent. These are working copies created at runtime, not subdirectories of this project.
+- **`builder/`, `reviewer/`, `milestone-reviewer/`, `tester/`, `validator/`** — separate git clone directories of the *target project*, one per agent. These are working copies created at runtime, not subdirectories of this project.
 - **Prompt templates in `src/agentic_dev/prompts/`** — instructions sent to Copilot CLI agents operating *on the target project*. They reference target-project files and conventions, not this project's internals.
 
 When editing this codebase, keep this two-level structure in mind: the Python code here is orchestration logic; the prompts and templates describe work that happens in a *different* repo.
@@ -44,10 +44,11 @@ When editing this codebase, keep this two-level structure in mind: the Python co
 
 - `src/agentic_dev/cli.py` — App definition and command registration: `status`, `--version`.
 - `src/agentic_dev/orchestrator.py` — The `go` command: project detection, agent launching, copilot-instructions generation.
-- `src/agentic_dev/bootstrap.py` — Project scaffolding: repo creation, cloning reviewer/tester/validator copies.
+- `src/agentic_dev/bootstrap.py` — Project scaffolding: repo creation, cloning reviewer/milestone-reviewer/tester/validator copies.
 - `src/agentic_dev/planner.py` — Backlog planner and milestone planner: `plan` command, `check_milestone_sizes()` helper.
 - `src/agentic_dev/builder.py` — Build loop: milestone completion, retry logic.
-- `src/agentic_dev/watcher.py` — Commit watcher: per-commit reviews, milestone-level reviews.
+- `src/agentic_dev/watcher.py` — Commit watcher: per-commit reviews.
+- `src/agentic_dev/milestone_reviewer.py` — Milestone reviewer: cross-cutting milestone reviews with code analysis and note frequency filtering.
 - `src/agentic_dev/tester.py` — Test loop: milestone-triggered testing.
 - `src/agentic_dev/validator.py` — Validator loop: milestone-triggered container build and acceptance testing.
 - `src/agentic_dev/terminal.py` — Terminal spawning helper for launching agents in new windows.
@@ -58,16 +59,16 @@ When editing this codebase, keep this two-level structure in mind: the Python co
 - `src/agentic_dev/milestone.py` — Milestone parsing, boundary tracking, and per-agent milestone checkpoints.
 - `src/agentic_dev/config.py` — Language/stack configurations and thresholds for tree-sitter code analysis.
 - `src/agentic_dev/backlog_checker.py` — Backlog quality gate: deterministic structural checks (A1-A4) and LLM quality review (C1-C7) on BACKLOG.md and milestone files. Also runs story ordering checks for parallel builder throughput.
-- `src/agentic_dev/code_analysis.py` — Tree-sitter code analysis for target projects: structural checks across Python, JS/TS, and C#. Invoked by the watcher during milestone reviews.
+- `src/agentic_dev/code_analysis.py` — Tree-sitter code analysis for target projects: structural checks across Python, JS/TS, and C#. Invoked by the milestone reviewer during milestone reviews.
 - `src/agentic_dev/version.py` — Package version and git-based build info for the `--version` flag.
 - `src/agentic_dev/legacy_watchers.py` — Deprecated `reviewoncommit` and `testoncommit` commands (not used by `go`).
 
 ## Architecture
 
-This is a multi-agent orchestrator that uses GitHub Copilot CLI (`copilot --yolo`) as the execution engine. Agents (builder, planner, reviewer, tester, validator) run as separate processes in separate git clones of the same repo. They coordinate through:
+This is a multi-agent orchestrator that uses GitHub Copilot CLI (`copilot --yolo`) as the execution engine. Agents (builder, planner, commit watcher, milestone reviewer, tester, validator) run as separate processes in separate git clones of the same repo. They coordinate through:
 
 - **Markdown files** (`BACKLOG.md`, `milestones/`, `bugs/`, `reviews/`, `DEPLOY.md`, `REVIEW-THEMES.md`) — shared state via git push/pull.
-- **Log files** (`logs/`) — local coordination signals like `builder.done`, `reviewer.checkpoint`, `milestones.log`, `validator.milestone`.
+- **Log files** (`logs/`) — local coordination signals like `builder.done`, `reviewer.checkpoint`, `milestone-reviewer.log`, `milestones.log`, `validator.milestone`.
 
 The build loop (Python code in `builder.py`) handles deterministic orchestration — milestone boundary tracking, SHA recording, shutdown signals. The LLM agents handle creative work — writing code, reviewing diffs, writing tests.
 
@@ -92,4 +93,4 @@ When asked to run or monitor the harness, do NOT run it in a background terminal
 
 - Agent prompts are append-only format strings in `prompts/`. Use `.format()` for interpolation.
 - All file I/O helpers in `utils.py` wrap operations in try/except and never crash the workflow over I/O errors.
-- `resolve_logs_dir()` finds the project-root `logs/` directory regardless of which clone (builder/reviewer/tester/validator) the code is running in.
+- `resolve_logs_dir()` finds the project-root `logs/` directory regardless of which clone (builder/reviewer/milestone-reviewer/tester/validator) the code is running in.

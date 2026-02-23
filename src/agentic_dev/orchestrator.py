@@ -2,6 +2,7 @@
 
 import os
 import re
+import shutil
 import time
 from datetime import datetime, timezone
 from typing import Annotated
@@ -112,7 +113,11 @@ def _migrate_legacy_builder(parent_dir: str) -> None:
     builder_old = os.path.join(parent_dir, "builder")
     builder_new = os.path.join(parent_dir, "builder-1")
     if os.path.exists(builder_old) and not os.path.exists(builder_new):
-        os.rename(builder_old, builder_new)
+        try:
+            shutil.move(builder_old, builder_new)
+        except OSError as exc:
+            log("orchestrator", f"Failed to migrate builder/ to builder-1/: {exc}", style="yellow")
+            return
         log("orchestrator", "Migrated builder/ to builder-1/", style="cyan")
 
 

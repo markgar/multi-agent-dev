@@ -70,7 +70,7 @@ style: |
 
 <br>
 
-*Five agents. One repo. Zero human intervention.*
+*Six agents. One repo. Zero human intervention.*
 
 ---
 
@@ -105,17 +105,17 @@ One command. Multiple terminal windows. Agents working in parallel.
 ## Architecture Overview
 
 ```
-┌─────────────────────────────────────────────────────┐
-│                   Orchestrator (go)                  │
-│  bootstrap → plan → launch agents → build loop      │
-└──────────┬──────────┬──────────┬──────────┬─────────┘
-           │          │          │          │
-     ┌─────▼────┐ ┌───▼───┐ ┌───▼───┐ ┌───▼─────┐
-     │ Builder  │ │Review-│ │Tester │ │Validat- │
-     │ (1..N)   │ │  er   │ │       │ │  or     │
-     └─────┬────┘ └───┬───┘ └───┬───┘ └───┬─────┘
-           │          │          │          │
-           └──────────┴──────────┴──────────┘
+┌─────────────────────────────────────────────────────────────┐
+│                   Orchestrator (go)                       │
+│  bootstrap → plan → launch agents → build loop             │
+└─────┴──────┴──────────┴─────────┴─────────┴─────────┘
+      │      │          │         │         │
+┌─────▼──┐ ┌──▼──┐ ┌────────▼─┐ ┌───▼───┐ ┌───▼─────┐
+│ Builder │ │Commit│ │Milestone │ │Tester │ │Validat- │
+│ (1..N)  │ │Watcher│ │ Reviewer │ │       │ │  or     │
+└─────┬──┘ └──┬──┘ └──────┬───┘ └───┬───┘ └───┬─────┘
+      │      │          │         │         │
+      └──────┴──────────┴─────────┴─────────┘
                  Shared Git Repository
           (BACKLOG.md, milestones/, bugs/, reviews/)
 ```
@@ -141,13 +141,14 @@ copilot --yolo --model claude-opus-4.6 \
 
 ---
 
-## The Five Agents
+## The Six Agents
 
 | Agent | Role | Reads | Writes |
 |---|---|---|---|
 | **Planner** | Decomposes requirements into stories & milestones | SPEC.md, REQUIREMENTS.md, codebase | BACKLOG.md, milestones/ |
 | **Builder** | Claims stories, plans milestones, writes code | milestones/, bugs/, reviews/, DEPLOY.md | Application code |
-| **Reviewer** | Per-commit + milestone-level code review | Git diffs, note-*.md files | finding-*.md, note-*.md |
+| **Commit Watcher** | Per-commit code review | Git diffs | finding-*.md, note-*.md |
+| **Milestone Reviewer** | Cross-cutting milestone review + note filtering | Full milestone diff, note-*.md | finding-*.md, REVIEW-THEMES.md |
 | **Tester** | Scoped tests on milestone completion | Changed files, existing tests | Test files, bug-*.md |
 | **Validator** | Container build + acceptance testing | SPEC.md, DEPLOY.md | Dockerfile, DEPLOY.md, bug-*.md |
 
@@ -221,17 +222,18 @@ Multiple builders run this loop **in parallel**, each claiming different stories
 
 ## Review Signal Filtering
 
-The reviewer uses a **two-tier system** to avoid drowning the builder in noise:
+Two separate agents use a **two-tier system** to avoid drowning the builder in noise:
 
-**Per-commit reviews:**
+**Commit Watcher** (per-commit, in `reviewer/` clone):
 - 🔴 `[bug]` / `[security]` → filed as `finding-*.md` — builder fixes immediately
 - 🟡 `[cleanup]` / `[robustness]` → filed as `note-*.md` — observational only
 
-**Milestone reviews** (cross-cutting, when all tasks done):
+**Milestone Reviewer** (cross-cutting, in `milestone-reviewer/` clone):
 - Reads all `note-*.md` accumulated during the milestone
 - **Frequency filter**: only promotes to `finding-*.md` if the pattern recurred in **2+ locations**
 - One-off issues stay as notes → builder never sees them
 - Cleans up stale findings already fixed in code
+- Runs **tree-sitter code analysis** before review for structural quality data
 
 *Result: builder spends fix cycles on systemic problems, not isolated nitpicks.*
 

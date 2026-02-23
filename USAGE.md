@@ -70,6 +70,9 @@ agentic-dev build --loop
 cd ../reviewer
 agentic-dev commitwatch
 
+cd ../milestone-reviewer
+agentic-dev milestonewatch
+
 cd ../tester
 agentic-dev testloop
 
@@ -94,7 +97,8 @@ agentic-dev validateloop
 | `build` | Fixes bugs + reviews, then completes the current milestone | builder-1/, repeatedly |
 | `build --loop` | Loops through all milestones automatically (re-plans between each from backlog) | builder-1/, once |
 | `build --loop --builder-id N` | Same, but identifies this builder as builder N (for parallel builds) | builder-N/, once |
-| `commitwatch` | Polls for commits, reviews each one + milestone-level reviews | reviewer/, once |
+| `commitwatch` | Polls for commits, reviews each one | reviewer/, once |
+| `milestonewatch` | Watches for completed milestones, runs cross-cutting reviews | milestone-reviewer/, once |
 | `testloop` | Watches for completed milestones, runs scoped tests | tester/, once |
 | `validateloop` | Watches for completed milestones, builds containers, validates against spec | validator/, once |
 | `reviewoncommit` | Legacy: watches for commits, reviews code quality | reviewer/, once |
@@ -108,13 +112,14 @@ The GitHub Copilot CLI `--yolo` flag auto-approves every action without asking f
 
 ## Logging
 
-Every agent invocation is logged to an append-only file in a `logs/` directory at the project root (sibling of `builder/`, `reviewer/`, `tester/`). All console output — including status messages, warnings, and GitHub Copilot output — is duplicated to the appropriate log file.
+Every agent invocation is logged to an append-only file in a `logs/` directory at the project root (sibling of `builder/`, `reviewer/`, `milestone-reviewer/`, `tester/`). All console output — including status messages, warnings, and GitHub Copilot output — is duplicated to the appropriate log file.
 
 ```
 myproject/
   remote.git/    ← local bare repo (only with --local)
   builder-1/     ← git clone (primary builder)
-  reviewer/      ← git clone
+  reviewer/      ← git clone (commit watcher)
+  milestone-reviewer/ ← git clone (milestone reviewer)
   tester/        ← git clone
   validator/     ← git clone
   logs/          ← all agent logs + coordination signals
@@ -122,14 +127,15 @@ myproject/
     planner.log
     builder.log
     reviewer.log
+    milestone-reviewer.log
     tester.log
     validator.log
     validation-*.txt       ← per-milestone PASS/FAIL test results
     orchestrator.log
     builder.done           ← shutdown signal
-    reviewer.checkpoint    ← last reviewed commit SHA
+    reviewer.checkpoint    ← last reviewed commit SHA (commit watcher)
     milestones.log         ← milestone SHA boundaries (append-only)
-    reviewer.milestone     ← milestones already reviewed
+    reviewer.milestone     ← milestones already reviewed (milestone reviewer)
     tester.milestone       ← milestones already tested
     validator.milestone    ← milestones already validated
 ```

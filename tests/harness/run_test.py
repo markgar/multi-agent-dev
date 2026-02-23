@@ -17,16 +17,25 @@ def run_command(command: list[str], cwd: Path | None = None, quiet: bool = False
 
 
 def ensure_python() -> str:
-    venv_python = Path(__file__).resolve().parents[2] / ".venv" / "Scripts" / "python.exe"
-    if venv_python.exists():
-        return str(venv_python)
+    project_root = Path(__file__).resolve().parents[2]
+    # Check platform-appropriate venv paths
+    for venv_path in (
+        project_root / ".venv" / "Scripts" / "python.exe",  # Windows
+        project_root / ".venv" / "bin" / "python",          # Unix
+    ):
+        if venv_path.exists():
+            return str(venv_path)
     return sys.executable
 
 
 def ensure_agentic_dev(project_root: Path) -> str | None:
-    venv_agent = project_root / ".venv" / "Scripts" / "agentic-dev.exe"
-    if venv_agent.exists():
-        return str(venv_agent)
+    # Check platform-appropriate venv paths
+    for agent_path in (
+        project_root / ".venv" / "Scripts" / "agentic-dev.exe",  # Windows
+        project_root / ".venv" / "bin" / "agentic-dev",          # Unix
+    ):
+        if agent_path.exists():
+            return str(agent_path)
     return shutil.which("agentic-dev")
 
 

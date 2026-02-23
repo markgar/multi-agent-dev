@@ -41,22 +41,36 @@ def _spawn_macos(working_dir: str, command: str) -> None:
 
 
 def _resolve_windows_command(command: str) -> list[str]:
-    """Build the command list for launching an agent on Windows."""
+    """Build the command list for launching an agent on Windows.
+
+    Splits the command string so flags like '--loop --builder-id 1' become
+    separate arguments in the subprocess call.
+    """
+    parts = command.split()
     venv_exe = os.path.join(os.path.dirname(sys.executable), "agentic-dev.exe")
     if os.path.isfile(venv_exe):
-        return [venv_exe, command]
+        return [venv_exe] + parts
     path_exe = shutil.which("agentic-dev")
     if path_exe:
-        return [path_exe, command]
-    return [sys.executable, "-m", "agentic_dev", command]
+        return [path_exe] + parts
+    return [sys.executable, "-m", "agentic_dev"] + parts
 
 
 def _spawn_windows(working_dir: str, command: str) -> None:
-    """Spawn agent in a new Windows console."""
+    """Spawn agent in a new Windows console.
+
+    Propagates COPILOT_MODEL explicitly so the child console uses the same
+    model as the orchestrator, matching the bash-script behavior on Unix.
+    """
     cmd = _resolve_windows_command(command)
+    env = os.environ.copy()
+    copilot_model = os.environ.get("COPILOT_MODEL", "")
+    if copilot_model:
+        env["COPILOT_MODEL"] = copilot_model
     subprocess.Popen(
         cmd,
         cwd=working_dir,
+        env=env,
         creationflags=subprocess.CREATE_NEW_CONSOLE,
     )
 

@@ -198,7 +198,7 @@ def check_first_milestone(tasks_text: str) -> list[str]:
     validates_found = False
     in_first_milestone = False
     for line in tasks_text.split("\n"):
-        if re.match(r"^##\s+Milestone:", line, re.IGNORECASE):
+        if re.match(r"^#{1,2}\s+Milestone:", line, re.IGNORECASE):
             if not in_first_milestone:
                 in_first_milestone = True
                 continue

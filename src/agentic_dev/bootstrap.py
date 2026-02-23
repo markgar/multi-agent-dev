@@ -10,6 +10,7 @@ from agentic_dev.utils import (
     check_command,
     console,
     is_macos,
+    is_windows,
     log,
     run_cmd,
     run_copilot,
@@ -71,13 +72,22 @@ def _resolve_description(description, spec_file):
 
 def _check_required_tools(local: bool) -> bool:
     """Verify required CLI tools are installed. Returns True if all present."""
-    tools = [("git", "brew install git", "winget install Git.Git"), ("docker", "brew install --cask docker", "winget install Docker.DockerDesktop"), ("copilot", None, None)]
+    tools = [
+        ("git", "brew install git", "winget install Git.Git", "sudo apt install git"),
+        ("docker", "brew install --cask docker", "winget install Docker.DockerDesktop", "sudo apt install docker.io"),
+        ("copilot", None, None, None),
+    ]
     if not local:
-        tools.insert(1, ("gh", "brew install gh", "winget install GitHub.cli"))
-    for tool, install_mac, install_win in tools:
+        tools.insert(1, ("gh", "brew install gh", "winget install GitHub.cli", "sudo apt install gh"))
+    for tool, install_mac, install_win, install_linux in tools:
         if not check_command(tool):
             console.print(f"ERROR: {tool} is not installed.", style="bold red")
-            install = install_mac if is_macos() else install_win
+            if is_macos():
+                install = install_mac
+            elif is_windows():
+                install = install_win
+            else:
+                install = install_linux
             if install:
                 console.print(f"Run: {install}", style="yellow")
             console.print("Then close and reopen your terminal.", style="yellow")

@@ -1,4 +1,4 @@
-"""Watcher commands: commit watcher and milestone reviewer."""
+"""Watcher commands: commit watcher for per-commit code reviews."""
 
 import os
 import time

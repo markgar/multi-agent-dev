@@ -97,8 +97,14 @@ def _cleanup_containers() -> None:
             if os.path.exists(compose_file):
                 run_cmd(["docker", "compose", "down", "--remove-orphans"], quiet=True)
                 return
-        # Fallback: remove containers with the 'validator-' label if any
-        run_cmd(["docker", "rm", "-f", "$(docker ps -aq --filter label=validator)"], quiet=True)
+        # Fallback: remove containers with the 'validator' label if any
+        ps_result = run_cmd(
+            ["docker", "ps", "-aq", "--filter", "label=validator"],
+            capture=True,
+        )
+        container_ids = ps_result.stdout.strip().split() if ps_result.returncode == 0 and ps_result.stdout.strip() else []
+        if container_ids:
+            run_cmd(["docker", "rm", "-f"] + container_ids, quiet=True)
     except Exception:
         pass
 
