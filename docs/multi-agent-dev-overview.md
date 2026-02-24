@@ -150,7 +150,7 @@ copilot --yolo --model claude-opus-4.6 \
 | **Commit Watcher** | Per-commit code review | Git diffs | finding-*.md, note-*.md |
 | **Milestone Reviewer** | Cross-cutting milestone review + note filtering | Full milestone diff, note-*.md | finding-*.md, REVIEW-THEMES.md |
 | **Tester** | Scoped tests on milestone completion | Changed files, existing tests | Test files, bug-*.md |
-| **Validator** | Container build + acceptance testing | SPEC.md, DEPLOY.md | Dockerfile, DEPLOY.md, bug-*.md |
+| **Validator** | Container build + acceptance testing | SPEC.md, DEPLOY.md, REQUIREMENTS.md | Dockerfile, DEPLOY.md, bug-*.md |
 
 ---
 
@@ -244,7 +244,7 @@ Two separate agents use a **two-tier system** to avoid drowning the builder in n
 Four mechanisms that make each milestone **better than the last**:
 
 ### 1. Deployment Knowledge Ratchet (DEPLOY.md)
-Validator writes what it learned → builder reads it next session → container builds get progressively more reliable
+Validator writes what it learned → builder reads it next session → container builds get progressively more reliable. After each milestone, a **validation summary** logs pass/fail counts by category (`[A]` milestone, `[B]` requirements, `[C]` bug verification, `[UI]` Playwright).
 
 ### 2. Review Themes (REVIEW-THEMES.md)
 Reviewer maintains cumulative patterns → builder reads before coding → same class of mistake doesn't repeat
@@ -287,7 +287,7 @@ agentic-dev go --directory my-app --model claude-opus-4.6 \
 # Session 3: Resume where it left off (no new requirements)
 agentic-dev go --directory my-app --model claude-opus-4.6
 
-# Parallel build: 3 builders working concurrently
+# Parallel build with Playwright trace saving
 agentic-dev go --directory my-app --model claude-opus-4.6 --builders 3
 ```
 
@@ -303,8 +303,9 @@ From a single spec file, the system produces:
 - ✅ **Full test suite** — unit + integration tests written by the tester
 - ✅ **Docker deployment** — Dockerfile, docker-compose.yml, DEPLOY.md
 - ✅ **Code review history** — every commit reviewed, findings tracked
-- ✅ **Validated against spec** — acceptance criteria checked in containers
-- ✅ **Playwright UI tests** — auto-detected for frontend projects
+- ✅ **Validated against spec** — three-check acceptance testing in containers
+- ✅ **Playwright UI tests** — auto-detected for frontend projects, optional trace saving
+- ✅ **Validation summaries** — pass/fail breakdown logged per milestone
 - ✅ **Documentation** — README, copilot-instructions, deployment guide
 
 All with **zero human intervention** from spec to deployed app.

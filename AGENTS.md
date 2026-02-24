@@ -288,6 +288,10 @@ For each newly completed milestone:
 
 **Validation results log:** After each milestone, the validator writes `validation-results.txt` in the repo root (not committed). The Python orchestration copies it to `logs/validation-<milestone-name>.txt` for post-run analysis. Each line is `PASS` or `FAIL` with a description of what was tested (container build, startup, endpoints, error cases).
 
+**Validation summary:** After copying the results file, the orchestration always prints a pass/fail summary to the terminal log. The summary counts PASS and FAIL lines per category tag — `[A]` milestone tests, `[B]` requirements coverage, `[C]` fixed bug verification, `[UI]` Playwright — and logs up to 10 individual failure lines. This runs unconditionally so operators always see validation outcomes without opening log files.
+
+**Playwright trace saving (`--save-traces`):** When `validateloop` is called with `--save-traces`, the orchestration appends extra instructions to the Playwright prompt telling Copilot to run tests with `--trace on` and `--reporter=html`. After the Copilot run, it copies `e2e/playwright-report/` and `e2e/test-results/` to `logs/playwright-<milestone>/report/` and `logs/playwright-<milestone>/traces/` respectively. These artifacts are not committed to the repo. Without `--save-traces`, no extra prompt text is added and no artifacts are copied — the default keeps `logs/` lean.
+
 When the builder finishes, the validator sees `logs/builder.done`, drains any remaining unvalidated milestones, and exits.
 
 **Trigger:** Polls `logs/milestones.log` every 10 seconds (configurable via `--interval`)  
