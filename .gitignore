@@ -4,6 +4,7 @@
 */tester/
 
 # Agent logs (kept at project root, outside cloned repos)
+logs/
 */logs/
 
 # Test harness runs
