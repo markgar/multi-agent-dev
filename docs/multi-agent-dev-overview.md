@@ -91,12 +91,22 @@ Building software with AI assistants today is **sequential and manual**:
 
 Replace the single-agent loop with a **multi-agent pipeline** where each agent has a specialized role and they coordinate through a shared git repo.
 
-```
-Spec → Plan → Build → Review → Test → Validate
-                ↑        |        |        |
-                └────────┴────────┴────────┘
-                    bugs & findings fed back
-```
+<div style="text-align:center; margin: 24px 0">
+<div style="display:flex; justify-content:center; gap:8px; flex-wrap:wrap; margin-bottom:8px">
+  <div style="background:#2d2d44; padding:8px 14px; border-radius:6px; border:1px solid #60a5fa; font-weight:bold">Spec</div>
+  <div style="color:#60a5fa; align-self:center">→</div>
+  <div style="background:#2d2d44; padding:8px 14px; border-radius:6px; border:1px solid #60a5fa; font-weight:bold">Plan</div>
+  <div style="color:#60a5fa; align-self:center">→</div>
+  <div style="background:#2d2d44; padding:8px 14px; border-radius:6px; border:1px solid #60a5fa; font-weight:bold">Build</div>
+  <div style="color:#60a5fa; align-self:center">→</div>
+  <div style="background:#2d2d44; padding:8px 14px; border-radius:6px; border:1px solid #60a5fa; font-weight:bold">Review</div>
+  <div style="color:#60a5fa; align-self:center">→</div>
+  <div style="background:#2d2d44; padding:8px 14px; border-radius:6px; border:1px solid #60a5fa; font-weight:bold">Test</div>
+  <div style="color:#60a5fa; align-self:center">→</div>
+  <div style="background:#2d2d44; padding:8px 14px; border-radius:6px; border:1px solid #60a5fa; font-weight:bold">Validate</div>
+</div>
+<div style="color:#818cf8; font-size:0.85em">↺ bugs &amp; findings fed back to Builder</div>
+</div>
 
 One command. Multiple terminal windows. Agents working in parallel.
 
@@ -104,21 +114,25 @@ One command. Multiple terminal windows. Agents working in parallel.
 
 ## Architecture Overview
 
-```
-┌─────────────────────────────────────────────────────────────┐
-│                   Orchestrator (go)                       │
-│  bootstrap → plan → launch agents → build loop             │
-└─────┴──────┴──────────┴─────────┴─────────┴─────────┘
-      │      │          │         │         │
-┌─────▼──┐ ┌──▼──┐ ┌────────▼─┐ ┌───▼───┐ ┌───▼─────┐
-│ Builder │ │Commit│ │Milestone │ │Tester │ │Validat- │
-│ (1..N)  │ │Watcher│ │ Reviewer │ │       │ │  or     │
-└─────┬──┘ └──┬──┘ └──────┬───┘ └───┬───┘ └───┬─────┘
-      │      │          │         │         │
-      └──────┴──────────┴─────────┴─────────┘
-                 Shared Git Repository
-          (BACKLOG.md, milestones/, bugs/, reviews/)
-```
+<div style="text-align:center; margin:16px 0">
+  <div style="background:#2d2d44; border:2px solid #60a5fa; border-radius:10px; padding:12px 20px; margin:0 auto 16px; max-width:600px">
+    <div style="font-weight:bold; font-size:1.1em; color:#60a5fa">Orchestrator (go)</div>
+    <div style="font-size:0.85em; color:#94a3b8">bootstrap → plan → launch agents → build loop</div>
+  </div>
+  <div style="color:#60a5fa; font-size:1.2em; margin-bottom:8px">▼ &nbsp;&nbsp;&nbsp; ▼ &nbsp;&nbsp;&nbsp; ▼ &nbsp;&nbsp;&nbsp; ▼ &nbsp;&nbsp;&nbsp; ▼</div>
+  <div style="display:flex; justify-content:center; gap:10px; flex-wrap:wrap; margin-bottom:16px">
+    <div style="background:#2d2d44; border:1px solid #818cf8; border-radius:8px; padding:10px 14px; min-width:90px"><strong>Builder</strong><br><span style="font-size:0.8em; color:#94a3b8">(1..N)</span></div>
+    <div style="background:#2d2d44; border:1px solid #818cf8; border-radius:8px; padding:10px 14px; min-width:90px"><strong>Commit<br>Watcher</strong></div>
+    <div style="background:#2d2d44; border:1px solid #818cf8; border-radius:8px; padding:10px 14px; min-width:90px"><strong>Milestone<br>Reviewer</strong></div>
+    <div style="background:#2d2d44; border:1px solid #818cf8; border-radius:8px; padding:10px 14px; min-width:90px"><strong>Tester</strong></div>
+    <div style="background:#2d2d44; border:1px solid #818cf8; border-radius:8px; padding:10px 14px; min-width:90px"><strong>Validator</strong></div>
+  </div>
+  <div style="color:#60a5fa; font-size:1.2em; margin-bottom:8px">▼ &nbsp;&nbsp;&nbsp; ▼ &nbsp;&nbsp;&nbsp; ▼ &nbsp;&nbsp;&nbsp; ▼ &nbsp;&nbsp;&nbsp; ▼</div>
+  <div style="background:#2d2d44; border:2px solid #818cf8; border-radius:10px; padding:10px 20px; margin:0 auto; max-width:600px">
+    <div style="font-weight:bold; color:#818cf8">Shared Git Repository</div>
+    <div style="font-size:0.85em; color:#94a3b8">BACKLOG.md · milestones/ · bugs/ · reviews/</div>
+  </div>
+</div>
 
 Each agent runs as a **separate process** in its **own git clone**.
 
@@ -175,23 +189,19 @@ Agents coordinate through **files in git** — no message queues, no APIs, no sh
 
 Each builder runs an independent **claim loop**:
 
-```
-┌──────────────────────────────────────────┐
-│  1. Find next eligible story in BACKLOG  │
-│     (all dependencies [x], story [ ])    │
-│                  ↓                       │
-│  2. Claim it: [ ] → [~], commit, push   │
-│     (push fails? pull & try next)        │
-│                  ↓                       │
-│  3. Plan milestone for this story        │
-│                  ↓                       │
-│  4. Fix bugs → Fix findings → Build      │
-│                  ↓                       │
-│  5. Mark [x], commit, push              │
-│                  ↓                       │
-│  6. Loop → no stories left? → Done      │
-└──────────────────────────────────────────┘
-```
+<div style="margin:16px auto; max-width:480px">
+  <div style="background:#2d2d44; border:1px solid #818cf8; border-radius:8px; padding:10px 16px; margin-bottom:4px"><strong>1.</strong> Find next eligible story in BACKLOG <span style="color:#94a3b8; font-size:0.85em">(deps [x], story [ ])</span></div>
+  <div style="text-align:center; color:#60a5fa">▼</div>
+  <div style="background:#2d2d44; border:1px solid #818cf8; border-radius:8px; padding:10px 16px; margin-bottom:4px"><strong>2.</strong> Claim it: [ ] → [~], commit, push <span style="color:#94a3b8; font-size:0.85em">(push fails? try next)</span></div>
+  <div style="text-align:center; color:#60a5fa">▼</div>
+  <div style="background:#2d2d44; border:1px solid #818cf8; border-radius:8px; padding:10px 16px; margin-bottom:4px"><strong>3.</strong> Plan milestone for this story</div>
+  <div style="text-align:center; color:#60a5fa">▼</div>
+  <div style="background:#2d2d44; border:1px solid #818cf8; border-radius:8px; padding:10px 16px; margin-bottom:4px"><strong>4.</strong> Fix bugs → Fix findings → Build</div>
+  <div style="text-align:center; color:#60a5fa">▼</div>
+  <div style="background:#2d2d44; border:1px solid #818cf8; border-radius:8px; padding:10px 16px; margin-bottom:4px"><strong>5.</strong> Mark [x], commit, push</div>
+  <div style="text-align:center; color:#60a5fa">▼</div>
+  <div style="background:#2d2d44; border:1px solid #818cf8; border-radius:8px; padding:10px 16px"><strong>6.</strong> Loop → no stories left? → <span style="color:#60a5fa">Done</span></div>
+</div>
 
 Multiple builders run this loop **in parallel**, each claiming different stories.
 
@@ -199,20 +209,27 @@ Multiple builders run this loop **in parallel**, each claiming different stories
 
 ## Parallel Builders
 
-```
-          Story Dependency Graph
-     ┌──────────────────────────────┐
-     │  1. Scaffolding              │
-     │     ↓           ↓            │
-     │  2. Members   3. Projects    │  ← Builder-1 and Builder-2
-     │     ↓           ↓            │     work simultaneously
-     │  4. Auditions 5. Events      │
-     │     ↓           ↓            │
-     │  6. Attendance               │
-     │     ↓                        │
-     │  7. Calendar + Notifications │
-     └──────────────────────────────┘
-```
+<div style="text-align:center; margin:16px 0">
+  <div style="font-weight:bold; color:#60a5fa; margin-bottom:8px">Story Dependency Graph</div>
+  <div style="display:flex; flex-direction:column; align-items:center; gap:4px">
+    <div style="background:#2d2d44; border:1px solid #60a5fa; border-radius:6px; padding:6px 20px">1. Scaffolding</div>
+    <div style="display:flex; gap:4px; color:#60a5fa"><span>↙</span><span>&nbsp;&nbsp;&nbsp;&nbsp;</span><span>↘</span></div>
+    <div style="display:flex; gap:16px">
+      <div style="background:#2d2d44; border:1px solid #818cf8; border-radius:6px; padding:6px 16px">2. Members</div>
+      <div style="background:#2d2d44; border:1px solid #818cf8; border-radius:6px; padding:6px 16px">3. Projects</div>
+    </div>
+    <div style="display:flex; gap:4px; color:#60a5fa"><span>↓</span><span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span><span>↓</span></div>
+    <div style="display:flex; gap:16px">
+      <div style="background:#2d2d44; border:1px solid #818cf8; border-radius:6px; padding:6px 16px">4. Auditions</div>
+      <div style="background:#2d2d44; border:1px solid #818cf8; border-radius:6px; padding:6px 16px">5. Events</div>
+    </div>
+    <div style="color:#60a5fa">↘ &nbsp;&nbsp;&nbsp;&nbsp; ↙</div>
+    <div style="background:#2d2d44; border:1px solid #818cf8; border-radius:6px; padding:6px 20px">6. Attendance</div>
+    <div style="color:#60a5fa">↓</div>
+    <div style="background:#2d2d44; border:1px solid #60a5fa; border-radius:6px; padding:6px 20px">7. Calendar + Notifications</div>
+  </div>
+  <div style="color:#94a3b8; font-size:0.8em; margin-top:8px">Builder-1 and Builder-2 work simultaneously on independent branches</div>
+</div>
 
 - **Optimistic locking** via git push — if two builders claim the same story, the slower push fails and retries the next one
 - **Minimal dependencies** — the planner keeps the graph wide for maximum parallelism
