@@ -45,7 +45,7 @@ A milestone is a coherent batch of related tasks that leaves the app runnable.
 
 | Criterion | Pass | Partial | Fail |
 |-----------|------|---------|------|
-| **Size range** | 3-7 tasks | 2 tasks or 8-9 tasks | 1 task or 10+ tasks |
+| **Size range** | Tasks are focused and naturally grouped | Milestone feels borderline thin or borderline large | Milestone is trivially small (1 task) or unwieldy long |
 | **Cohesion** | All tasks in the milestone serve a single feature or concern | Most tasks are related with 1 outlier | Tasks span unrelated features |
 | **Vertical slice** | Milestone delivers a testable feature through one or more layers. Paired backend+frontend milestones for one feature count as vertical slices. | Milestone covers 2-3 layers of one feature with a minor outlier task | Milestone covers one layer across many features ("All entities", "All repositories") |
 | **Runnable after completion** | App builds, starts, and responds to at least one request after the milestone | App builds but might not respond meaningfully | Milestone leaves the app in a broken or un-startable state |
@@ -56,7 +56,7 @@ A milestone is a coherent batch of related tasks that leaves the app runnable.
 - **Horizontal layering:** Milestones organized as "All entities" → "All configurations" → "All repositories" → "All services" → "All controllers". The validator can't test anything until the controller milestones.
 - **Uniform sizing:** Every milestone has exactly the same number of tasks (e.g. all 5). This suggests the planner is optimizing for a count rather than natural groupings.
 - **Feature split across 4+ milestones:** A single feature (e.g. Members) requiring entity + repo + service + API + frontend shouldn't be spread across 5 separate single-layer milestones. 1-2 milestones for one feature is right.
-- **Micro-milestones:** A milestone with 1-2 trivial tasks (e.g. "Add ESLint config") that could be part of a larger scaffolding milestone.
+- **Micro-milestones:** A milestone with trivially narrow scope (e.g. "Add ESLint config") that could be part of a larger scaffolding milestone.
 
 ### Calibration: what a good milestone looks like
 
@@ -71,7 +71,7 @@ A milestone is a coherent batch of related tasks that leaves the app runnable.
 - Create Member detail page with edit form and deactivate button
 ```
 
-7 tasks. Each is one file or a tightly coupled pair. The milestone delivers one complete user-facing feature. After completion, the validator can test member CRUD end-to-end.
+Each task is one file or a tightly coupled pair. The milestone delivers one complete user-facing feature. After completion, the validator can test member CRUD end-to-end.
 
 ---
 

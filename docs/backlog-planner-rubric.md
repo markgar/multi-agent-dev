@@ -56,7 +56,8 @@ Detection: scan story text for keywords `test`, `dockerfile`, `docker-compose`, 
 | The first milestone file in `milestones/` exists | File present | No milestone file | **Re-plan** — should plan exactly one milestone |
 | There is exactly one milestone file in `milestones/` | One file | Zero or 2+ files | **Re-plan** — should plan exactly one milestone |
 | Milestone has `> **Validates:**` block immediately after heading | Block present | Missing | **Re-plan** — validator needs acceptance criteria |
-| Milestone has 3-7 tasks | In range | Out of range | **Re-plan** if 0 or 10+; **Warn** if 1-2 or 8-9 |
+| Milestone has tasks | Has tasks | No tasks | **Re-plan** — milestone is empty |
+| Milestone is not oversized | Reasonable task count | Excessive tasks | **Re-plan** if grossly oversized; **Warn** if borderline |
 | All tasks have `- [ ]` checkbox format | All match | Missing checkboxes | **Warn** — builder tracks completion via checkboxes |
 
 ---
@@ -146,7 +147,7 @@ For each task in the first milestone:
 
 1. **Self-contained description** — does the task include enough detail (file paths, config keys, field names) that the builder can implement it without reading other docs?
 2. **Single concern** — does the task describe one logical change, or does it have "and"/"with" connecting distinct work?
-3. **No stuffing** — does the task create 3 or fewer files/endpoints/entities?
+3. **No stuffing** — does the task describe one logical change, or does it pack many files/endpoints/entities into one go?
 
 Sample all tasks in the first milestone. If 2+ tasks fail on any criterion, fail the check.
 
