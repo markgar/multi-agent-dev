@@ -33,42 +33,45 @@ def register(app: typer.Typer) -> None:
 # ============================================
 
 _BACKLOG_LINE_RE = re.compile(
-    r"^(\d+)\.\s+\[([ xX~])\]\s+(.+?)(?:\s*<!--\s*depends:\s*[\d,\s]+\s*-->)?$"
+    r"^(\d+)\.\s+\[([ xX]|\d+)\]\s+(.+?)(?:\s*<!--\s*depends:\s*[\d,\s]+\s*-->)?$"
 )
 
 
-def mark_story_claimed(content: str, story_number: int) -> str:
-    """Replace [ ] with [~] for the given story number in backlog text.
+def mark_story_claimed(content: str, story_number: int, builder_id: int = 1) -> str:
+    """Replace [ ] with [N] for the given story number in backlog text.
 
     Pure function: returns the modified content string. Only modifies the
     first line whose number matches and whose checkbox is unclaimed ([ ]).
+    The builder_id is written into the checkbox so concurrent claims produce
+    different text, causing git merge conflicts that prevent double-claims.
     """
     lines = content.split("\n")
     for i, line in enumerate(lines):
         m = _BACKLOG_LINE_RE.match(line.strip())
         if m and int(m.group(1)) == story_number and m.group(2).strip() == "":
-            lines[i] = line.replace("[ ]", "[~]", 1)
+            lines[i] = line.replace("[ ]", f"[{builder_id}]", 1)
             break
     return "\n".join(lines)
 
 
 def mark_story_completed_text(content: str, story_number: int) -> str:
-    """Replace [~] with [x] for the given story number in backlog text.
+    """Replace [N] with [x] for the given story number in backlog text.
 
     Pure function: returns the modified content string. Only modifies the
-    first line whose number matches and whose checkbox is in-progress ([~]).
+    first line whose number matches and whose checkbox is in-progress ([N]).
     """
     lines = content.split("\n")
     for i, line in enumerate(lines):
         m = _BACKLOG_LINE_RE.match(line.strip())
-        if m and int(m.group(1)) == story_number and m.group(2) == "~":
-            lines[i] = line.replace("[~]", "[x]", 1)
+        if m and int(m.group(1)) == story_number and m.group(2).isdigit():
+            marker = m.group(2)
+            lines[i] = line.replace(f"[{marker}]", "[x]", 1)
             break
     return "\n".join(lines)
 
 
 def mark_story_unclaimed_text(content: str, story_number: int) -> str:
-    """Replace [~] with [ ] for the given story number in backlog text.
+    """Replace [N] with [ ] for the given story number in backlog text.
 
     Pure function: returns the modified content string. Reverts a claimed
     story back to unclaimed so another builder can pick it up.
@@ -76,8 +79,9 @@ def mark_story_unclaimed_text(content: str, story_number: int) -> str:
     lines = content.split("\n")
     for i, line in enumerate(lines):
         m = _BACKLOG_LINE_RE.match(line.strip())
-        if m and int(m.group(1)) == story_number and m.group(2) == "~":
-            lines[i] = line.replace("[~]", "[ ]", 1)
+        if m and int(m.group(1)) == story_number and m.group(2).isdigit():
+            marker = m.group(2)
+            lines[i] = line.replace(f"[{marker}]", "[ ]", 1)
             break
     return "\n".join(lines)
 
@@ -89,13 +93,13 @@ def mark_story_unclaimed_text(content: str, story_number: int) -> str:
 _BACKLOG_FILE = "BACKLOG.md"
 
 
-def claim_next_story(agent_name: str, max_attempts: int = 10) -> dict | None:
+def claim_next_story(agent_name: str, builder_id: int = 1, max_attempts: int = 10) -> dict | None:
     """Claim the next eligible story from BACKLOG.md using git push as a lock.
 
     Flow:
     1. git pull --rebase
     2. Read BACKLOG.md, find next eligible unclaimed story
-    3. Mark it in-progress ([ ] -> [~])
+    3. Mark it in-progress ([ ] -> [N] where N is builder_id)
     4. git commit + push
     5. If push fails: pull (winner's claim arrives), go to step 2
     6. Returns the claimed story dict, or None if no eligible stories
@@ -111,7 +115,7 @@ def claim_next_story(agent_name: str, max_attempts: int = 10) -> dict | None:
         try:
             with open(_BACKLOG_FILE, "r", encoding="utf-8") as f:
                 content = f.read()
-            new_content = mark_story_claimed(content, story["number"])
+            new_content = mark_story_claimed(content, story["number"], builder_id)
             if new_content == content:
                 log(agent_name, f"WARNING: Could not mark story {story['number']} as claimed.", style="yellow")
                 return None
@@ -131,7 +135,7 @@ def claim_next_story(agent_name: str, max_attempts: int = 10) -> dict | None:
             return story
 
         # Push failed -- another commit was pushed to the remote.
-        # Reset the local claim commit so we don't read our own [~] on retry.
+        # Reset the local claim commit so we don't read our own claim on retry.
         log(
             agent_name,
             f"Claim race lost (attempt {attempt}/{max_attempts}). Pulling and retrying...",
@@ -148,7 +152,7 @@ def claim_next_story(agent_name: str, max_attempts: int = 10) -> dict | None:
 
 
 def mark_story_completed(story_number: int, agent_name: str, max_attempts: int = 5) -> bool:
-    """Mark a claimed story as completed in BACKLOG.md ([~] -> [x]).
+    """Mark a claimed story as completed in BACKLOG.md ([N] -> [x]).
 
     Uses the same git-push-as-lock pattern as claim_next_story.
     Returns True if successfully marked, False if failed after retries.
@@ -161,7 +165,7 @@ def mark_story_completed(story_number: int, agent_name: str, max_attempts: int =
                 content = f.read()
             new_content = mark_story_completed_text(content, story_number)
             if new_content == content:
-                log(agent_name, f"WARNING: Story {story_number} not in [~] state -- may already be completed.", style="yellow")
+                log(agent_name, f"WARNING: Story {story_number} not in claimed state -- may already be completed.", style="yellow")
                 return True  # idempotent
             with open(_BACKLOG_FILE, "w", encoding="utf-8") as f:
                 f.write(new_content)
@@ -191,7 +195,7 @@ def mark_story_completed(story_number: int, agent_name: str, max_attempts: int =
 
 
 def unclaim_story(story_number: int, agent_name: str, max_attempts: int = 5) -> bool:
-    """Revert a claimed story back to unclaimed in BACKLOG.md ([~] -> [ ]).
+    """Revert a claimed story back to unclaimed in BACKLOG.md ([N] -> [ ]).
 
     Used when the planner fails to produce a valid milestone file, so the
     story can be retried later (possibly by another builder).
@@ -206,7 +210,7 @@ def unclaim_story(story_number: int, agent_name: str, max_attempts: int = 5) -> 
                 content = f.read()
             new_content = mark_story_unclaimed_text(content, story_number)
             if new_content == content:
-                log(agent_name, f"WARNING: Story {story_number} not in [~] state -- cannot unclaim.", style="yellow")
+                log(agent_name, f"WARNING: Story {story_number} not in claimed state -- cannot unclaim.", style="yellow")
                 return True  # idempotent
             with open(_BACKLOG_FILE, "w", encoding="utf-8") as f:
                 f.write(new_content)
@@ -497,7 +501,7 @@ def build(
     while True:
         state.cycle_count += 1
 
-        story = claim_next_story(agent_name)
+        story = claim_next_story(agent_name, builder_id)
         if story is None:
             # No eligible stories -- check if pending (dep deadlock) or truly done
             if has_pending_backlog_stories_in_file(_BACKLOG_FILE):
@@ -583,7 +587,7 @@ def build(
             write_builder_done(builder_id)
             return
 
-        # Mark story as completed ([~] -> [x]) so downstream deps unlock
+        # Mark story as completed ([N] -> [x]) so downstream deps unlock
         mark_story_completed(story["number"], agent_name)
 
         # Loop back to claim next story

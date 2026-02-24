@@ -178,7 +178,7 @@ They coordinate through git push/pull and shared markdown files.
 ## How It Works
 
 1. The **planner** reads SPEC.md and REQUIREMENTS.md, creates BACKLOG.md (story queue) and the first milestone file in `milestones/`
-2. Each **builder** claims a story from BACKLOG.md (`[~]`), plans its milestone, completes all tasks, marks the story done (`[x]`), and loops
+2. Each **builder** claims a story from BACKLOG.md (`[N]`), plans its milestone, completes all tasks, marks the story done (`[x]`), and loops
 3. The **commit reviewer** watches for new commits and reviews them for quality
 4. The **milestone reviewer** runs cross-cutting reviews when a milestone completes
 5. The **tester** runs scoped tests when a milestone completes

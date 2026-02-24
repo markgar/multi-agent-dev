@@ -243,7 +243,7 @@ def get_tasks_per_milestone(tasks_path: str) -> list[dict]:
 # ============================================
 
 _BACKLOG_RE = re.compile(
-    r"^(\d+)\.\s+\[([ xX~])\]\s+(.+?)(?:\s*<!--\s*depends:\s*([\d,\s]+)\s*-->)?$"
+    r"^(\d+)\.\s+\[([ xX~]|\d+)\]\s+(.+?)(?:\s*<!--\s*depends:\s*([\d,\s]+)\s*-->)?$"
 )
 
 
@@ -251,9 +251,9 @@ def parse_backlog(content: str) -> list[dict]:
     """Parse BACKLOG.md content into structured story dicts.
 
     Each line: ``N. [x] Story name <!-- depends: 1, 2 -->``
-    Three-state checkboxes: [ ] = unclaimed, [~] = in_progress, [x] = completed.
+    Three-state checkboxes: [ ] = unclaimed, [N] = claimed by builder N, [x] = completed.
     Returns: [{"number": int, "name": str, "checked": bool, "status": str, "depends": list[int]}]
-    The ``checked`` field is True for both [~] and [x] (backward compat).
+    The ``checked`` field is True for both [N] and [x] (backward compat).
     The ``status`` field is one of: "unclaimed", "in_progress", "completed".
     """
     stories = []
@@ -265,7 +265,7 @@ def parse_backlog(content: str) -> list[dict]:
         marker = m.group(2).strip().lower()
         if marker == "x":
             status = "completed"
-        elif marker == "~":
+        elif marker == "~" or marker.isdigit():
             status = "in_progress"
         else:
             status = "unclaimed"

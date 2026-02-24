@@ -326,14 +326,14 @@ def test_get_next_eligible_story_deadlock():
 
 
 # ============================================
-# Three-state backlog tests ([~] in-progress)
+# Three-state backlog tests ([N] in-progress)
 # ============================================
 
 SAMPLE_BACKLOG_THREE_STATE = """\
 # Backlog
 
 1. [x] Project scaffolding and base configuration
-2. [~] Books CRUD <!-- depends: 1 -->
+2. [1] Books CRUD <!-- depends: 1 -->
 3. [ ] Authors CRUD <!-- depends: 1 -->
 4. [ ] Search <!-- depends: 2, 3 -->
 5. [ ] Reviews <!-- depends: 2 -->
@@ -343,13 +343,13 @@ SAMPLE_BACKLOG_ALL_CLAIMED = """\
 # Backlog
 
 1. [x] Scaffolding
-2. [~] Feature A <!-- depends: 1 -->
-3. [~] Feature B <!-- depends: 1 -->
+2. [1] Feature A <!-- depends: 1 -->
+3. [2] Feature B <!-- depends: 1 -->
 """
 
 
 def test_parse_backlog_three_state_markers():
-    """The [~] marker is parsed as in_progress with checked=True."""
+    """The [N] marker (digit) is parsed as in_progress with checked=True."""
     stories = parse_backlog(SAMPLE_BACKLOG_THREE_STATE)
     assert len(stories) == 5
     assert stories[0]["status"] == "completed"
@@ -361,7 +361,7 @@ def test_parse_backlog_three_state_markers():
 
 
 def test_in_progress_does_not_satisfy_dependencies():
-    """Story 5 (Reviews) depends on story 2 which is [~]. Should NOT be eligible."""
+    """Story 5 (Reviews) depends on story 2 which is [1]. Should NOT be eligible."""
     story = get_next_eligible_story(SAMPLE_BACKLOG_THREE_STATE)
     assert story is not None
     assert story["number"] == 3
@@ -369,36 +369,50 @@ def test_in_progress_does_not_satisfy_dependencies():
 
 
 def test_in_progress_story_is_not_eligible():
-    """Story 2 is [~] — it should be skipped, not returned as eligible."""
+    """Story 2 is [1] — it should be skipped, not returned as eligible."""
     story = get_next_eligible_story(SAMPLE_BACKLOG_THREE_STATE)
     assert story["number"] != 2
 
 
 def test_all_claimed_returns_none():
-    """When all uncompleted stories are [~], no eligible story exists."""
+    """When all uncompleted stories are claimed [N], no eligible story exists."""
     story = get_next_eligible_story(SAMPLE_BACKLOG_ALL_CLAIMED)
     assert story is None
 
 
 def test_has_pending_with_in_progress():
-    """[~] stories count as checked, so unclaimed stories are still pending."""
+    """[N] stories count as checked, so unclaimed stories are still pending."""
     assert has_pending_backlog_stories(SAMPLE_BACKLOG_THREE_STATE) is True
 
 
 def test_has_pending_all_claimed_or_done():
-    """All stories are [x] or [~] — nothing pending."""
+    """All stories are [x] or [N] — nothing pending."""
     assert has_pending_backlog_stories(SAMPLE_BACKLOG_ALL_CLAIMED) is False
 
 
 def test_search_blocked_by_in_progress_dep():
-    """Story 4 (Search) depends on 2 ([~]) and 3 ([ ]). Neither dep is completed.
-    Story 5 (Reviews) depends on 2 ([~]). Not eligible.
+    """Story 4 (Search) depends on 2 ([1]) and 3 ([ ]). Neither dep is completed.
+    Story 5 (Reviews) depends on 2 ([1]). Not eligible.
     Only story 3 (Authors) is eligible (depends on 1 which is [x])."""
     stories = parse_backlog(SAMPLE_BACKLOG_THREE_STATE)
     completed = {s["number"] for s in stories if s["status"] == "completed"}
     assert completed == {1}
     story = get_next_eligible_story(SAMPLE_BACKLOG_THREE_STATE)
     assert story["number"] == 3
+
+
+def test_parse_backlog_backward_compat_tilde():
+    """Legacy [~] markers are still parsed as in_progress for backward compat."""
+    legacy = """\
+# Backlog
+
+1. [x] Setup
+2. [~] Feature A <!-- depends: 1 -->
+3. [ ] Feature B <!-- depends: 1 -->
+"""
+    stories = parse_backlog(legacy)
+    assert stories[1]["status"] == "in_progress"
+    assert stories[1]["checked"] is True
 
 
 # ============================================

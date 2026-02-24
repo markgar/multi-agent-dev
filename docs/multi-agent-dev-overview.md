@@ -177,7 +177,7 @@ Agents coordinate through **files in git** — no message queues, no APIs, no sh
 
 | Mechanism | Purpose |
 |---|---|
-| `BACKLOG.md` | Story queue with optimistic locking (`[ ]` → `[~]` → `[x]`) |
+| `BACKLOG.md` | Story queue with optimistic locking (`[ ]` → `[N]` → `[x]`) |
 | `milestones/` | One file per story — tasks, reference files, acceptance criteria |
 | `bugs/` | Append-only bug reports (tester & validator → builder) |
 | `reviews/` | Append-only review findings (reviewer → builder) |
@@ -195,7 +195,7 @@ Each builder runs an independent **claim loop**:
 <div style="margin:16px auto; max-width:480px">
   <div style="background:#2d2d44; border:1px solid #818cf8; border-radius:8px; padding:10px 16px; margin-bottom:4px"><strong>1.</strong> Find next eligible story in BACKLOG <span style="color:#94a3b8; font-size:0.85em">(deps [x], story [ ])</span></div>
   <div style="text-align:center; color:#60a5fa">▼</div>
-  <div style="background:#2d2d44; border:1px solid #818cf8; border-radius:8px; padding:10px 16px; margin-bottom:4px"><strong>2.</strong> Claim it: [ ] → [~], commit, push <span style="color:#94a3b8; font-size:0.85em">(push fails? try next)</span></div>
+  <div style="background:#2d2d44; border:1px solid #818cf8; border-radius:8px; padding:10px 16px; margin-bottom:4px"><strong>2.</strong> Claim it: [ ] → [N], commit, push <span style="color:#94a3b8; font-size:0.85em">(push fails? try next)</span></div>
   <div style="text-align:center; color:#60a5fa">▼</div>
   <div style="background:#2d2d44; border:1px solid #818cf8; border-radius:8px; padding:10px 16px; margin-bottom:4px"><strong>3.</strong> Plan milestone for this story</div>
   <div style="text-align:center; color:#60a5fa">▼</div>

@@ -103,13 +103,13 @@ BACKLOG.md is a planner-owned, numbered, ordered story queue. Each entry:
 N. [x] Story name <!-- depends: 1, 2 -->
 ```
 
-- `[ ]` = in backlog (unclaimed), `[~]` = claimed by a builder (in progress), `[x]` = completed
+- `[ ]` = in backlog (unclaimed), `[N]` = claimed by builder N (in progress), `[x]` = completed
 - `<!-- depends: N -->` = HTML comment listing story numbers this depends on
-- Dependencies require `[x]` (completed) — `[~]` (claimed) does NOT satisfy dependencies
+- Dependencies require `[x]` (completed) — `[N]` (claimed) does NOT satisfy dependencies
 - Dependencies must be **minimal** — only mark a dependency when the story cannot compile or function without the other story's code artifacts (imports, types, interfaces). Do NOT add dependencies for eventual integration — integration happens in whichever story is built second.
 - The first story is always scaffolding (project structure, entry point, health endpoint)
 - Stories are ordered so each builds on predecessors, preferring vertical feature slices — each story delivers one feature through all layers (entity → repository → service → API → frontend) rather than building one layer across all features.
-- The builder claims stories via git-based optimistic locking: mark `[~]`, commit, push. If push fails (another builder claimed first), pull and try the next eligible story.
+- The builder claims stories via git-based optimistic locking: mark `[N]` (where N is the builder number), commit, push. If push fails (another builder claimed first), pull and try the next eligible story. Using the builder number instead of a generic marker ensures concurrent claims produce different text on the same line, causing a git merge conflict that prevents double-claims.
 
 ### Planning Rules
 
@@ -175,7 +175,7 @@ The generated file includes:
 
 Runs via `build --loop --builder-id N --num-builders M`. Multiple builders can run in parallel, each in its own `builder-N/` clone directory. Each builder runs a claim loop:
 
-1. **Claim a story:** Find the next eligible unclaimed (`[ ]`) story in BACKLOG.md where all dependencies are completed (`[x]`). Mark it `[~]` (claimed), commit, and push. If the push fails (another builder claimed it), pull and try again.
+1. **Claim a story:** Find the next eligible unclaimed (`[ ]`) story in BACKLOG.md where all dependencies are completed (`[x]`). Mark it `[N]` (where N is the builder number), commit, and push. If the push fails (another builder claimed it), pull and try again.
 2. **Plan the milestone:** Call the milestone planner to expand the claimed story into a milestone file in `milestones/`.
 3. **Build it:** Fix bugs and review findings first, then complete all tasks in the milestone.
 4. **Complete the story:** Mark the story `[x]` in BACKLOG.md, commit, push.
@@ -344,8 +344,8 @@ The builder updates the project's copilot-instructions.md whenever project struc
 ## Agent Coordination Rules
 
 - **Commit message tagging:** Every agent prefixes its commit messages with its name in brackets — `[builder]`, `[reviewer]`, `[tester]`, `[validator]`, `[planner]`, `[bootstrap]`. This makes it easy to see who did what in `git log`.
-- The **Planner** runs on demand via `plan`. It assesses project state (fresh / continuing / evolving), manages BACKLOG.md (story queue with three-state tracking: `[ ]` unclaimed, `[~]` claimed, `[x]` completed), updates SPEC.md if new requirements are detected, then writes one milestone file per story in `milestones/`. It never writes application code.
-- The **Builder** runs in a claim loop. Each builder claims a story from BACKLOG.md (`[~]`), calls the planner to expand it into a milestone, completes all tasks, marks the story done (`[x]`), and loops. When no eligible stories remain, writes `logs/builder-N.done`.
+- The **Planner** runs on demand via `plan`. It assesses project state (fresh / continuing / evolving), manages BACKLOG.md (story queue with three-state tracking: `[ ]` unclaimed, `[N]` claimed by builder N, `[x]` completed), updates SPEC.md if new requirements are detected, then writes one milestone file per story in `milestones/`. It never writes application code.
+- The **Builder** runs in a claim loop. Each builder claims a story from BACKLOG.md (`[N]`), calls the planner to expand it into a milestone, completes all tasks, marks the story done (`[x]`), and loops. When no eligible stories remain, writes `logs/builder-N.done`.
 - The **Commit Watcher** reviews new commits (individually, or as a batch when multiple accumulate). Non-code issues ([doc]: stale docs, misleading comments) are fixed directly (except DEPLOY.md — that gets filed as a finding). [bug]/[security] issues are filed as `finding-*.md` for the builder; [cleanup]/[robustness] issues are filed as `note-*.md` for the milestone reviewer to evaluate.
 - The **Milestone Reviewer** runs cross-cutting reviews when a milestone completes. It reads accumulated `note-*.md` files, promotes recurring patterns to `finding-*.md`, and cleans up stale findings by creating `resolved-*.md` files. It also updates REVIEW-THEMES.md.
 - The **Tester** runs scoped tests when a milestone completes, focusing on changed files. It runs the test suite only — it does not start the app or test live endpoints. Files bugs in `bugs/`. Exits when the builder finishes.
@@ -391,7 +391,7 @@ The original `reviewoncommit` and `testoncommit` commands still exist for manual
 
 Multi-builder shutdown uses per-builder sentinel files:
 
-1. **Builder completes all stories:** When a builder finds no eligible stories in BACKLOG.md (all are `[~]` or `[x]`), it waits for downstream agents to go idle, verifies checklists are clean, then writes `logs/builder-N.done`.
+1. **Builder completes all stories:** When a builder finds no eligible stories in BACKLOG.md (all are `[N]` or `[x]`), it waits for downstream agents to go idle, verifies checklists are clean, then writes `logs/builder-N.done`.
 2. **Wait for agents to go idle:** Each builder monitors `logs/reviewer.log`, `logs/milestone-reviewer.log`, `logs/tester.log`, and `logs/validator.log` modification times. When all logs haven't changed in 120+ seconds, agents are considered idle.
 3. **Check work lists:** The builder pulls latest and scans `bugs/` for open bugs (bug-* without fixed-*), `reviews/` for open findings (finding-* without resolved-*), and milestone files for unchecked items.
 4. **Fix or exit:** If new work was filed, the builder fixes it (up to 4 fix-only cycles) and loops back to step 2. If checklists are clean and agents are idle, writes `logs/builder-N.done`.

@@ -80,48 +80,57 @@ _SAMPLE_BACKLOG = """# Backlog
 1. [x] Project scaffolding <!-- depends: -->
 2. [ ] Members backend <!-- depends: 1 -->
 3. [ ] Members frontend <!-- depends: 2 -->
-4. [~] Events backend <!-- depends: 1 -->
+4. [2] Events backend <!-- depends: 1 -->
 5. [ ] Events frontend <!-- depends: 4 -->
 """
 
 
 def test_mark_story_claimed_marks_correct_story():
-    result = mark_story_claimed(_SAMPLE_BACKLOG, 2)
-    assert "2. [~] Members backend" in result
+    result = mark_story_claimed(_SAMPLE_BACKLOG, 2, builder_id=3)
+    assert "2. [3] Members backend" in result
     # Other stories unchanged
     assert "1. [x] Project scaffolding" in result
     assert "3. [ ] Members frontend" in result
-    assert "4. [~] Events backend" in result
+    assert "4. [2] Events backend" in result
 
 
 def test_mark_story_claimed_does_not_modify_already_claimed():
-    result = mark_story_claimed(_SAMPLE_BACKLOG, 4)
-    # Story 4 is already [~], should not change
+    result = mark_story_claimed(_SAMPLE_BACKLOG, 4, builder_id=3)
+    # Story 4 is already [2], should not change
     assert result == _SAMPLE_BACKLOG
 
 
 def test_mark_story_claimed_does_not_modify_completed():
-    result = mark_story_claimed(_SAMPLE_BACKLOG, 1)
+    result = mark_story_claimed(_SAMPLE_BACKLOG, 1, builder_id=2)
     # Story 1 is already [x], should not change
     assert result == _SAMPLE_BACKLOG
 
 
 def test_mark_story_claimed_handles_no_match():
-    result = mark_story_claimed(_SAMPLE_BACKLOG, 99)
+    result = mark_story_claimed(_SAMPLE_BACKLOG, 99, builder_id=1)
     assert result == _SAMPLE_BACKLOG
 
 
 def test_mark_story_claimed_handles_story_with_dependencies():
     content = "1. [ ] Setup\n2. [ ] Feature A <!-- depends: 1 -->\n"
-    result = mark_story_claimed(content, 2)
-    assert "2. [~] Feature A <!-- depends: 1 -->" in result
+    result = mark_story_claimed(content, 2, builder_id=1)
+    assert "2. [1] Feature A <!-- depends: 1 -->" in result
     assert "1. [ ] Setup" in result
 
 
 def test_mark_story_claimed_handles_story_at_end_without_trailing_newline():
     content = "1. [ ] Setup\n2. [ ] Feature A"
-    result = mark_story_claimed(content, 2)
-    assert "2. [~] Feature A" in result
+    result = mark_story_claimed(content, 2, builder_id=4)
+    assert "2. [4] Feature A" in result
+
+
+def test_mark_story_claimed_different_builders_produce_different_text():
+    content = "1. [ ] Setup\n2. [ ] Feature A\n"
+    result_b1 = mark_story_claimed(content, 1, builder_id=1)
+    result_b2 = mark_story_claimed(content, 1, builder_id=2)
+    assert "1. [1] Setup" in result_b1
+    assert "1. [2] Setup" in result_b2
+    assert result_b1 != result_b2
 
 
 # ============================================
@@ -129,7 +138,7 @@ def test_mark_story_claimed_handles_story_at_end_without_trailing_newline():
 # ============================================
 
 
-def test_mark_story_completed_changes_tilde_to_x():
+def test_mark_story_completed_changes_claimed_to_x():
     result = mark_story_completed_text(_SAMPLE_BACKLOG, 4)
     assert "4. [x] Events backend" in result
     # Other stories unchanged
@@ -155,7 +164,7 @@ def test_mark_story_completed_handles_no_match():
 
 
 def test_mark_story_completed_handles_dependencies():
-    content = "1. [~] Setup <!-- depends: -->\n2. [ ] Feature A <!-- depends: 1 -->\n"
+    content = "1. [3] Setup <!-- depends: -->\n2. [ ] Feature A <!-- depends: 1 -->\n"
     result = mark_story_completed_text(content, 1)
     assert "1. [x] Setup <!-- depends: -->" in result
     assert "2. [ ] Feature A <!-- depends: 1 -->" in result
@@ -172,6 +181,13 @@ def test_unclaim_reverts_claimed_to_unclaimed():
     # Other stories unchanged
     assert "1. [x] Project scaffolding" in result
     assert "2. [ ] Members backend" in result
+
+
+def test_unclaim_handles_different_builder_ids():
+    content = "1. [3] Setup\n2. [1] Feature A\n"
+    result = mark_story_unclaimed_text(content, 1)
+    assert "1. [ ] Setup" in result
+    assert "2. [1] Feature A" in result  # story 2 unchanged
 
 
 def test_unclaim_does_not_modify_unclaimed():
@@ -192,7 +208,7 @@ def test_unclaim_handles_no_match():
 
 
 def test_unclaim_handles_dependencies():
-    content = "1. [~] Setup <!-- depends: -->\n2. [ ] Feature A <!-- depends: 1 -->\n"
+    content = "1. [4] Setup <!-- depends: -->\n2. [ ] Feature A <!-- depends: 1 -->\n"
     result = mark_story_unclaimed_text(content, 1)
     assert "1. [ ] Setup <!-- depends: -->" in result
     assert "2. [ ] Feature A <!-- depends: 1 -->" in result
