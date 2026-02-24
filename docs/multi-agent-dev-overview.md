@@ -155,16 +155,19 @@ copilot --yolo --model claude-opus-4.6 \
 
 ---
 
+<!-- _class: default -->
+<style scoped>table { font-size: 0.78em; } td, th { padding: 6px 10px; }</style>
+
 ## The Six Agents
 
-| Agent | Role | Reads | Writes |
-|---|---|---|---|
-| **Planner** | Decomposes requirements into stories & milestones | SPEC.md, REQUIREMENTS.md, codebase | BACKLOG.md, milestones/ |
-| **Builder** | Claims stories, plans milestones, writes code | milestones/, bugs/, reviews/, DEPLOY.md, REVIEW-THEMES.md | Application code |
-| **Commit Watcher** | Per-commit code review | Git diffs | finding-*.md, note-*.md |
-| **Milestone Reviewer** | Cross-cutting milestone review + note filtering | Full milestone diff, note-*.md | finding-*.md, REVIEW-THEMES.md |
-| **Tester** | Scoped tests on milestone completion | Changed files, existing tests | Test files, bug-*.md |
-| **Validator** | Container build + acceptance testing | SPEC.md, DEPLOY.md, REQUIREMENTS.md | Dockerfile, DEPLOY.md, bug-*.md |
+| Agent | Role | Writes |
+|---|---|---|
+| **Planner** | Decomposes requirements into stories & milestones | BACKLOG.md, milestones/ |
+| **Builder** | Claims stories, writes code, fixes bugs & findings | Application code |
+| **Commit Watcher** | Reviews every commit for quality issues | finding-*.md, note-*.md |
+| **Milestone Reviewer** | Cross-cutting review + note frequency filtering | finding-*.md, REVIEW-THEMES.md |
+| **Tester** | Scoped tests on milestone completion | Test files, bug-*.md |
+| **Validator** | Container build + acceptance testing | Dockerfile, DEPLOY.md, bug-*.md |
 
 ---
 
