@@ -11,7 +11,6 @@ import typer
 from agentic_dev.git_helpers import git_push_with_retry
 from agentic_dev.milestone import (
     get_all_milestones,
-    get_completed_milestones_from_dir,
     get_last_milestone_end_sha,
     get_milestone_progress_from_file,
     get_next_eligible_story_in_file,
@@ -321,42 +320,30 @@ def classify_remaining_work(bugs: int, reviews: int, tasks: int, agents_idle: bo
 
 
 def _record_completed_milestone(
-    milestone_file: str, milestones_before: set, agent_name: str,
-) -> set:
-    """Pull latest, check if the milestone is now complete, record its boundary.
+    milestone_file: str, agent_name: str,
+) -> None:
+    """Pull latest, check if this builder's milestone is complete, record its boundary.
 
-    Returns the updated set of completed milestone names.
+    Only records the specific milestone this builder was working on.
+    Other builders' milestones are their responsibility to record.
     """
     run_cmd(["git", "pull", "--rebase", "-q"], quiet=True)
 
-    milestones_after = {
-        ms["name"] for ms in get_completed_milestones_from_dir("milestones")
-    }
-
-    newly_completed = milestones_after - milestones_before
-    if not newly_completed:
-        # Also check the specific milestone file directly
-        ms = parse_milestone_file(milestone_file)
-        if ms and ms["all_done"]:
-            newly_completed = {ms["name"]}
-
-    if not newly_completed:
+    ms = parse_milestone_file(milestone_file)
+    if not ms or not ms["all_done"]:
         log(agent_name, "WARNING: Milestone does not appear complete after build.", style="bold yellow")
-        return milestones_after
+        return
 
     start_sha = get_last_milestone_end_sha()
     head_result = run_cmd(["git", "rev-parse", "HEAD"], capture=True)
     head_sha = head_result.stdout.strip() if head_result.returncode == 0 else ""
 
-    for ms_name in newly_completed:
-        record_milestone_boundary(ms_name, start_sha, head_sha)
-        log(
-            agent_name,
-            f"Recorded milestone boundary: {ms_name} ({start_sha[:8]}..{head_sha[:8]})",
-            style="cyan",
-        )
-
-    return milestones_after
+    record_milestone_boundary(ms["name"], start_sha, head_sha)
+    log(
+        agent_name,
+        f"Recorded milestone boundary: {ms['name']} ({start_sha[:8]}..{head_sha[:8]})",
+        style="cyan",
+    )
 
 
 def _log_work_remaining(agent_name: str, bugs: int, reviews: int) -> None:
@@ -569,10 +556,6 @@ def build(
         # Build each milestone part sequentially
         build_failed = False
         for milestone_file in new_milestones:
-            milestones_before = {
-                ms["name"] for ms in get_completed_milestones_from_dir("milestones")
-            }
-
             log(agent_name, "")
             log(agent_name, f"[Builder] Starting work on {milestone_file}...", style="green")
             log(agent_name, "")
@@ -591,7 +574,7 @@ def build(
                 build_failed = True
                 break
 
-            _record_completed_milestone(milestone_file, milestones_before, agent_name)
+            _record_completed_milestone(milestone_file, agent_name)
 
             log(agent_name, "")
             log(agent_name, "======================================", style="bold cyan")
