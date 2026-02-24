@@ -527,20 +527,18 @@ def build(
         # Plan: expand this story into a milestone file
         from agentic_dev.planner import check_milestone_sizes, plan
 
-        # Snapshot incomplete milestones before planning so we can detect new ones
-        incomplete_before = {
-            ms["path"] for ms in get_all_milestones("milestones") if not ms["all_done"]
-        }
-
         log(agent_name, "")
         log(agent_name, f"[Milestone Planner] Planning story: {story['name']}...", style="magenta")
         plan(story_name=story["name"])
         check_milestone_sizes()
 
-        # Identify all NEW milestone files created by plan + split
+        # Find milestone files for THIS story only (milestone-NN* pattern).
+        # Using the story number avoids picking up other builders' milestones
+        # that arrived via git pull during planning.
+        story_prefix = f"milestone-{story['number']:02d}"
         new_milestones = [
             ms["path"] for ms in get_all_milestones("milestones")
-            if not ms["all_done"] and ms["path"] not in incomplete_before
+            if not ms["all_done"] and os.path.basename(ms["path"]).startswith(story_prefix)
         ]
         if not new_milestones:
             log(agent_name, "ERROR: Planner did not create a milestone file with checkboxes.", style="bold red")
