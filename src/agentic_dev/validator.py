@@ -16,7 +16,11 @@ from agentic_dev.milestone import (
     load_reviewed_milestones,
     save_milestone_checkpoint,
 )
-from agentic_dev.prompts import VALIDATOR_MILESTONE_PROMPT, VALIDATOR_PLAYWRIGHT_SECTION
+from agentic_dev.prompts import (
+    VALIDATOR_MILESTONE_PROMPT,
+    VALIDATOR_PLAYWRIGHT_SECTION,
+    VALIDATOR_PLAYWRIGHT_TRACE_SECTION,
+)
 from agentic_dev.sentinel import is_builder_done
 from agentic_dev.utils import log, run_cmd, run_copilot, resolve_logs_dir
 
@@ -185,7 +189,109 @@ def _copy_validation_results(milestone_name: str) -> None:
         pass
 
 
-def _validate_milestone(boundary: dict, project_name: str) -> None:
+def _print_validation_summary(milestone_name: str) -> None:
+    """Log a pass/fail summary from the validation results file.
+
+    Reads logs/validation-<milestone>.txt, counts PASS/FAIL per category
+    tag ([A], [B], [C], [UI], other), and logs a summary table plus up to
+    10 individual failure lines. Always called after _copy_validation_results.
+    """
+    try:
+        logs_dir = resolve_logs_dir()
+        safe_name = milestone_name.lower().replace(" ", "-")
+        results_path = os.path.join(logs_dir, f"validation-{safe_name}.txt")
+        if not os.path.exists(results_path):
+            log("validator", "No validation results file found — skipping summary", style="yellow")
+            return
+
+        lines = open(results_path, encoding="utf-8").read().strip().splitlines()
+        if not lines:
+            log("validator", "Validation results file is empty", style="yellow")
+            return
+
+        categories = {"[A]": "Milestone tests", "[B]": "Requirements coverage",
+                      "[C]": "Bug verification", "[UI]": "Playwright UI"}
+        counts: dict[str, dict[str, int]] = {}
+        for tag in list(categories.keys()) + ["other"]:
+            counts[tag] = {"PASS": 0, "FAIL": 0}
+
+        failures: list[str] = []
+        for line in lines:
+            stripped = line.strip()
+            if not stripped:
+                continue
+            is_pass = stripped.upper().startswith("PASS")
+            is_fail = stripped.upper().startswith("FAIL")
+            if not is_pass and not is_fail:
+                continue
+            result_key = "PASS" if is_pass else "FAIL"
+            matched_tag = "other"
+            for tag in categories:
+                if tag in stripped:
+                    matched_tag = tag
+                    break
+            counts[matched_tag][result_key] += 1
+            if is_fail:
+                failures.append(stripped)
+
+        total_pass = sum(c["PASS"] for c in counts.values())
+        total_fail = sum(c["FAIL"] for c in counts.values())
+
+        log("validator", f"--- Validation Summary: {milestone_name} ---", style="bold cyan")
+        for tag, label in categories.items():
+            p, f = counts[tag]["PASS"], counts[tag]["FAIL"]
+            if p + f == 0:
+                continue
+            style = "green" if f == 0 else "red"
+            log("validator", f"  {label} {tag}: {p} passed, {f} failed", style=style)
+
+        op, of = counts["other"]["PASS"], counts["other"]["FAIL"]
+        if op + of > 0:
+            style = "green" if of == 0 else "red"
+            log("validator", f"  Other: {op} passed, {of} failed", style=style)
+
+        overall_style = "bold green" if total_fail == 0 else "bold red"
+        log("validator", f"  TOTAL: {total_pass} passed, {total_fail} failed", style=overall_style)
+
+        if failures:
+            log("validator", "  Failures:", style="red")
+            for fail_line in failures[:10]:
+                log("validator", f"    {fail_line}", style="red")
+            if len(failures) > 10:
+                log("validator", f"    ... and {len(failures) - 10} more", style="red")
+    except Exception as exc:
+        log("validator", f"Could not print validation summary: {exc}", style="yellow")
+
+
+def _copy_playwright_traces(milestone_name: str) -> None:
+    """Copy Playwright HTML report and traces to logs/ for post-run analysis.
+
+    Copies e2e/playwright-report/ → logs/playwright-<milestone>/report/
+    and e2e/test-results/ → logs/playwright-<milestone>/traces/.
+    Only called when save_traces=True. Silently skips missing source dirs.
+    """
+    try:
+        logs_dir = resolve_logs_dir()
+        safe_name = milestone_name.lower().replace(" ", "-")
+        dest_base = os.path.join(logs_dir, f"playwright-{safe_name}")
+
+        copied_any = False
+        for src_dir, dest_subdir in [
+            (os.path.join("e2e", "playwright-report"), "report"),
+            (os.path.join("e2e", "test-results"), "traces"),
+        ]:
+            if os.path.isdir(src_dir):
+                dest_dir = os.path.join(dest_base, dest_subdir)
+                shutil.copytree(src_dir, dest_dir, dirs_exist_ok=True)
+                copied_any = True
+
+        if copied_any:
+            log("validator", f"Playwright artifacts saved to {dest_base}", style="blue")
+    except Exception as exc:
+        log("validator", f"Could not copy Playwright traces: {exc}", style="yellow")
+
+
+def _validate_milestone(boundary: dict, project_name: str, save_traces: bool = False) -> None:
     """Build a container, validate at the milestone's end SHA, and leave running.
 
     Flow: checkout milestone SHA (detached HEAD) → set COMPOSE_PROJECT_NAME for
@@ -211,6 +317,8 @@ def _validate_milestone(boundary: dict, project_name: str) -> None:
 
     has_frontend = detect_has_frontend(".")
     ui_instructions = VALIDATOR_PLAYWRIGHT_SECTION if has_frontend else ""
+    if has_frontend and save_traces:
+        ui_instructions += "\n\n" + VALIDATOR_PLAYWRIGHT_TRACE_SECTION
 
     prompt = VALIDATOR_MILESTONE_PROMPT.format(
         milestone_name=boundary["name"],
@@ -224,6 +332,9 @@ def _validate_milestone(boundary: dict, project_name: str) -> None:
     exit_code = run_copilot("validator", prompt)
 
     _copy_validation_results(boundary["name"])
+    _print_validation_summary(boundary["name"])
+    if save_traces:
+        _copy_playwright_traces(boundary["name"])
     # Containers are intentionally left running for live browsing.
     # They will be cleaned up at the start of the next milestone's validation.
 
@@ -279,6 +390,9 @@ def validateloop(
     project_name: Annotated[
         str, typer.Option(help="Project name for container namespace and port isolation")
     ] = "",
+    save_traces: Annotated[
+        bool, typer.Option("--save-traces", help="Save Playwright HTML reports and traces to logs/")
+    ] = False,
 ) -> None:
     """Watch for completed milestones, build containers, and run acceptance tests.
 
@@ -304,7 +418,7 @@ def validateloop(
     log("validator", "")
 
     try:
-        _validateloop_inner(interval, project_name)
+        _validateloop_inner(interval, project_name, save_traces)
     except SystemExit as exc:
         log("validator", f"FATAL: {exc}", style="bold red")
         raise
@@ -313,7 +427,7 @@ def validateloop(
         raise
 
 
-def _drain_remaining_milestones(project_name: str) -> None:
+def _drain_remaining_milestones(project_name: str, save_traces: bool = False) -> None:
     """Process all remaining milestones after the builder has finished.
 
     Keeps pulling and validating until no unvalidated milestones remain.
@@ -333,10 +447,10 @@ def _drain_remaining_milestones(project_name: str) -> None:
             style="yellow",
         )
         for boundary in remaining:
-            _validate_milestone(boundary, project_name)
+            _validate_milestone(boundary, project_name, save_traces)
 
 
-def _validateloop_inner(interval: int, project_name: str) -> None:
+def _validateloop_inner(interval: int, project_name: str, save_traces: bool = False) -> None:
     """Inner loop for validateloop, separated for crash-logging wrapper."""
     while True:
         # Check if the builder has finished
@@ -350,11 +464,11 @@ def _validateloop_inner(interval: int, project_name: str) -> None:
         validated = load_reviewed_milestones(checkpoint_file=_VALIDATOR_MILESTONE_CHECKPOINT)
 
         for boundary in find_unvalidated_milestones(boundaries, validated):
-            _validate_milestone(boundary, project_name)
+            _validate_milestone(boundary, project_name, save_traces)
 
         if builder_done:
             # Drain any milestones that appeared while we were validating
-            _drain_remaining_milestones(project_name)
+            _drain_remaining_milestones(project_name, save_traces)
             now = datetime.now().strftime("%H:%M:%S")
             log("validator", f"[{now}] Builder finished. Shutting down.", style="bold green")
             break

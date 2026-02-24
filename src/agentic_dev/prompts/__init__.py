@@ -29,7 +29,11 @@ from agentic_dev.prompts.reviewer import (
     REVIEWER_PROMPT,
 )
 from agentic_dev.prompts.tester import TESTER_MILESTONE_PROMPT, TESTER_PROMPT
-from agentic_dev.prompts.validator import VALIDATOR_MILESTONE_PROMPT, VALIDATOR_PLAYWRIGHT_SECTION
+from agentic_dev.prompts.validator import (
+    VALIDATOR_MILESTONE_PROMPT,
+    VALIDATOR_PLAYWRIGHT_SECTION,
+    VALIDATOR_PLAYWRIGHT_TRACE_SECTION,
+)
 
 __all__ = [
     "BACKLOG_ORDERING_PROMPT",
@@ -51,4 +55,5 @@ __all__ = [
     "TESTER_PROMPT",
     "VALIDATOR_MILESTONE_PROMPT",
     "VALIDATOR_PLAYWRIGHT_SECTION",
+    "VALIDATOR_PLAYWRIGHT_TRACE_SECTION",
 ]

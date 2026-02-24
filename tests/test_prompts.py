@@ -25,6 +25,7 @@ from agentic_dev.prompts import (
     TESTER_PROMPT,
     VALIDATOR_MILESTONE_PROMPT,
     VALIDATOR_PLAYWRIGHT_SECTION,
+    VALIDATOR_PLAYWRIGHT_TRACE_SECTION,
 )
 
 
@@ -98,4 +99,18 @@ def test_playwright_section_is_well_formed():
     assert "Playwright" in VALIDATOR_PLAYWRIGHT_SECTION
     assert "playwright.config" in VALIDATOR_PLAYWRIGHT_SECTION
     assert "data-testid" in VALIDATOR_PLAYWRIGHT_SECTION
+
+
+def test_playwright_trace_section_is_well_formed():
+    """VALIDATOR_PLAYWRIGHT_TRACE_SECTION is a non-empty string with trace instructions."""
+    assert isinstance(VALIDATOR_PLAYWRIGHT_TRACE_SECTION, str)
+    assert len(VALIDATOR_PLAYWRIGHT_TRACE_SECTION) > 50
+    assert "trace" in VALIDATOR_PLAYWRIGHT_TRACE_SECTION.lower()
+    assert "playwright-report" in VALIDATOR_PLAYWRIGHT_TRACE_SECTION
+
+
+def test_playwright_trace_section_has_no_format_variables():
+    """VALIDATOR_PLAYWRIGHT_TRACE_SECTION has no format placeholders."""
+    result = VALIDATOR_PLAYWRIGHT_TRACE_SECTION.format()
+    assert result == VALIDATOR_PLAYWRIGHT_TRACE_SECTION
     assert "[UI]" in VALIDATOR_PLAYWRIGHT_SECTION
