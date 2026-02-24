@@ -129,8 +129,10 @@ def parse_milestones_from_text(content: str) -> list[dict]:
     Returns a list of dicts in document order:
         [{"name": str, "done": int, "total": int}, ...]
 
-    A milestone section starts with '# Milestone: <name>' or '## Milestone: <name>'
-    and contains checkbox lines like '- [x] ...' or '- [ ] ...'.
+    A milestone section starts with '# Milestone: <name>' or '## Milestone: <name>'.
+    An optional number/label (e.g. '01', '1a') may appear between 'Milestone' and
+    the colon: '# Milestone 01: <name>'.
+    Contains checkbox lines like '- [x] ...' or '- [ ] ...'.
     """
     milestones = []
     current_name = None
@@ -138,7 +140,7 @@ def parse_milestones_from_text(content: str) -> list[dict]:
     done = 0
 
     for line in content.split("\n"):
-        heading_match = re.match(r"^#{1,2}\s+Milestone:\s*(.+)$", line, re.IGNORECASE)
+        heading_match = re.match(r"^#{1,2}\s+Milestone(?:\s+\S+)?:\s*(.+)$", line, re.IGNORECASE)
         if heading_match:
             if current_name and total > 0:
                 milestones.append({"name": current_name, "done": done, "total": total})

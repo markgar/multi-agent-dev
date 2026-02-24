@@ -83,6 +83,29 @@ def test_single_and_double_hash_milestones_mixed():
     assert result[1]["name"] == "Second"
 
 
+def test_numbered_milestone_heading():
+    """LLM often writes '# Milestone 01: Name' with a number between Milestone and colon."""
+    content = "# Milestone 01: Scaffolding & Project Structure\n- [ ] Create solution\n- [x] Add domain project\n"
+    result = parse_milestones_from_text(content)
+    assert len(result) == 1
+    assert result[0] == {"name": "Scaffolding & Project Structure", "done": 1, "total": 2}
+
+
+def test_numbered_milestone_heading_variants():
+    """Various number/label formats the LLM uses between 'Milestone' and the colon."""
+    cases = [
+        ("# Milestone 4: Venues", "Venues"),
+        ("# Milestone 1a: Backend Scaffolding", "Backend Scaffolding"),
+        ("# Milestone 3a-2: Program Years — Backend", "Program Years — Backend"),
+        ("## Milestone 2b-ii: Auth Frontend", "Auth Frontend"),
+    ]
+    for heading, expected_name in cases:
+        content = f"{heading}\n- [ ] Task one\n- [x] Task two\n"
+        result = parse_milestones_from_text(content)
+        assert len(result) == 1, f"Failed to parse: {heading}"
+        assert result[0]["name"] == expected_name, f"Wrong name for: {heading}"
+
+
 def test_parses_milestone_log_with_multiple_entries():
     log_text = (
         "Project scaffolding|abc1234|def5678\n"
