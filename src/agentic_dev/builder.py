@@ -131,12 +131,14 @@ def claim_next_story(agent_name: str, max_attempts: int = 10) -> dict | None:
             log(agent_name, f"Claimed story {story['number']}: {story['name']}", style="green")
             return story
 
-        # Push failed -- someone else claimed first. Pull and retry.
+        # Push failed -- another commit was pushed to the remote.
+        # Reset the local claim commit so we don't read our own [~] on retry.
         log(
             agent_name,
             f"Claim race lost (attempt {attempt}/{max_attempts}). Pulling and retrying...",
             style="yellow",
         )
+        run_cmd(["git", "reset", "--hard", "HEAD~1"], quiet=True)
         pull_result = run_cmd(["git", "pull", "--rebase"], capture=True)
         if pull_result.returncode != 0:
             run_cmd(["git", "rebase", "--abort"], quiet=True)
