@@ -538,48 +538,67 @@ def build(
         # Plan: expand this story into a milestone file
         from agentic_dev.planner import check_milestone_sizes, plan
 
+        # Snapshot incomplete milestones before planning so we can detect new ones
+        incomplete_before = {
+            ms["path"] for ms in get_all_milestones("milestones") if not ms["all_done"]
+        }
+
         log(agent_name, "")
         log(agent_name, f"[Milestone Planner] Planning story: {story['name']}...", style="magenta")
         plan(story_name=story["name"])
         check_milestone_sizes()
 
-        milestone_file = find_milestone_file_for_story("milestones")
-        if not milestone_file:
+        # Identify all NEW milestone files created by plan + split
+        new_milestones = [
+            ms["path"] for ms in get_all_milestones("milestones")
+            if not ms["all_done"] and ms["path"] not in incomplete_before
+        ]
+        if not new_milestones:
             log(agent_name, "ERROR: Planner did not create a milestone file with checkboxes.", style="bold red")
             log(agent_name, "Unclaiming story and stopping builder.", style="bold red")
             unclaim_story(story["number"], agent_name)
             write_builder_done(builder_id)
             return
 
-        # Build the milestone
-        milestones_before = {
-            ms["name"] for ms in get_completed_milestones_from_dir("milestones")
-        }
+        new_milestones.sort()  # deterministic order (08a before 08b)
+        if len(new_milestones) > 1:
+            log(agent_name, f"Story was split into {len(new_milestones)} milestones.", style="cyan")
 
-        log(agent_name, "")
-        log(agent_name, f"[Builder] Starting work on {milestone_file}...", style="green")
-        log(agent_name, "")
+        # Build each milestone part sequentially
+        build_failed = False
+        for milestone_file in new_milestones:
+            milestones_before = {
+                ms["name"] for ms in get_completed_milestones_from_dir("milestones")
+            }
 
-        prompt = BUILDER_PROMPT.format(
-            milestone_file=milestone_file,
-            partition_filter=_build_partition_filter(builder_id, num_builders),
-        )
-        exit_code = run_copilot(agent_name, prompt)
-
-        if exit_code != 0:
             log(agent_name, "")
-            log(agent_name, "======================================", style="bold red")
-            log(agent_name, " Builder failed! Check errors above", style="bold red")
-            log(agent_name, "======================================", style="bold red")
+            log(agent_name, f"[Builder] Starting work on {milestone_file}...", style="green")
+            log(agent_name, "")
+
+            prompt = BUILDER_PROMPT.format(
+                milestone_file=milestone_file,
+                partition_filter=_build_partition_filter(builder_id, num_builders),
+            )
+            exit_code = run_copilot(agent_name, prompt)
+
+            if exit_code != 0:
+                log(agent_name, "")
+                log(agent_name, "======================================", style="bold red")
+                log(agent_name, " Builder failed! Check errors above", style="bold red")
+                log(agent_name, "======================================", style="bold red")
+                build_failed = True
+                break
+
+            _record_completed_milestone(milestone_file, milestones_before, agent_name)
+
+            log(agent_name, "")
+            log(agent_name, "======================================", style="bold cyan")
+            log(agent_name, " Milestone complete!", style="bold cyan")
+            log(agent_name, "======================================", style="bold cyan")
+
+        if build_failed:
             write_builder_done(builder_id)
             return
-
-        _record_completed_milestone(milestone_file, milestones_before, agent_name)
-
-        log(agent_name, "")
-        log(agent_name, "======================================", style="bold cyan")
-        log(agent_name, " Milestone complete!", style="bold cyan")
-        log(agent_name, "======================================", style="bold cyan")
 
         # Mark story as completed ([~] -> [x]) so downstream deps unlock
         mark_story_completed(story["number"], agent_name)
