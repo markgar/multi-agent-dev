@@ -124,7 +124,7 @@ def _partition_commits(commits: list[str], last_sha: str) -> tuple[list[str], st
 def _review_single_commit(prev_sha: str, commit_sha: str) -> int:
     """Review a single commit. Returns the copilot exit code."""
     prompt = REVIEWER_COMMIT_PROMPT.format(prev_sha=prev_sha, commit_sha=commit_sha)
-    return run_copilot("reviewer", prompt)
+    return run_copilot("commit-watcher", prompt)
 
 
 def _review_batch(base_sha: str, reviewable: list[str]) -> int:
@@ -135,7 +135,7 @@ def _review_batch(base_sha: str, reviewable: list[str]) -> int:
         base_sha=base_sha,
         head_sha=head_sha,
     )
-    return run_copilot("reviewer", prompt)
+    return run_copilot("commit-watcher", prompt)
 
 
 def _review_new_commits(last_sha: str, current_head: str) -> bool:
@@ -206,15 +206,15 @@ def _review_new_commits(last_sha: str, current_head: str) -> bool:
 # ============================================
 
 
-def _review_branch_single_commit(prev_sha: str, commit_sha: str, branch_name: str) -> int:
+def _review_branch_single_commit(prev_sha: str, commit_sha: str, branch_name: str, builder_id: int) -> int:
     """Review a single commit on a feature branch. Returns copilot exit code."""
     prompt = REVIEWER_BRANCH_COMMIT_PROMPT.format(
         prev_sha=prev_sha, commit_sha=commit_sha, branch_name=branch_name,
     )
-    return run_copilot("reviewer", prompt)
+    return run_copilot(f"reviewer-{builder_id}", prompt)
 
 
-def _review_branch_batch(base_sha: str, reviewable: list[str], branch_name: str) -> int:
+def _review_branch_batch(base_sha: str, reviewable: list[str], branch_name: str, builder_id: int) -> int:
     """Review multiple commits on a feature branch as a batch. Returns copilot exit code."""
     head_sha = reviewable[-1]
     prompt = REVIEWER_BRANCH_BATCH_PROMPT.format(
@@ -223,7 +223,7 @@ def _review_branch_batch(base_sha: str, reviewable: list[str], branch_name: str)
         head_sha=head_sha,
         branch_name=branch_name,
     )
-    return run_copilot("reviewer", prompt)
+    return run_copilot(f"reviewer-{builder_id}", prompt)
 
 
 def _review_branch_commits(
@@ -244,38 +244,39 @@ def _review_branch_commits(
         if sha.strip()
     ]
 
+    agent_name = f"reviewer-{builder_id}"
     now = datetime.now().strftime("%H:%M:%S")
-    log("reviewer", "")
-    log("reviewer", f"[{now}] {len(new_commits)} new commit(s) on {branch_name}", style="yellow")
+    log(agent_name, "")
+    log(agent_name, f"[{now}] {len(new_commits)} new commit(s) on {branch_name}", style="yellow")
 
     reviewable, base_sha = _partition_commits(new_commits, last_sha)
 
     if not reviewable:
         now = datetime.now().strftime("%H:%M:%S")
-        log("reviewer", f"[{now}] No reviewable commits. Watching branch...", style="yellow")
+        log(agent_name, f"[{now}] No reviewable commits. Watching branch...", style="yellow")
         return current_head
 
     if len(reviewable) == 1:
         commit_sha = reviewable[0]
         now = datetime.now().strftime("%H:%M:%S")
-        log("reviewer", f"[{now}] Reviewing commit {commit_sha[:8]} on {branch_name}...", style="cyan")
-        exit_code = _review_branch_single_commit(base_sha, commit_sha, branch_name)
+        log(agent_name, f"[{now}] Reviewing commit {commit_sha[:8]} on {branch_name}...", style="cyan")
+        exit_code = _review_branch_single_commit(base_sha, commit_sha, branch_name, builder_id)
     else:
         head_sha = reviewable[-1]
         now = datetime.now().strftime("%H:%M:%S")
         log(
-            "reviewer",
+            agent_name,
             f"[{now}] Reviewing {len(reviewable)} commits as batch on {branch_name} "
             f"({base_sha[:8]}..{head_sha[:8]})...",
             style="cyan",
         )
-        exit_code = _review_branch_batch(base_sha, reviewable, branch_name)
+        exit_code = _review_branch_batch(base_sha, reviewable, branch_name, builder_id)
 
     if exit_code != 0:
         now = datetime.now().strftime("%H:%M:%S")
-        log("reviewer", f"[{now}] WARNING: Branch review exited with errors", style="red")
+        log(agent_name, f"[{now}] WARNING: Branch review exited with errors", style="red")
 
-    git_push_with_retry("reviewer")
+    git_push_with_retry(agent_name)
     last_reviewed = reviewable[-1]
     save_reviewer_checkpoint(last_reviewed, builder_id)
     return last_reviewed
