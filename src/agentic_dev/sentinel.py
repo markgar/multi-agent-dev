@@ -34,14 +34,19 @@ def clear_builder_done(num_builders: int = 1) -> None:
     """Remove all builder-N.done sentinels for N in 1..num_builders.
 
     Also removes the legacy builder.done sentinel if it exists.
+    Touches builder log files to reset their mtime so stale-log detection
+    doesn't falsely report builders as done before they start.
     """
     try:
         logs_dir = resolve_logs_dir()
-        # Remove numbered sentinels
+        # Remove numbered sentinels and touch log files
         for i in range(1, num_builders + 1):
             sentinel = os.path.join(logs_dir, f"builder-{i}.done")
             if os.path.exists(sentinel):
                 os.remove(sentinel)
+            log_file = os.path.join(logs_dir, f"builder-{i}.log")
+            if os.path.exists(log_file):
+                os.utime(log_file)
         # Remove legacy sentinel
         legacy = os.path.join(logs_dir, _BUILDER_DONE_FILE)
         if os.path.exists(legacy):

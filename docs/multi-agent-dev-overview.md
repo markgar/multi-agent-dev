@@ -171,6 +171,212 @@ copilot --yolo --model claude-opus-4.6 \
 
 ---
 
+## Agent: Planner
+
+<div style="display:flex; gap:20px; margin:12px 0">
+<div style="flex:1">
+
+**What it does**
+Decomposes requirements into an ordered story queue (BACKLOG.md) with dependency annotations, then expands one story at a time into a detailed milestone file with tasks, reference files, and acceptance criteria.
+
+**Trigger**
+- Fresh project → creates BACKLOG.md + completeness check
+- Between milestones → expands next eligible story
+
+**Output**
+`BACKLOG.md` · `milestones/milestone-NN.md` · SPEC.md updates
+
+</div>
+<div style="flex:1">
+
+**How it feeds the Builder**
+- BACKLOG.md tells the builder **what to claim next**
+- Milestone files give the builder a **task-by-task work plan** with reference files to read and acceptance criteria to meet
+- Dependency annotations control **which stories are eligible** — the builder only claims stories whose deps are all `[x]`
+
+</div>
+</div>
+
+<div style="text-align:center; margin-top:8px; color:#94a3b8; font-size:0.85em">
+Planner reads the actual codebase before planning → tasks match existing patterns
+</div>
+
+---
+
+## Agent: Builder
+
+<div style="display:flex; gap:20px; margin:12px 0">
+<div style="flex:1">
+
+**What it does**
+Claims stories from BACKLOG.md via optimistic locking, fixes all open bugs and review findings, then completes every task in the milestone file — committing after each task.
+
+**Trigger**
+- Launched by orchestrator at startup
+- Runs a continuous claim loop until no eligible stories remain
+
+**Output**
+Application code · Bug fixes · Finding resolutions · Updated `.github/copilot-instructions.md`
+
+</div>
+<div style="flex:1">
+
+**How other agents feed it**
+| Source | Mechanism |
+|---|---|
+| Planner | Milestone file (task list) |
+| Commit Watcher | `finding-*.md` in reviews/ |
+| Milestone Reviewer | `finding-*.md` in reviews/ |
+| Tester | `bug-*.md` in bugs/ |
+| Validator | `bug-*.md` in bugs/ + DEPLOY.md |
+
+Builder fixes **all open bugs and findings before** starting milestone tasks.
+
+</div>
+</div>
+
+---
+
+## Agent: Commit Watcher
+
+<div style="display:flex; gap:20px; margin:12px 0">
+<div style="flex:1">
+
+**What it does**
+Polls for new commits every 10 seconds. Reviews each commit's diff for code quality issues. Batches multiple commits into a single review when they accumulate.
+
+**Trigger**
+- New commit(s) detected on main
+- Skips merge commits and its own review-only commits
+
+**Output**
+- 🔴 `finding-*.md` for `[bug]` / `[security]` issues
+- 🟡 `note-*.md` for `[cleanup]` / `[robustness]` issues
+
+</div>
+<div style="flex:1">
+
+**How it feeds the Builder**
+- `finding-*.md` files appear in `reviews/` — builder reads and fixes them **before** starting any milestone task
+- `note-*.md` files are **not seen by the builder** directly — they feed the Milestone Reviewer instead
+- Checkpoint in `logs/reviewer.checkpoint` ensures no commit is ever missed
+
+</div>
+</div>
+
+<div style="text-align:center; margin-top:8px; color:#94a3b8; font-size:0.85em">
+Severity split ensures critical issues reach the builder fast; low-severity issues are filtered by the Milestone Reviewer
+</div>
+
+---
+
+## Agent: Milestone Reviewer
+
+<div style="display:flex; gap:20px; margin:12px 0">
+<div style="flex:1">
+
+**What it does**
+Runs a cross-cutting review of the entire milestone's diff when all tasks are checked. Catches issues per-commit reviews miss: inconsistent patterns, API mismatches, duplicated logic across commits. Runs tree-sitter code analysis for structural quality data.
+
+**Trigger**
+- Milestone completed (all tasks checked in milestone file)
+- Polls `logs/milestones.log` every 10 seconds
+
+**Output**
+- `finding-*.md` — promoted from recurring notes or new cross-cutting issues
+- `resolved-*.md` — cleans up stale findings already fixed
+- `REVIEW-THEMES.md` — cumulative patterns for future sessions
+
+</div>
+<div style="flex:1">
+
+**How it feeds the Builder**
+- Applies **frequency filter** to `note-*.md` from per-commit reviews:
+  - [bug]/[security] → always promoted to `finding-*.md`
+  - [cleanup]/[robustness] → only if pattern recurs in **2+ locations**
+- Builder reads `finding-*.md` and fixes before next milestone
+- Builder reads `REVIEW-THEMES.md` to **avoid repeating** the same class of mistake
+- `resolved-*.md` files **remove stale items** from the builder's work list
+
+</div>
+</div>
+
+---
+
+## Agent: Tester
+
+<div style="display:flex; gap:20px; margin:12px 0">
+<div style="flex:1">
+
+**What it does**
+Runs scoped tests when a milestone completes. Writes new tests for the milestone's changed files, prioritizing integration tests over unit tests. Runs the full test suite to catch regressions.
+
+**Trigger**
+- Milestone completed (detected via `logs/milestones.log`)
+- Polls every 10 seconds
+
+**Output**
+- New test files (unit + integration)
+- `bug-*.md` in `bugs/` for any test failures
+- At most 20 new tests per run
+
+</div>
+<div style="flex:1">
+
+**How it feeds the Builder**
+- `bug-*.md` files appear in `bugs/` — builder reads and fixes them **before** starting any milestone task
+- Each bug file includes: what failed, steps to reproduce, and which milestone caused it
+- Does **not** start the app or test live endpoints — that's the Validator's job
+- More milestones completed → more integration tests → catches cross-feature regressions
+
+</div>
+</div>
+
+<div style="text-align:center; margin-top:8px; color:#94a3b8; font-size:0.85em">
+Tester focuses on the test suite; Validator focuses on runtime behavior in containers
+</div>
+
+---
+
+## Agent: Validator
+
+<div style="display:flex; gap:20px; margin:12px 0">
+<div style="flex:1">
+
+**What it does**
+Builds the app in Docker, starts it, and runs three checks:
+- **(A)** Milestone validation — tests the `> **Validates:**` block
+- **(B)** Requirements coverage — cross-references REQUIREMENTS.md
+- **(C)** Fixed bug verification — re-tests `bug-*.md` with `fixed-*.md`
+
+Auto-detects frontends and adds **Playwright UI tests**.
+
+**Trigger**
+- Milestone completed (detected via `logs/milestones.log`)
+
+</div>
+<div style="flex:1">
+
+**Output**
+- `bug-*.md` in `bugs/` (with `[missing-requirement]` or `[UI]` prefixes)
+- `DEPLOY.md` — cumulative deployment knowledge
+- `Dockerfile` / `docker-compose.yml`
+- `validation-results.txt` → copied to `logs/`
+
+**How it feeds the Builder**
+- `bug-*.md` → builder fixes before next milestone
+- `DEPLOY.md` → builder reads to stay **compatible** with deployment (env vars, ports, startup)
+- Containers left running → app browsable at `localhost:<port>`
+
+</div>
+</div>
+
+<div style="text-align:center; margin-top:8px; color:#94a3b8; font-size:0.85em">
+Each milestone's validation inherits all deployment knowledge from prior runs — a ratchet effect
+</div>
+
+---
+
 ## Coordination Model
 
 Agents coordinate through **files in git** — no message queues, no APIs, no shared memory.

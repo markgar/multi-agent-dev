@@ -68,7 +68,9 @@ to_python_path() {
 }
 
 # Defaults
-SPEC_FILE="$HARNESS_DIR/sample_spec_cli_calculator.md"
+SPEC_FILE=""
+SPEC_FILE_DEFAULT="$HARNESS_DIR/sample_spec_cli_calculator.md"
+SPEC_FILE_EXPLICIT=false
 PROJECT_NAME=""
 RESUME=false
 MODEL=""
@@ -79,6 +81,7 @@ while [[ $# -gt 0 ]]; do
     case "$1" in
         --spec-file)
             SPEC_FILE="$2"
+            SPEC_FILE_EXPLICIT=true
             shift 2
             ;;
         --name)
@@ -120,8 +123,13 @@ if [[ -z "$PROJECT_NAME" ]]; then
     exit 1
 fi
 
-# --- Resolve spec file (only required for new runs) ---
+# --- Resolve spec file ---
+# For fresh runs: use the default spec if none was explicitly provided.
+# For resume: only use a spec if the user explicitly passed --spec-file.
 if [[ "$RESUME" == false ]]; then
+    if [[ -z "$SPEC_FILE" ]]; then
+        SPEC_FILE="$SPEC_FILE_DEFAULT"
+    fi
     SPEC_FILE="$(cd "$(dirname "$SPEC_FILE")" && pwd)/$(basename "$SPEC_FILE")"
     if [[ ! -f "$SPEC_FILE" ]]; then
         echo "ERROR: Spec file not found: $SPEC_FILE"
@@ -244,7 +252,7 @@ if [[ "$RESUME" == true ]]; then
     echo ""
 
     GO_ARGS=(--directory "$PROJ_DIR" --model "$MODEL" --local --builders "$BUILDERS")
-    if [[ -n "${SPEC_FILE:-}" && -f "${SPEC_FILE:-}" ]]; then
+    if [[ "$SPEC_FILE_EXPLICIT" == true && -n "${SPEC_FILE:-}" && -f "${SPEC_FILE:-}" ]]; then
         GO_ARGS+=(--spec-file "$SPEC_FILE")
     fi
 
