@@ -7,7 +7,7 @@ color: #e0e0e0
 style: |
   section {
     font-family: 'SF Pro Display', 'Segoe UI', system-ui, sans-serif;
-    font-size: 22px;
+    font-size: 24px;
     padding: 30px 40px;
   }
   h1 {
@@ -50,13 +50,17 @@ style: |
     color: #818cf8;
   }
   table {
-    font-size: 0.72em;
+    font-size: 0.76em;
     line-height: 1.3;
   }
   th {
     background: #2d2d44;
     color: #60a5fa;
     padding: 4px 8px;
+    white-space: nowrap;
+  }
+  td:first-child {
+    white-space: nowrap;
   }
   td {
     background: #1e1e36;
