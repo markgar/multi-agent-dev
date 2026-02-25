@@ -75,6 +75,12 @@ PROJECT_NAME=""
 RESUME=false
 MODEL=""
 BUILDERS=1
+BUILDER_MODEL=""
+REVIEWER_MODEL=""
+MILESTONE_REVIEWER_MODEL=""
+TESTER_MODEL=""
+VALIDATOR_MODEL=""
+PLANNER_MODEL=""
 
 # Parse arguments
 while [[ $# -gt 0 ]]; do
@@ -100,9 +106,33 @@ while [[ $# -gt 0 ]]; do
             BUILDERS="$2"
             shift 2
             ;;
+        --builder-model)
+            BUILDER_MODEL="$2"
+            shift 2
+            ;;
+        --reviewer-model)
+            REVIEWER_MODEL="$2"
+            shift 2
+            ;;
+        --milestone-reviewer-model)
+            MILESTONE_REVIEWER_MODEL="$2"
+            shift 2
+            ;;
+        --tester-model)
+            TESTER_MODEL="$2"
+            shift 2
+            ;;
+        --validator-model)
+            VALIDATOR_MODEL="$2"
+            shift 2
+            ;;
+        --planner-model)
+            PLANNER_MODEL="$2"
+            shift 2
+            ;;
         *)
             echo "Unknown option: $1"
-            echo "Usage: $0 [--spec-file <path>] [--name <project>] [--model <model>] [--builders <N>] [--resume]"
+            echo "Usage: $0 [--spec-file <path>] [--name <project>] [--model <model>] [--builders <N>] [--resume] [--reviewer-model <model>] ..."
             exit 1
             ;;
     esac
@@ -255,6 +285,12 @@ if [[ "$RESUME" == true ]]; then
     if [[ "$SPEC_FILE_EXPLICIT" == true && -n "${SPEC_FILE:-}" && -f "${SPEC_FILE:-}" ]]; then
         GO_ARGS+=(--spec-file "$SPEC_FILE")
     fi
+    [[ -n "$BUILDER_MODEL" ]] && GO_ARGS+=(--builder-model "$BUILDER_MODEL")
+    [[ -n "$REVIEWER_MODEL" ]] && GO_ARGS+=(--reviewer-model "$REVIEWER_MODEL")
+    [[ -n "$MILESTONE_REVIEWER_MODEL" ]] && GO_ARGS+=(--milestone-reviewer-model "$MILESTONE_REVIEWER_MODEL")
+    [[ -n "$TESTER_MODEL" ]] && GO_ARGS+=(--tester-model "$TESTER_MODEL")
+    [[ -n "$VALIDATOR_MODEL" ]] && GO_ARGS+=(--validator-model "$VALIDATOR_MODEL")
+    [[ -n "$PLANNER_MODEL" ]] && GO_ARGS+=(--planner-model "$PLANNER_MODEL")
 
     "$AGENTIC_DEV_CMD" go "${GO_ARGS[@]}"
     EXIT_CODE=$?
@@ -275,12 +311,15 @@ else
 
     mkdir -p "$RUN_DIR"
 
-    "$AGENTIC_DEV_CMD" go \
-        --directory "$PROJ_DIR" \
-        --model "$MODEL" \
-        --spec-file "$SPEC_FILE" \
-        --builders "$BUILDERS" \
-        --local
+    GO_ARGS=(--directory "$PROJ_DIR" --model "$MODEL" --spec-file "$SPEC_FILE" --builders "$BUILDERS" --local)
+    [[ -n "$BUILDER_MODEL" ]] && GO_ARGS+=(--builder-model "$BUILDER_MODEL")
+    [[ -n "$REVIEWER_MODEL" ]] && GO_ARGS+=(--reviewer-model "$REVIEWER_MODEL")
+    [[ -n "$MILESTONE_REVIEWER_MODEL" ]] && GO_ARGS+=(--milestone-reviewer-model "$MILESTONE_REVIEWER_MODEL")
+    [[ -n "$TESTER_MODEL" ]] && GO_ARGS+=(--tester-model "$TESTER_MODEL")
+    [[ -n "$VALIDATOR_MODEL" ]] && GO_ARGS+=(--validator-model "$VALIDATOR_MODEL")
+    [[ -n "$PLANNER_MODEL" ]] && GO_ARGS+=(--planner-model "$PLANNER_MODEL")
+
+    "$AGENTIC_DEV_CMD" go "${GO_ARGS[@]}"
 
     EXIT_CODE=$?
 fi
