@@ -370,16 +370,17 @@ def _bootstrap_new_project(
     _migrate_legacy_builder(parent_dir)
     _migrate_legacy_reviewer(parent_dir)
 
-    # Clone additional builders if N > 1
+    # Clone additional builders and reviewers if N > 1
     if num_builders > 1:
         clone_source = _detect_clone_source(parent_dir)
         if clone_source:
             for i in range(2, num_builders + 1):
-                builder_dir = os.path.join(parent_dir, f"builder-{i}")
-                if not os.path.exists(builder_dir):
-                    log("orchestrator", f"Cloning builder-{i}...", style="cyan")
-                    with pushd(parent_dir):
-                        run_cmd(["git", "clone", clone_source, f"builder-{i}"])
+                for role in (f"builder-{i}", f"reviewer-{i}"):
+                    role_dir = os.path.join(parent_dir, role)
+                    if not os.path.exists(role_dir):
+                        log("orchestrator", f"Cloning {role}...", style="cyan")
+                        with pushd(parent_dir):
+                            run_cmd(["git", "clone", clone_source, role])
 
     os.chdir(os.path.join(parent_dir, "builder-1"))
     _launch_agents_and_build(
