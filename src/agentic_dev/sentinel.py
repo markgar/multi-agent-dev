@@ -7,12 +7,8 @@ from datetime import datetime
 
 from agentic_dev.utils import resolve_logs_dir
 
-_BUILDER_DONE_FILE = "builder.done"
-_BUILDER_LOG_FILE = "builder.log"
 _STALE_LOG_TIMEOUT_MINUTES = 30
 _BUILDER_ID_RE = re.compile(r"^builder-(\d+)\.(done|log)$")
-_REVIEWER_CHECKPOINT_FILE = "reviewer.checkpoint"
-_REVIEWER_LOG_FILE = "reviewer.log"
 _REVIEWER_LOG_RE = re.compile(r"^reviewer-\d+\.log$")
 _MILESTONE_REVIEWER_LOG_FILE = "milestone-reviewer.log"
 _TESTER_LOG_FILE = "tester.log"
@@ -34,7 +30,6 @@ def write_builder_done(builder_id: int = 1) -> None:
 def clear_builder_done(num_builders: int = 1) -> None:
     """Remove all builder-N.done sentinels for N in 1..num_builders.
 
-    Also removes the legacy builder.done sentinel if it exists.
     Touches builder log files to reset their mtime so stale-log detection
     doesn't falsely report builders as done before they start.
     """
@@ -48,26 +43,8 @@ def clear_builder_done(num_builders: int = 1) -> None:
             log_file = os.path.join(logs_dir, f"builder-{i}.log")
             if os.path.exists(log_file):
                 os.utime(log_file)
-        # Remove legacy sentinel
-        legacy = os.path.join(logs_dir, _BUILDER_DONE_FILE)
-        if os.path.exists(legacy):
-            os.remove(legacy)
     except Exception:
         pass
-
-
-def check_builder_done_status(
-    sentinel_exists: bool, log_exists: bool, log_age_minutes: float, timeout_minutes: float
-) -> bool:
-    """Determine if the builder should be considered done.
-
-    Pure function: returns True if the sentinel exists or the log is stale.
-    """
-    if sentinel_exists:
-        return True
-    if log_exists and log_age_minutes >= timeout_minutes:
-        return True
-    return False
 
 
 def check_all_builders_done_status(
@@ -104,8 +81,6 @@ def is_builder_done() -> bool:
       1. At least one builder-N.log exists AND every builder-N.log has
          a matching builder-N.done sentinel, OR
       2. All builder-N.log files are stale (30+ minutes without writes).
-
-    Also handles the legacy single builder.done / builder.log files.
     """
     try:
         logs_dir = resolve_logs_dir()
@@ -128,41 +103,25 @@ def is_builder_done() -> bool:
                 elif m.group(2) == "done":
                     builder_dones.add(fname)
 
-        # If numbered builders exist, use multi-builder logic
-        if builder_logs:
-            return check_all_builders_done_status(
-                builder_logs, builder_dones, log_ages, _STALE_LOG_TIMEOUT_MINUTES
-            )
+        if not builder_logs:
+            return False
 
-        # Legacy fallback: single builder.done / builder.log
-        sentinel_exists = os.path.exists(os.path.join(logs_dir, _BUILDER_DONE_FILE))
-        builder_log = os.path.join(logs_dir, _BUILDER_LOG_FILE)
-        log_exists = os.path.exists(builder_log)
-        log_age_minutes = 0.0
-        if log_exists:
-            mtime = os.path.getmtime(builder_log)
-            log_age_minutes = (now - mtime) / 60
-
-        return check_builder_done_status(
-            sentinel_exists, log_exists, log_age_minutes, _STALE_LOG_TIMEOUT_MINUTES
+        return check_all_builders_done_status(
+            builder_logs, builder_dones, log_ages, _STALE_LOG_TIMEOUT_MINUTES
         )
     except Exception:
         pass
     return False
 
 
-def save_reviewer_checkpoint(sha: str, builder_id: int = 0) -> None:
+def save_reviewer_checkpoint(sha: str, builder_id: int = 1) -> None:
     """Persist the last-reviewed commit SHA so the reviewer never loses its place.
 
-    When builder_id > 0, writes to reviewer-{N}.branch-checkpoint (per-builder).
-    When builder_id == 0, writes to the legacy reviewer.checkpoint.
+    Writes to reviewer-{N}.branch-checkpoint for the given builder.
     """
     try:
         logs_dir = resolve_logs_dir()
-        if builder_id > 0:
-            filename = f"reviewer-{builder_id}.branch-checkpoint"
-        else:
-            filename = _REVIEWER_CHECKPOINT_FILE
+        filename = f"reviewer-{builder_id}.branch-checkpoint"
         path = os.path.join(logs_dir, filename)
         with open(path, "w", encoding="utf-8") as f:
             f.write(sha + "\n")
@@ -170,18 +129,14 @@ def save_reviewer_checkpoint(sha: str, builder_id: int = 0) -> None:
         pass
 
 
-def load_reviewer_checkpoint(builder_id: int = 0) -> str:
+def load_reviewer_checkpoint(builder_id: int = 1) -> str:
     """Load the last-reviewed commit SHA. Returns empty string if none exists.
 
-    When builder_id > 0, reads from reviewer-{N}.branch-checkpoint.
-    When builder_id == 0, reads from the legacy reviewer.checkpoint.
+    Reads from reviewer-{N}.branch-checkpoint for the given builder.
     """
     try:
         logs_dir = resolve_logs_dir()
-        if builder_id > 0:
-            filename = f"reviewer-{builder_id}.branch-checkpoint"
-        else:
-            filename = _REVIEWER_CHECKPOINT_FILE
+        filename = f"reviewer-{builder_id}.branch-checkpoint"
         path = os.path.join(logs_dir, filename)
         if os.path.exists(path):
             with open(path, "r", encoding="utf-8") as f:
@@ -253,10 +208,9 @@ def check_agent_idle(log_exists: bool, log_age_seconds: float, idle_threshold: f
 def are_agents_idle() -> bool:
     """Check if reviewers, tester, and validator are all idle.
 
-    Discovery-based: finds all reviewer-N.log files (and the legacy
-    reviewer.log) plus milestone-reviewer, tester, and validator logs.
-    Returns True when all discovered agent logs haven't been modified
-    within the idle threshold (120 seconds).
+    Discovery-based: finds all reviewer-N.log files plus milestone-reviewer,
+    tester, and validator logs. Returns True when all discovered agent logs
+    haven't been modified within the idle threshold (120 seconds).
     """
     try:
         logs_dir = resolve_logs_dir()
@@ -265,10 +219,10 @@ def are_agents_idle() -> bool:
         # Collect all log files to check
         logs_to_check: list[str] = []
 
-        # Discover reviewer logs: reviewer.log (legacy) and reviewer-N.log
+        # Discover reviewer logs: reviewer-N.log
         all_files = os.listdir(logs_dir)
         for fname in all_files:
-            if fname == _REVIEWER_LOG_FILE or _REVIEWER_LOG_RE.match(fname):
+            if _REVIEWER_LOG_RE.match(fname):
                 logs_to_check.append(fname)
 
         # Fixed agent logs

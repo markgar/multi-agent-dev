@@ -2,7 +2,7 @@
 
 import pytest
 
-from agentic_dev.sentinel import check_builder_done_status, check_all_builders_done_status
+from agentic_dev.sentinel import check_all_builders_done_status
 from agentic_dev.utils import (
     count_unchecked_items,
     find_project_root,
@@ -16,32 +16,6 @@ from agentic_dev.terminal import build_agent_script
 from agentic_dev.utils import count_open_items_in_dir, count_partitioned_open_items, _extract_item_ids
 from agentic_dev.milestone_reviewer import find_unreviewed_milestones
 from agentic_dev.tester import find_untested_milestones
-
-
-# --- sentinel ---
-
-def test_builder_done_when_sentinel_exists():
-    assert check_builder_done_status(
-        sentinel_exists=True, log_exists=False, log_age_minutes=0, timeout_minutes=10
-    ) is True
-
-
-def test_builder_done_when_log_is_stale():
-    assert check_builder_done_status(
-        sentinel_exists=False, log_exists=True, log_age_minutes=15, timeout_minutes=10
-    ) is True
-
-
-def test_builder_not_done_when_log_is_fresh():
-    assert check_builder_done_status(
-        sentinel_exists=False, log_exists=True, log_age_minutes=5, timeout_minutes=10
-    ) is False
-
-
-def test_builder_not_done_when_nothing_exists():
-    assert check_builder_done_status(
-        sentinel_exists=False, log_exists=False, log_age_minutes=0, timeout_minutes=10
-    ) is False
 
 
 # --- unchecked items ---
@@ -72,8 +46,8 @@ def test_builder_dir_resolves_to_parent():
     assert find_project_root("/home/user/myproject/builder") == "/home/user/myproject"
 
 
-def test_reviewer_dir_resolves_to_parent():
-    assert find_project_root("/home/user/myproject/reviewer") == "/home/user/myproject"
+def test_reviewer_numbered_dir_resolves_to_parent():
+    assert find_project_root("/home/user/myproject/reviewer-1") == "/home/user/myproject"
 
 
 def test_non_agent_dir_returns_itself():

@@ -27,34 +27,24 @@ from agentic_dev.utils import find_project_root
 # ============================================
 
 
-def test_save_load_reviewer_checkpoint_legacy_mode(tmp_path, monkeypatch):
-    """Legacy mode (builder_id=0) uses reviewer.checkpoint."""
-    monkeypatch.setattr("agentic_dev.sentinel.resolve_logs_dir", lambda: str(tmp_path))
-    save_reviewer_checkpoint("abc123", builder_id=0)
-    assert load_reviewer_checkpoint(builder_id=0) == "abc123"
-    # File should be reviewer.checkpoint
-    assert os.path.exists(tmp_path / "reviewer.checkpoint")
-
-
 def test_save_load_reviewer_checkpoint_per_builder(tmp_path, monkeypatch):
-    """Per-builder mode (builder_id>0) uses reviewer-N.branch-checkpoint."""
+    """Per-builder mode uses reviewer-N.branch-checkpoint."""
     monkeypatch.setattr("agentic_dev.sentinel.resolve_logs_dir", lambda: str(tmp_path))
     save_reviewer_checkpoint("def456", builder_id=1)
     save_reviewer_checkpoint("ghi789", builder_id=2)
     assert load_reviewer_checkpoint(builder_id=1) == "def456"
     assert load_reviewer_checkpoint(builder_id=2) == "ghi789"
-    # Legacy should be empty
-    assert load_reviewer_checkpoint(builder_id=0) == ""
     # Correct filenames
     assert os.path.exists(tmp_path / "reviewer-1.branch-checkpoint")
     assert os.path.exists(tmp_path / "reviewer-2.branch-checkpoint")
 
 
-def test_save_load_reviewer_checkpoint_default_is_legacy(tmp_path, monkeypatch):
-    """Default argument (no builder_id) uses legacy mode."""
+def test_save_load_reviewer_checkpoint_default_is_builder_1(tmp_path, monkeypatch):
+    """Default argument (no builder_id) uses builder 1."""
     monkeypatch.setattr("agentic_dev.sentinel.resolve_logs_dir", lambda: str(tmp_path))
     save_reviewer_checkpoint("aaa111")
     assert load_reviewer_checkpoint() == "aaa111"
+    assert os.path.exists(tmp_path / "reviewer-1.branch-checkpoint")
 
 
 def test_load_reviewer_checkpoint_missing_file(tmp_path, monkeypatch):
@@ -168,10 +158,6 @@ def test_find_project_root_ignores_non_matching_reviewer_dirs():
     assert find_project_root("/home/user/project/reviewer-") == "/home/user/project/reviewer-"
     assert find_project_root("/home/user/project/reviewer-abc") == "/home/user/project/reviewer-abc"
     assert find_project_root("/home/user/project/reviewer1") == "/home/user/project/reviewer1"
-
-
-def test_find_project_root_still_recognizes_legacy_reviewer():
-    assert find_project_root("/home/user/project/reviewer") == "/home/user/project"
 
 
 # ============================================
