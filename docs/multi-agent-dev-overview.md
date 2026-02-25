@@ -7,20 +7,33 @@ color: #e0e0e0
 style: |
   section {
     font-family: 'SF Pro Display', 'Segoe UI', system-ui, sans-serif;
+    font-size: 22px;
+    padding: 30px 40px;
   }
-  h1, h2, h3 {
+  h1 {
     color: #60a5fa;
+    font-size: 1.6em;
+  }
+  h2 {
+    color: #60a5fa;
+    font-size: 1.3em;
+    margin-bottom: 0.3em;
+  }
+  h3 {
+    color: #60a5fa;
+    font-size: 1.1em;
   }
   code {
     background: #2d2d44;
     color: #a5d6ff;
     padding: 2px 6px;
     border-radius: 4px;
+    font-size: 0.9em;
   }
   pre {
     background: #2d2d44 !important;
     border-radius: 8px;
-    padding: 16px !important;
+    padding: 12px !important;
     color: #e0e0e0;
   }
   pre code {
@@ -37,20 +50,27 @@ style: |
     color: #818cf8;
   }
   table {
-    font-size: 0.82em;
+    font-size: 0.72em;
+    line-height: 1.3;
   }
   th {
     background: #2d2d44;
     color: #60a5fa;
+    padding: 4px 8px;
   }
   td {
     background: #1e1e36;
+    padding: 4px 8px;
   }
   blockquote {
     border-left: 4px solid #60a5fa;
     background: #2d2d44;
-    padding: 8px 16px;
+    padding: 6px 12px;
     border-radius: 4px;
+    font-size: 0.9em;
+  }
+  p {
+    margin: 0.4em 0;
   }
 ---
 
