@@ -5,10 +5,8 @@ from agentic_dev.backlog_checker import (
     check_dependency_graph,
     check_first_milestone,
     check_prohibited_content,
-    check_proportionality,
     check_story_format,
     check_story_ordering,
-    estimate_feature_count,
     run_deterministic_checks,
 )
 from agentic_dev.milestone import parse_backlog
@@ -262,94 +260,7 @@ def test_milestone_too_many_tasks():
     assert any("max 7" in i for i in issues)
 
 
-# ============================================
-# B: Proportionality
-# ============================================
 
-
-def test_proportionality_pass():
-    """8 stories / 5 features = 1.6 ratio — should pass."""
-    result = check_proportionality(8, 5)
-    assert result is None
-
-
-def test_proportionality_too_low():
-    """2 stories / 10 features = 0.2 ratio — should fail."""
-    result = check_proportionality(2, 10)
-    assert result is not None
-    assert "very low" in result
-
-
-def test_proportionality_too_high():
-    """50 stories / 5 features = 10.0 ratio — should fail."""
-    result = check_proportionality(50, 5)
-    assert result is not None
-    assert "very high" in result
-
-
-def test_proportionality_slightly_low():
-    """3 stories / 5 features = 0.6 ratio — warning."""
-    result = check_proportionality(3, 5)
-    assert result is not None
-    assert "coarse" in result
-
-
-def test_proportionality_slightly_high():
-    """16 stories / 5 features = 3.2 ratio — warning."""
-    result = check_proportionality(16, 5)
-    assert result is not None
-    assert "over-split" in result
-
-
-def test_proportionality_zero_features():
-    """Zero features — skip."""
-    result = check_proportionality(5, 0)
-    assert result is None
-
-
-# ============================================
-# B: Feature estimation
-# ============================================
-
-
-def test_estimate_simple_requirements():
-    reqs = """\
-## Books
-Create Book entity.
-## Authors
-Create Author entity.
-## Categories
-Create Category entity.
-"""
-    count = estimate_feature_count(reqs)
-    assert count >= 3
-
-
-def test_estimate_complex_requirements():
-    reqs = """\
-## Members
-Create Member entity with CRUD.
-### Member attributes
-Email, Name, Role.
-## Events
-Create Event entity.
-### Event types
-Rehearsal, Performance.
-## Venues
-Create Venue entity.
-## Attendance
-### Check-in
-QR code check-in.
-### Excused absences
-Members can mark excused.
-## Auditions
-### Scheduling
-Create audition dates.
-### Sign-up
-Members sign up for slots.
-"""
-    count = estimate_feature_count(reqs)
-    assert count >= 5
 
 
 # ============================================

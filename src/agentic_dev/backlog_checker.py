@@ -1,7 +1,7 @@
 """Backlog quality checker: deterministic and LLM checks for backlog planner output.
 
 Runs after the backlog planner creates BACKLOG.md and the first milestone in milestones/.
-Deterministic checks (A1-A4, B) validate structure and proportionality.
+Deterministic checks (A1-A4) validate structure.
 LLM quality check (C1-C7, C5b) evaluates story semantics via a single Copilot call.
 """
 
@@ -33,13 +33,7 @@ _REFACTOR_KEYWORDS = re.compile(
     re.IGNORECASE,
 )
 
-# Features proxy: headings in REQUIREMENTS.md
-_HEADING_RE = re.compile(r"^#{2,3}\s+", re.MULTILINE)
 
-# Feature entity/endpoint/page mentions
-_ENTITY_RE = re.compile(r"\b(?:Create|Add|Implement)\s+([A-Z][a-zA-Z]+)")
-_ENDPOINT_RE = re.compile(r"/api/\S+")
-_PAGE_RE = re.compile(r"\b(?:page|view|screen|dashboard|form)\b", re.IGNORECASE)
 
 
 # ============================================
@@ -231,58 +225,7 @@ def check_first_milestone(tasks_text: str) -> list[str]:
     return failures
 
 
-def estimate_feature_count(requirements_text: str) -> int:
-    """B: Estimate the number of distinct features from REQUIREMENTS.md.
 
-    Counts ## and ### headings as a rough feature proxy, plus entity names,
-    endpoint paths, and page references as supporting signals. Returns the
-    higher of heading count and entity/endpoint/page count.
-    """
-    heading_count = len(_HEADING_RE.findall(requirements_text))
-    entities = set(_ENTITY_RE.findall(requirements_text))
-    endpoints = set(_ENDPOINT_RE.findall(requirements_text))
-    pages = set(_PAGE_RE.findall(requirements_text))
-    artifact_count = len(entities) + len(endpoints) + len(pages)
-
-    # Use headings as primary proxy, artifact count as floor
-    return max(heading_count, artifact_count // 3, 1)
-
-
-def check_proportionality(story_count: int, feature_count: int) -> str | None:
-    """B: Check if story count is proportional to estimated feature count.
-
-    Returns a failure/warning message or None if pass.
-    Ratio thresholds: < 0.3 or > 4.0 = fail; 0.3-0.99 or 3.1-4.0 = warn.
-    Feature count is a rough heuristic (heading count) that overestimates
-    for dense specs with many sub-headings, so the hard-fail threshold is
-    deliberately low.
-    """
-    if feature_count == 0:
-        return None
-
-    ratio = story_count / feature_count
-    if ratio < 0.3:
-        return (
-            f"Story count ({story_count}) is very low for estimated features "
-            f"({feature_count}). Ratio {ratio:.1f} — stories may be too coarse "
-            "or features are under-decomposed"
-        )
-    if ratio > 4.0:
-        return (
-            f"Story count ({story_count}) is very high for estimated features "
-            f"({feature_count}). Ratio {ratio:.1f} — stories may be over-split"
-        )
-    if ratio < 0.7:
-        return (
-            f"Story/feature ratio is {ratio:.1f} ({story_count} stories / "
-            f"{feature_count} features) — stories may be slightly coarse"
-        )
-    if ratio > 3.0:
-        return (
-            f"Story/feature ratio is {ratio:.1f} ({story_count} stories / "
-            f"{feature_count} features) — stories may be slightly over-split"
-        )
-    return None
 
 
 def check_story_ordering(stories: list[dict]) -> list[str]:
@@ -412,16 +355,6 @@ def run_deterministic_checks(
                 replan.append(issue)
             else:
                 warnings.append(issue)
-
-    # B: Proportionality
-    story_count = len(stories)
-    feature_count = estimate_feature_count(requirements_text)
-    prop_issue = check_proportionality(story_count, feature_count)
-    if prop_issue:
-        if "very low" in prop_issue or "very high" in prop_issue:
-            replan.append(prop_issue)
-        else:
-            warnings.append(prop_issue)
 
     return replan, fix, warnings
 

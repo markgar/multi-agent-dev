@@ -614,6 +614,8 @@ def build(
 
         if build_failed:
             ensure_on_main(agent_name)
+            if branch_name:
+                delete_milestone_branch(branch_name, agent_name)
             unclaim_story(story["number"], agent_name)
             write_builder_done(builder_id)
             return
