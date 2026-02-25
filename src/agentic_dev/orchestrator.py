@@ -20,6 +20,44 @@ from agentic_dev.terminal import spawn_agent_in_terminal
 from agentic_dev.utils import console, log, pushd, run_cmd, run_copilot, validate_model
 
 
+# Per-agent model map. Keys are agent roles, values are Copilot CLI model names.
+# A value of "" means "use the default --model".
+AgentModels = dict[str, str]
+
+_AGENT_ROLES = ("builder", "reviewer", "milestone_reviewer", "tester", "validator", "planner")
+
+
+def resolve_agent_models(
+    default_model: str,
+    builder_model: str | None = None,
+    reviewer_model: str | None = None,
+    milestone_reviewer_model: str | None = None,
+    tester_model: str | None = None,
+    validator_model: str | None = None,
+    planner_model: str | None = None,
+) -> AgentModels:
+    """Build the per-agent model dict, validating overrides and falling back
+    to *default_model* for any role without an explicit override.
+
+    Pure function: validates each override via validate_model() and returns a
+    dict mapping role names to Copilot CLI model identifiers.
+    """
+    overrides = {
+        "builder": builder_model,
+        "reviewer": reviewer_model,
+        "milestone_reviewer": milestone_reviewer_model,
+        "tester": tester_model,
+        "validator": validator_model,
+        "planner": planner_model,
+    }
+    result: AgentModels = {}
+    for role, override in overrides.items():
+        if override:
+            result[role] = validate_model(override)
+        else:
+            result[role] = default_model
+    return result
+
 def register(app: typer.Typer) -> None:
     """Register orchestrator commands on the shared app."""
     app.command()(go)
@@ -76,7 +114,11 @@ def _find_existing_repo(parent_dir: str, name: str, local: bool) -> str:
 def _clone_all_agents(parent_dir: str, clone_source: str, num_builders: int = 1) -> None:
     """Clone any missing agent directories from the given source."""
     os.makedirs(parent_dir, exist_ok=True)
-    agents = [f"builder-{i}" for i in range(1, num_builders + 1)] + ["reviewer", "milestone-reviewer", "tester", "validator"]
+    agents = (
+        [f"builder-{i}" for i in range(1, num_builders + 1)]
+        + [f"reviewer-{i}" for i in range(1, num_builders + 1)]
+        + ["milestone-reviewer", "tester", "validator"]
+    )
     for agent in agents:
         agent_dir = os.path.join(parent_dir, agent)
         if not os.path.exists(agent_dir):
@@ -90,7 +132,11 @@ def _pull_all_clones(parent_dir: str, num_builders: int = 1) -> None:
     """Pull latest on all agent clones. Create any missing clones."""
     clone_source = _detect_clone_source(parent_dir)
 
-    agents = [f"builder-{i}" for i in range(1, num_builders + 1)] + ["reviewer", "milestone-reviewer", "tester", "validator"]
+    agents = (
+        [f"builder-{i}" for i in range(1, num_builders + 1)]
+        + [f"reviewer-{i}" for i in range(1, num_builders + 1)]
+        + ["milestone-reviewer", "tester", "validator"]
+    )
     for agent in agents:
         agent_dir = os.path.join(parent_dir, agent)
         if not os.path.exists(agent_dir):
@@ -121,6 +167,22 @@ def _migrate_legacy_builder(parent_dir: str) -> None:
         log("orchestrator", "Migrated builder/ to builder-1/", style="cyan")
 
 
+def _migrate_legacy_reviewer(parent_dir: str) -> None:
+    """Rename legacy reviewer/ to reviewer-1/ if needed.
+
+    Handles the migration from single-reviewer layout to per-builder reviewers.
+    """
+    reviewer_old = os.path.join(parent_dir, "reviewer")
+    reviewer_new = os.path.join(parent_dir, "reviewer-1")
+    if os.path.exists(reviewer_old) and not os.path.exists(reviewer_new):
+        try:
+            shutil.move(reviewer_old, reviewer_new)
+        except OSError as exc:
+            log("orchestrator", f"Failed to migrate reviewer/ to reviewer-1/: {exc}", style="yellow")
+            return
+        log("orchestrator", "Migrated reviewer/ to reviewer-1/", style="cyan")
+
+
 # ============================================
 # Requirements and copilot-instructions helpers
 # ============================================
@@ -146,7 +208,7 @@ def _update_requirements(builder_dir: str, description: str) -> None:
     log("orchestrator", "Updated REQUIREMENTS.md with new requirements.", style="green")
 
 
-def _generate_copilot_instructions() -> None:
+def _generate_copilot_instructions(model: str = "") -> None:
     """Generate .github/copilot-instructions.md from SPEC.md and milestones/."""
     if os.path.exists(os.path.join(".github", "copilot-instructions.md")):
         log("orchestrator", "copilot-instructions.md already exists, skipping generation.", style="dim")
@@ -162,7 +224,7 @@ def _generate_copilot_instructions() -> None:
     template_for_prompt = template_for_prompt.replace("{{conventions}}", "{conventions}")
 
     prompt = COPILOT_INSTRUCTIONS_PROMPT.format(template=template_for_prompt)
-    exit_code = run_copilot("orchestrator", prompt)
+    exit_code = run_copilot("orchestrator", prompt, model=model)
 
     if exit_code == 0:
         log("orchestrator", "copilot-instructions.md generated.", style="green")
@@ -178,35 +240,44 @@ def _generate_copilot_instructions() -> None:
 def _launch_agents_and_build(
     parent_dir: str, plan_label: str, project_name: str = "",
     requirements_changed: bool = False, num_builders: int = 1,
+    agent_models: AgentModels | None = None,
 ) -> None:
     """Run planner, spawn all agents (including builders) in terminals, then poll for completion."""
+    if agent_models is None:
+        agent_models = {}
     clear_builder_done(num_builders)
 
     log("orchestrator", "")
     log("orchestrator", "======================================", style="bold magenta")
     log("orchestrator", f" {plan_label}", style="bold magenta")
     log("orchestrator", "======================================", style="bold magenta")
-    plan_ok = plan(requirements_changed=requirements_changed)
+    plan_ok = plan(requirements_changed=requirements_changed, model=agent_models.get("planner", ""))
     if not plan_ok:
         log("orchestrator", "")
         log("orchestrator", "Planner failed — aborting. Fix the issue and re-run.", style="bold red")
         return
-    check_milestone_sizes()
-    _generate_copilot_instructions()
+    check_milestone_sizes(model=agent_models.get("planner", ""))
+    _generate_copilot_instructions(model=agent_models.get("planner", ""))
 
     log("orchestrator", "")
-    log("orchestrator", "Launching commit watcher (per-commit reviewer)...", style="yellow")
-    spawn_agent_in_terminal(os.path.join(parent_dir, "reviewer"), "commitwatch")
+    for i in range(1, num_builders + 1):
+        log("orchestrator", f"Launching branch-attached reviewer-{i}...", style="yellow")
+        reviewer_dir = os.path.join(parent_dir, f"reviewer-{i}")
+        spawn_agent_in_terminal(reviewer_dir, f"commitwatch --builder-id {i}",
+                                model=agent_models.get("reviewer", ""))
 
     log("orchestrator", "Launching milestone reviewer...", style="yellow")
-    spawn_agent_in_terminal(os.path.join(parent_dir, "milestone-reviewer"), "milestonewatch")
+    spawn_agent_in_terminal(os.path.join(parent_dir, "milestone-reviewer"), "milestonewatch",
+                            model=agent_models.get("milestone_reviewer", ""))
 
     log("orchestrator", "Launching tester (milestone-triggered)...", style="yellow")
-    spawn_agent_in_terminal(os.path.join(parent_dir, "tester"), "testloop")
+    spawn_agent_in_terminal(os.path.join(parent_dir, "tester"), "testloop",
+                            model=agent_models.get("tester", ""))
 
     log("orchestrator", "Launching validator (milestone-triggered)...", style="yellow")
     validator_cmd = f"validateloop --project-name {project_name}" if project_name else "validateloop"
-    spawn_agent_in_terminal(os.path.join(parent_dir, "validator"), validator_cmd)
+    spawn_agent_in_terminal(os.path.join(parent_dir, "validator"), validator_cmd,
+                            model=agent_models.get("validator", ""))
 
     # Spawn builders as terminal processes.
     # Claim races are handled by optimistic locking in the builder
@@ -215,7 +286,8 @@ def _launch_agents_and_build(
         builder_dir = os.path.join(parent_dir, f"builder-{i}")
         builder_cmd = f"build --loop --builder-id {i} --num-builders {num_builders}"
         log("orchestrator", f"Launching builder-{i}...", style="yellow")
-        spawn_agent_in_terminal(builder_dir, builder_cmd)
+        spawn_agent_in_terminal(builder_dir, builder_cmd,
+                                model=agent_models.get("builder", ""))
 
     log("orchestrator", "")
     log("orchestrator", "======================================", style="bold green")
@@ -281,6 +353,7 @@ def _resolve_directory(directory: str) -> str | None:
 def _bootstrap_new_project(
     parent_dir: str, project_name: str, description: str, spec_file: str,
     local: bool, start_dir: str, num_builders: int = 1,
+    agent_models: AgentModels | None = None,
 ) -> None:
     """Bootstrap a brand-new project: create repo, plan, and launch agents."""
     if not description and not spec_file:
@@ -295,6 +368,7 @@ def _bootstrap_new_project(
 
     # Rename builder/ to builder-1/ for multi-builder consistency
     _migrate_legacy_builder(parent_dir)
+    _migrate_legacy_reviewer(parent_dir)
 
     # Clone additional builders if N > 1
     if num_builders > 1:
@@ -311,12 +385,13 @@ def _bootstrap_new_project(
     _launch_agents_and_build(
         parent_dir, "Running backlog planner...",
         project_name=project_name, num_builders=num_builders,
+        agent_models=agent_models,
     )
 
 
 def _resume_existing_project(
     parent_dir: str, project_name: str, repo_source: str, description: str, spec_file: str,
-    num_builders: int = 1,
+    num_builders: int = 1, agent_models: AgentModels | None = None,
 ) -> None:
     """Resume an existing project: clone agents, update requirements if needed, and build."""
     new_description = _resolve_description_optional(description, spec_file)
@@ -329,8 +404,9 @@ def _resume_existing_project(
         log("orchestrator", f" Continuing project '{project_name}'", style="bold cyan")
     log("orchestrator", "======================================", style="bold cyan")
 
-    # Migrate legacy builder/ to builder-1/ before cloning
+    # Migrate legacy builder/ and reviewer/ to numbered directories before cloning
     _migrate_legacy_builder(parent_dir)
+    _migrate_legacy_reviewer(parent_dir)
 
     _clone_all_agents(parent_dir, repo_source, num_builders)
     _pull_all_clones(parent_dir, num_builders)
@@ -342,18 +418,24 @@ def _resume_existing_project(
     _launch_agents_and_build(
         parent_dir, "Running milestone planner...",
         project_name=project_name, requirements_changed=bool(new_description),
-        num_builders=num_builders,
+        num_builders=num_builders, agent_models=agent_models,
     )
 
 
 def go(
     directory: Annotated[str, typer.Option(help="Project directory path (created if new, resumed if existing)")],
-    model: Annotated[str, typer.Option(help="Copilot model to use (required). Allowed: gpt-5.3-codex, claude-opus-4.6, claude-opus-4.6-fast")],
+    model: Annotated[str, typer.Option(help="Copilot model to use (required). Allowed: gpt-5.3-codex, claude-opus-4.6, claude-opus-4.6-fast, claude-sonnet-4.6")],
     description: Annotated[str, typer.Option(help="What the project should do")] = None,
     spec_file: Annotated[str, typer.Option(help="Path to a markdown file containing the project requirements")] = None,
     local: Annotated[bool, typer.Option(help="Use a local bare git repo instead of GitHub")] = False,
     name: Annotated[str, typer.Option(help="GitHub repo name (defaults to directory basename)")] = None,
     builders: Annotated[int, typer.Option(help="Number of parallel builders (default 1)")] = 1,
+    builder_model: Annotated[str, typer.Option(help="Model override for builder agents")] = None,
+    reviewer_model: Annotated[str, typer.Option(help="Model override for commit-watcher reviewers")] = None,
+    milestone_reviewer_model: Annotated[str, typer.Option(help="Model override for the milestone reviewer")] = None,
+    tester_model: Annotated[str, typer.Option(help="Model override for the tester agent")] = None,
+    validator_model: Annotated[str, typer.Option(help="Model override for the validator agent")] = None,
+    planner_model: Annotated[str, typer.Option(help="Model override for the planner (initial plan + copilot-instructions)")] = None,
 ) -> None:
     """Start or continue a project. Detects whether the project already exists.
 
@@ -363,10 +445,31 @@ def go(
     --directory is the project working directory — relative or absolute.
     --name optionally overrides the GitHub repo name (defaults to basename of directory).
     --builders controls how many parallel builder agents are launched (default 1).
+
+    Per-agent model overrides (all optional, default to --model):
+      --builder-model, --reviewer-model, --milestone-reviewer-model,
+      --tester-model, --validator-model, --planner-model
     """
-    validate_model(model)
-    os.environ["COPILOT_MODEL"] = model
-    console.print(f"Using model: {model}", style="bold green")
+    default_model = validate_model(model)
+    os.environ["COPILOT_MODEL"] = default_model
+
+    agent_models = resolve_agent_models(
+        default_model,
+        builder_model=builder_model,
+        reviewer_model=reviewer_model,
+        milestone_reviewer_model=milestone_reviewer_model,
+        tester_model=tester_model,
+        validator_model=validator_model,
+        planner_model=planner_model,
+    )
+
+    console.print(f"Using model: {default_model}", style="bold green")
+    # Show per-agent overrides
+    for role in _AGENT_ROLES:
+        role_model = agent_models.get(role, default_model)
+        if role_model != default_model:
+            display_role = role.replace("_", "-")
+            console.print(f"  {display_role}: {role_model}", style="green")
     if builders > 1:
         console.print(f"Parallel builders: {builders}", style="bold green")
 
@@ -385,12 +488,12 @@ def go(
     if not repo_source:
         _bootstrap_new_project(
             parent_dir, project_name, description, spec_file, local, start_dir,
-            num_builders=builders,
+            num_builders=builders, agent_models=agent_models,
         )
     else:
         _resume_existing_project(
             parent_dir, project_name, repo_source, description, spec_file,
-            num_builders=builders,
+            num_builders=builders, agent_models=agent_models,
         )
 
     os.chdir(start_dir)

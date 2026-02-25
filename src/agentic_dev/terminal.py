@@ -9,15 +9,16 @@ import tempfile
 from agentic_dev.utils import check_command, console, is_macos, is_windows
 
 
-def build_agent_script(working_dir: str, command: str, platform: str) -> str:
+def build_agent_script(working_dir: str, command: str, platform: str, model: str = "") -> str:
     """Generate the shell script content for launching an agent.
 
     Pure function: returns the script text for the given platform.
     platform should be 'macos', 'windows', or 'linux'.
-    Propagates COPILOT_MODEL so child terminals use the same model.
+    When *model* is provided it is used; otherwise COPILOT_MODEL from the
+    current environment is propagated to the child terminal.
     """
     lines = ["#!/bin/bash"]
-    copilot_model = os.environ.get("COPILOT_MODEL", "")
+    copilot_model = model or os.environ.get("COPILOT_MODEL", "")
     if copilot_model:
         lines.append(f"export COPILOT_MODEL='{copilot_model}'")
     lines.append(f"cd '{working_dir}'")
@@ -27,9 +28,9 @@ def build_agent_script(working_dir: str, command: str, platform: str) -> str:
     return "\n".join(lines) + "\n"
 
 
-def _spawn_macos(working_dir: str, command: str) -> None:
+def _spawn_macos(working_dir: str, command: str, model: str = "") -> None:
     """Spawn agent in a new macOS Terminal window."""
-    script_content = build_agent_script(working_dir, command, "macos")
+    script_content = build_agent_script(working_dir, command, "macos", model=model)
     fd, temp_script = tempfile.mkstemp(suffix=".sh")
     with os.fdopen(fd, "w") as f:
         f.write(script_content)
@@ -56,15 +57,15 @@ def _resolve_windows_command(command: str) -> list[str]:
     return [sys.executable, "-m", "agentic_dev"] + parts
 
 
-def _spawn_windows(working_dir: str, command: str) -> None:
+def _spawn_windows(working_dir: str, command: str, model: str = "") -> None:
     """Spawn agent in a new Windows console.
 
-    Propagates COPILOT_MODEL explicitly so the child console uses the same
-    model as the orchestrator, matching the bash-script behavior on Unix.
+    When *model* is provided it overrides the inherited COPILOT_MODEL.
+    Otherwise the parent environment value is propagated.
     """
     cmd = _resolve_windows_command(command)
     env = os.environ.copy()
-    copilot_model = os.environ.get("COPILOT_MODEL", "")
+    copilot_model = model or os.environ.get("COPILOT_MODEL", "")
     if copilot_model:
         env["COPILOT_MODEL"] = copilot_model
     subprocess.Popen(
@@ -75,9 +76,9 @@ def _spawn_windows(working_dir: str, command: str) -> None:
     )
 
 
-def _spawn_linux(working_dir: str, command: str) -> None:
+def _spawn_linux(working_dir: str, command: str, model: str = "") -> None:
     """Spawn agent in a new Linux terminal emulator."""
-    script_content = build_agent_script(working_dir, command, "linux")
+    script_content = build_agent_script(working_dir, command, "linux", model=model)
     fd, temp_script = tempfile.mkstemp(suffix=".sh")
     with os.fdopen(fd, "w") as f:
         f.write(script_content)
@@ -96,15 +97,20 @@ def _spawn_linux(working_dir: str, command: str) -> None:
         )
 
 
-def spawn_agent_in_terminal(working_dir: str, command: str) -> None:
-    """Launch an agent command in a new terminal window."""
+def spawn_agent_in_terminal(working_dir: str, command: str, model: str = "") -> None:
+    """Launch an agent command in a new terminal window.
+
+    When *model* is provided the child terminal's COPILOT_MODEL is set to
+    that value, overriding the parent environment.  When omitted the parent
+    environment value is inherited as before.
+    """
     try:
         if is_macos():
-            _spawn_macos(working_dir, command)
+            _spawn_macos(working_dir, command, model=model)
         elif is_windows():
-            _spawn_windows(working_dir, command)
+            _spawn_windows(working_dir, command, model=model)
         else:
-            _spawn_linux(working_dir, command)
+            _spawn_linux(working_dir, command, model=model)
     except Exception as exc:
         console.print(
             f"WARNING: Failed to spawn terminal for '{command}': {exc}\n"

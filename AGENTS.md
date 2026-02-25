@@ -36,7 +36,7 @@ When the repo already exists (detected via `remote.git/` locally or `gh repo vie
 3. **Check milestone sizes** — splits any milestone exceeding 8 tasks
 4. **Generate copilot-instructions** — creates `.github/copilot-instructions.md` if it doesn't exist (skipped on resume)
 5. **Spawn agents in terminal windows** — one terminal per agent, in this order:
-   - Commit watcher (`reviewer/` clone → `commitwatch`)
+   - Reviewer-1 through Reviewer-N (`reviewer-N/` clone → `commitwatch --builder-id N`) — one branch-attached reviewer per builder
    - Milestone reviewer (`milestone-reviewer/` clone → `milestonewatch`)
    - Tester (`tester/` clone → `testloop`)
    - Validator (`validator/` clone → `validateloop --project-name <name>`)
@@ -196,33 +196,47 @@ Runs via `build --loop --builder-id N --num-builders M`. Multiple builders can r
 
 ---
 
-## Commit Watcher
+## Commit Watcher (Branch-Attached Reviewer)
 
-Runs continuously via `commitwatch`, launched automatically by `go`. Polls for new commits and reviews each one for code quality issues.
+Runs continuously via `commitwatch --builder-id N`, launched automatically by `go`. Each builder gets a dedicated reviewer (`reviewer-N/`) that watches the builder's feature branch and reviews commits **before they merge to main**.
 
-**Persistent checkpoint:** The last-reviewed commit SHA is saved to `logs/reviewer.checkpoint` after each commit is processed. On restart, the watcher resumes from the checkpoint — no commits are ever missed or re-reviewed.
+### Branch-attached mode (default, builder-id > 0)
 
-**Filtering:** Merge commits (except milestone merges) and the reviewer's own commits (reviews/-only changes) are automatically skipped to avoid wasted work.
+The reviewer polls for active feature branches matching its builder (`builder-N/*` via `git ls-remote`). When a branch appears:
 
-For each new commit detected, the watcher enumerates all commits since the last checkpoint (`git log {last_sha}..HEAD --format=%H --reverse`), filters out skippable commits (non-milestone merges, reviewer-only, coordination-only), and reviews the remaining ones. If there is a single reviewable commit, it reviews that commit individually. If there are multiple reviewable commits (e.g. the builder pushed several commits while the reviewer was busy), it reviews them as a single batch using the combined diff — one Copilot call instead of N:
+1. **Checkout branch** — `git fetch origin && git checkout {branch_name}`
+2. **Review commits** — enumerates new commits since the last checkpoint, reviews them individually or as a batch (same severity-based filing as legacy mode)
+3. **Signal merge readiness** — writes the reviewed HEAD SHA to `logs/reviewer-N.branch-head` so the builder's merge gate knows the review is complete
+4. **Branch disappears** — when the builder merges and deletes the branch, the reviewer returns to main and waits for the next branch
 
-**Merge commit reviews:** With branch isolation, per-task builder commits no longer appear on main. The watcher reviews milestone merge commits (`[builder] Merge milestone-*`) when they land on main. This provides the full milestone diff as a single review, complementing the milestone reviewer's deeper analysis.
+**Merge gate:** The builder waits (soft timeout, 5 minutes) for the reviewer to catch up before merging a milestone branch. The builder reads `logs/reviewer-N.branch-head` and compares its `(branch_name, sha)` tuple against the branch HEAD. If the reviewer has reviewed all commits, the merge proceeds immediately. On timeout, the merge proceeds anyway — the gate is advisory, not blocking.
 
-**Severity-based filing:** Per-commit and batch reviews use a split filing strategy. [bug] and [security] issues are filed as `finding-<timestamp>.md` so the builder sees and fixes them immediately. [cleanup] and [robustness] issues are filed as `note-<timestamp>.md` — per-commit observations that the milestone reviewer later evaluates for recurring patterns. This reduces noise while ensuring critical issues reach the builder without delay.
+**Persistent checkpoint:** Per-builder checkpoints are saved to `logs/reviewer-N.branch-checkpoint`. On restart, the reviewer resumes from the checkpoint.
+
+### Legacy mode (builder-id = 0)
+
+When `commitwatch` is called without `--builder-id` (or with `--builder-id 0`), the original main-polling behavior is preserved. The legacy reviewer watches main for new commits and reviews them post-merge. This mode uses `logs/reviewer.checkpoint`.
+
+### Shared behavior (both modes)
+
+**Filtering:** Merge commits (except milestone merges) and the reviewer's own commits (reviews/-only changes) are automatically skipped.
+
+**Severity-based filing:** [bug] and [security] issues are filed as `finding-<timestamp>.md` so the builder sees and fixes them immediately. [cleanup] and [robustness] issues are filed as `note-<timestamp>.md` — per-commit observations that the milestone reviewer later evaluates for recurring patterns.
 
 **Single commit prompt:**
 
-> ...reviews the diff... For [bug] and [security] issues, create `finding-<timestamp>.md` files in `reviews/`. For [cleanup] and [robustness] issues, create `note-<timestamp>.md` files instead — these are observations that the milestone review will evaluate for patterns. Commit with message 'Code review: {sha}', run git pull --rebase, and push.
+> ...reviews the diff on the feature branch... For [bug] and [security] issues, create `finding-<timestamp>.md` files in `reviews/`. For [cleanup] and [robustness] issues, create `note-<timestamp>.md` files instead — these are observations that the milestone review will evaluate for patterns. Commit with message 'Code review: {sha}', run git pull --rebase, and push.
 
 **Batched commits prompt (2+ commits):**
 
 > ...reviews the combined diff... Same severity-based filing: `finding-*.md` for [bug]/[security], `note-*.md` for [cleanup]/[robustness]. Commit with message 'Code review: {base_sha:.8}..{head_sha:.8}', run git pull --rebase, and push.
 
-**Trigger:** Polls every 10 seconds for new commits  
+**Trigger:** Polls every 10 seconds for new branch activity (branch mode) or new commits on main (legacy mode)  
 **Scope:** Per-commit diff for individual reviews; combined diff for batched reviews  
-**Checkpoint:** `logs/reviewer.checkpoint` (last reviewed commit SHA)  
+**Checkpoint:** `logs/reviewer-N.branch-checkpoint` (branch mode) or `logs/reviewer.checkpoint` (legacy mode)  
+**Signal file:** `logs/reviewer-N.branch-head` — `branch_name sha` tuple read by the builder merge gate  
 **Skips:** Non-milestone merge commits, coordination-only commits (milestone files only, or reviews/ and bugs/ only)  
-**Runs from:** `reviewer/` clone  
+**Runs from:** `reviewer-N/` clone (one per builder)  
 **Shutdown:** Checks for `logs/builder.done` each cycle; exits when builder is done  
 **Writes code:** [doc] fixes only (comments, README). Never changes application logic or DEPLOY.md directly.
 
@@ -351,13 +365,13 @@ The builder updates the project's copilot-instructions.md whenever project struc
 - **Commit message tagging:** Every agent prefixes its commit messages with its name in brackets — `[builder]`, `[reviewer]`, `[tester]`, `[validator]`, `[planner]`, `[bootstrap]`. This makes it easy to see who did what in `git log`.
 - The **Planner** runs on demand via `plan`. It assesses project state (fresh / continuing / evolving), manages BACKLOG.md (story queue with three-state tracking: `[ ]` unclaimed, `[N]` claimed by builder N, `[x]` completed), updates SPEC.md if new requirements are detected, then writes one milestone file per story in `milestones/`. It never writes application code.
 - The **Builder** runs in a claim loop. Each builder claims a story from BACKLOG.md (`[N]`), calls the planner to expand it into a milestone, completes all tasks, marks the story done (`[x]`), and loops. When no eligible stories remain, writes `logs/builder-N.done`.
-- The **Commit Watcher** reviews new commits (individually, or as a batch when multiple accumulate). Non-code issues ([doc]: stale docs, misleading comments) are fixed directly (except DEPLOY.md — that gets filed as a finding). [bug]/[security] issues are filed as `finding-*.md` for the builder; [cleanup]/[robustness] issues are filed as `note-*.md` for the milestone reviewer to evaluate.
+- The **Branch-Attached Reviewer** (one per builder, `reviewer-N/`) watches the builder's feature branch and reviews commits before they merge. The builder has a soft merge gate that waits for the reviewer to catch up. [bug]/[security] issues are filed as `finding-*.md` for the builder; [cleanup]/[robustness] issues are filed as `note-*.md` for the milestone reviewer to evaluate. Non-code issues ([doc]: stale docs, misleading comments) are fixed directly (except DEPLOY.md — that gets filed as a finding).
 - The **Milestone Reviewer** runs cross-cutting reviews when a milestone completes. It reads accumulated `note-*.md` files, promotes recurring patterns to `finding-*.md`, and cleans up stale findings by creating `resolved-*.md` files. It also updates REVIEW-THEMES.md.
 - The **Tester** runs scoped tests when a milestone completes, focusing on changed files. It runs the test suite only — it does not start the app or test live endpoints. Files bugs in `bugs/`. Exits when the builder finishes.
 - The **Validator** builds the app in a Docker container after each milestone, starts it, and tests it against SPEC.md acceptance criteria. Files bugs in `bugs/`. Persists deployment knowledge in DEPLOY.md. Exits when the builder finishes.
 - Agents never edit or delete existing files in `reviews/` or `bugs/` — they only create new files. This eliminates merge conflicts on those directories.
 - **Bug/finding partitioning:** When multiple builders run concurrently, each builder is assigned a subset of bugs and findings based on the last digit of the filename's timestamp. The rule is `last_digit % num_builders == (builder_id - 1)`. This partitioning is enforced both in the builder's LLM prompt (which tells Copilot which items to fix) and in the Python shutdown logic (which counts only assigned items as remaining work). This eliminates races where two builders attempt to fix the same bug or review finding simultaneously.
-- **Branch model:** Builders push code to per-milestone feature branches (`builder-N/milestone-NN`), never directly to main. Coordination artifacts (BACKLOG.md claims/completions, milestone files from the planner) are committed on main before branching. Main receives completed milestones via `--no-ff` merge commits, each tagged `milestone-NN`.
+- **Branch model:** Builders push code to per-milestone feature branches (`builder-N/milestone-NN`), never directly to main. Coordination artifacts (BACKLOG.md claims/completions, milestone files from the planner) are committed on main before branching. Main receives completed milestones via `--no-ff` merge commits, each tagged `milestone-NN`. Each builder's branch-attached reviewer (`reviewer-N/`) reviews commits on the feature branch before the merge.
 - All agents run `git pull --rebase` before pushing to avoid merge conflicts. Since `reviews/` and `bugs/` are append-only directories (no file is ever edited), concurrent new-file creations never conflict.
 - `SPEC.md` is the source of truth for technical decisions. `BACKLOG.md` is the story queue. Edit either anytime to steer the project — run `plan` to adapt.
 - Each milestone file in `milestones/` is exclusively owned by one builder — no two builders edit the same file.
@@ -381,7 +395,9 @@ The builder updates the project's copilot-instructions.md whenever project struc
 - **No repo:** bootstraps from scratch (requires `--spec-file` or `--description`)
 - **Legacy `builder/` directory:** automatically migrated to `builder-1/` on resume
 
-Agent directories (`builder-1/`, `builder-N/`, `reviewer/`, `milestone-reviewer/`, `tester/`, `validator/`) are treated as disposable working copies — they can be deleted and re-cloned from the repo at any time. The repo (GitHub or `remote.git/`) and `logs/` directory (checkpoints) are the persistent state.
+Agent directories (`builder-1/`, `builder-N/`, `reviewer-1/`, `reviewer-N/`, `milestone-reviewer/`, `tester/`, `validator/`) are treated as disposable working copies — they can be deleted and re-cloned from the repo at any time. The repo (GitHub or `remote.git/`) and `logs/` directory (checkpoints) are the persistent state.
+
+- **Legacy `reviewer/` directory:** automatically migrated to `reviewer-1/` on resume
 
 The `--spec-file` for session 2 can contain just new requirements ("Add a React frontend") or a complete updated requirements doc (old API spec + new frontend spec). The planner compares REQUIREMENTS.md against SPEC.md and the codebase to determine what's new.
 
@@ -398,11 +414,11 @@ The original `reviewoncommit` and `testoncommit` commands still exist for manual
 Multi-builder shutdown uses per-builder sentinel files:
 
 1. **Builder completes all stories:** When a builder finds no eligible stories in BACKLOG.md (all are `[N]` or `[x]`), it waits for downstream agents to go idle, verifies checklists are clean, then writes `logs/builder-N.done`.
-2. **Wait for agents to go idle:** Each builder monitors `logs/reviewer.log`, `logs/milestone-reviewer.log`, `logs/tester.log`, and `logs/validator.log` modification times. When all logs haven't changed in 120+ seconds, agents are considered idle.
+2. **Wait for agents to go idle:** Each builder monitors agent log files using discovery-based detection — it finds all `logs/reviewer-*.log` files (matching `reviewer-\d+`) plus `logs/milestone-reviewer.log`, `logs/tester.log`, and `logs/validator.log`. When all discovered logs haven't changed in 120+ seconds, agents are considered idle.
 3. **Check work lists:** The builder pulls latest and scans `bugs/` for open bugs (bug-* without fixed-*), `reviews/` for open findings (finding-* without resolved-*), and milestone files for unchecked items.
 4. **Fix or exit:** If new work was filed, the builder fixes it (up to 4 fix-only cycles) and loops back to step 2. If checklists are clean and agents are idle, writes `logs/builder-N.done`.
 5. **All builders done:** `is_builder_done()` discovers all `builder-*.done` files in `logs/` and returns True only when all expected builders have finished.
-6. **Agents shut down:** The commit watcher, milestone reviewer, tester, and validator see all builders done on their next poll cycle. The milestone reviewer, tester, and validator each drain any remaining milestones before exiting.
+6. **Agents shut down:** The branch-attached reviewers, milestone reviewer, tester, and validator see all builders done on their next poll cycle. The milestone reviewer, tester, and validator each drain any remaining milestones before exiting.
 7. **Crash fallback:** If `logs/builder.log` hasn't been modified in 30+ minutes, agents assume the builder crashed and shut down.
 8. **Startup cleanup:** `go` calls `clear_builder_done(num_builders)` to remove stale sentinel files before launching agents.
 9. **Timeout safety:** If agents don't go idle within 10 minutes, the builder writes its sentinel and exits anyway.

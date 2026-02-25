@@ -13,6 +13,7 @@ _STALE_LOG_TIMEOUT_MINUTES = 30
 _BUILDER_ID_RE = re.compile(r"^builder-(\d+)\.(done|log)$")
 _REVIEWER_CHECKPOINT_FILE = "reviewer.checkpoint"
 _REVIEWER_LOG_FILE = "reviewer.log"
+_REVIEWER_LOG_RE = re.compile(r"^reviewer-\d+\.log$")
 _MILESTONE_REVIEWER_LOG_FILE = "milestone-reviewer.log"
 _TESTER_LOG_FILE = "tester.log"
 _VALIDATOR_LOG_FILE = "validator.log"
@@ -150,28 +151,92 @@ def is_builder_done() -> bool:
     return False
 
 
-def save_reviewer_checkpoint(sha: str) -> None:
-    """Persist the last-reviewed commit SHA so the reviewer never loses its place."""
+def save_reviewer_checkpoint(sha: str, builder_id: int = 0) -> None:
+    """Persist the last-reviewed commit SHA so the reviewer never loses its place.
+
+    When builder_id > 0, writes to reviewer-{N}.branch-checkpoint (per-builder).
+    When builder_id == 0, writes to the legacy reviewer.checkpoint.
+    """
     try:
         logs_dir = resolve_logs_dir()
-        path = os.path.join(logs_dir, _REVIEWER_CHECKPOINT_FILE)
+        if builder_id > 0:
+            filename = f"reviewer-{builder_id}.branch-checkpoint"
+        else:
+            filename = _REVIEWER_CHECKPOINT_FILE
+        path = os.path.join(logs_dir, filename)
         with open(path, "w", encoding="utf-8") as f:
             f.write(sha + "\n")
     except Exception:
         pass
 
 
-def load_reviewer_checkpoint() -> str:
-    """Load the last-reviewed commit SHA. Returns empty string if none exists."""
+def load_reviewer_checkpoint(builder_id: int = 0) -> str:
+    """Load the last-reviewed commit SHA. Returns empty string if none exists.
+
+    When builder_id > 0, reads from reviewer-{N}.branch-checkpoint.
+    When builder_id == 0, reads from the legacy reviewer.checkpoint.
+    """
     try:
         logs_dir = resolve_logs_dir()
-        path = os.path.join(logs_dir, _REVIEWER_CHECKPOINT_FILE)
+        if builder_id > 0:
+            filename = f"reviewer-{builder_id}.branch-checkpoint"
+        else:
+            filename = _REVIEWER_CHECKPOINT_FILE
+        path = os.path.join(logs_dir, filename)
         if os.path.exists(path):
             with open(path, "r", encoding="utf-8") as f:
                 return f.read().strip()
     except Exception:
         pass
     return ""
+
+
+def save_branch_review_head(builder_id: int, branch_name: str, reviewed_sha: str) -> None:
+    """Write the branch-review-head signal for a builder.
+
+    The builder reads this before merging to confirm the reviewer has caught up.
+    File format: two lines — branch name and last reviewed SHA.
+    """
+    try:
+        logs_dir = resolve_logs_dir()
+        path = os.path.join(logs_dir, f"reviewer-{builder_id}.branch-head")
+        with open(path, "w", encoding="utf-8") as f:
+            f.write(f"{branch_name}\n{reviewed_sha}\n")
+    except Exception:
+        pass
+
+
+def load_branch_review_head(builder_id: int) -> tuple[str, str]:
+    """Load the branch-review-head signal for a builder.
+
+    Returns (branch_name, reviewed_sha). Both empty if the file doesn't exist.
+    """
+    try:
+        logs_dir = resolve_logs_dir()
+        path = os.path.join(logs_dir, f"reviewer-{builder_id}.branch-head")
+        if os.path.exists(path):
+            with open(path, "r", encoding="utf-8") as f:
+                lines = f.read().strip().split("\n")
+            if len(lines) >= 2:
+                return lines[0].strip(), lines[1].strip()
+    except Exception:
+        pass
+    return "", ""
+
+
+def clear_branch_review_head(builder_id: int) -> None:
+    """Remove the branch-review-head signal for a builder.
+
+    Called when the builder starts a new milestone branch, so stale signals
+    from a previous branch don't confuse the merge gate.
+    """
+    try:
+        logs_dir = resolve_logs_dir()
+        path = os.path.join(logs_dir, f"reviewer-{builder_id}.branch-head")
+        if os.path.exists(path):
+            os.remove(path)
+    except Exception:
+        pass
 
 
 def check_agent_idle(log_exists: bool, log_age_seconds: float, idle_threshold: float) -> bool:
@@ -186,38 +251,38 @@ def check_agent_idle(log_exists: bool, log_age_seconds: float, idle_threshold: f
 
 
 def are_agents_idle() -> bool:
-    """Check if the reviewer, tester, and validator are all idle.
+    """Check if reviewers, tester, and validator are all idle.
 
-    Returns True when all agent logs haven't been modified within
-    the idle threshold (120 seconds), meaning they're just sleeping
-    in their poll loops with nothing to do.
+    Discovery-based: finds all reviewer-N.log files (and the legacy
+    reviewer.log) plus milestone-reviewer, tester, and validator logs.
+    Returns True when all discovered agent logs haven't been modified
+    within the idle threshold (120 seconds).
     """
     try:
         logs_dir = resolve_logs_dir()
         now = datetime.now().timestamp()
 
-        reviewer_log = os.path.join(logs_dir, _REVIEWER_LOG_FILE)
-        reviewer_exists = os.path.exists(reviewer_log)
-        reviewer_age = (now - os.path.getmtime(reviewer_log)) if reviewer_exists else 0.0
+        # Collect all log files to check
+        logs_to_check: list[str] = []
 
-        milestone_reviewer_log = os.path.join(logs_dir, _MILESTONE_REVIEWER_LOG_FILE)
-        milestone_reviewer_exists = os.path.exists(milestone_reviewer_log)
-        milestone_reviewer_age = (now - os.path.getmtime(milestone_reviewer_log)) if milestone_reviewer_exists else 0.0
+        # Discover reviewer logs: reviewer.log (legacy) and reviewer-N.log
+        all_files = os.listdir(logs_dir)
+        for fname in all_files:
+            if fname == _REVIEWER_LOG_FILE or _REVIEWER_LOG_RE.match(fname):
+                logs_to_check.append(fname)
 
-        tester_log = os.path.join(logs_dir, _TESTER_LOG_FILE)
-        tester_exists = os.path.exists(tester_log)
-        tester_age = (now - os.path.getmtime(tester_log)) if tester_exists else 0.0
+        # Fixed agent logs
+        for fixed_log in (_MILESTONE_REVIEWER_LOG_FILE, _TESTER_LOG_FILE, _VALIDATOR_LOG_FILE):
+            logs_to_check.append(fixed_log)
 
-        validator_log = os.path.join(logs_dir, _VALIDATOR_LOG_FILE)
-        validator_exists = os.path.exists(validator_log)
-        validator_age = (now - os.path.getmtime(validator_log)) if validator_exists else 0.0
+        for log_name in logs_to_check:
+            log_path = os.path.join(logs_dir, log_name)
+            log_exists = os.path.exists(log_path)
+            log_age = (now - os.path.getmtime(log_path)) if log_exists else 0.0
+            if not check_agent_idle(log_exists, log_age, _AGENT_IDLE_SECONDS):
+                return False
 
-        return (
-            check_agent_idle(reviewer_exists, reviewer_age, _AGENT_IDLE_SECONDS)
-            and check_agent_idle(milestone_reviewer_exists, milestone_reviewer_age, _AGENT_IDLE_SECONDS)
-            and check_agent_idle(tester_exists, tester_age, _AGENT_IDLE_SECONDS)
-            and check_agent_idle(validator_exists, validator_age, _AGENT_IDLE_SECONDS)
-        )
+        return True
     except Exception:
         pass
     return False

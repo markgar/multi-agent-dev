@@ -364,7 +364,7 @@ def run_deterministic_checks(
 # ============================================
 
 
-def run_quality_check(deterministic_warnings: list[str]) -> bool:
+def run_quality_check(deterministic_warnings: list[str], model: str = "") -> bool:
     """Run the LLM quality check (C1-C7) via a single Copilot call.
 
     Called after deterministic checks pass. The LLM evaluates story quality,
@@ -374,6 +374,7 @@ def run_quality_check(deterministic_warnings: list[str]) -> bool:
     Args:
         deterministic_warnings: non-blocking warnings from deterministic checks,
             included in the prompt so the LLM has full context.
+        model: when provided, overrides COPILOT_MODEL for this call.
 
     Returns True if the quality check Copilot call succeeded, False if it failed.
     """
@@ -389,7 +390,7 @@ def run_quality_check(deterministic_warnings: list[str]) -> bool:
 
     log("planner", "")
     log("planner", "[Backlog Checker] Running story quality check...", style="magenta")
-    exit_code = run_copilot("planner", prompt)
+    exit_code = run_copilot("planner", prompt, model=model)
     if exit_code != 0:
         log(
             "planner",
@@ -405,12 +406,15 @@ def run_quality_check(deterministic_warnings: list[str]) -> bool:
 # ============================================
 
 
-def check_backlog_quality() -> bool:
+def check_backlog_quality(model: str = "") -> bool:
     """Run the full backlog quality check pipeline.
 
     Reads BACKLOG.md, milestone files from milestones/, and REQUIREMENTS.md
     from the current directory. Runs deterministic checks first, then LLM
     quality check if deterministic checks pass.
+
+    Args:
+        model: when provided, overrides COPILOT_MODEL for LLM calls.
 
     Returns True if the backlog passed (or was fixed), False if a re-plan is needed.
     """
@@ -456,7 +460,7 @@ def check_backlog_quality() -> bool:
     all_issues = fix + warnings
 
     # LLM quality check
-    run_quality_check(all_issues)
+    run_quality_check(all_issues, model=model)
 
     log("planner", "")
     log("planner", "[Backlog Checker] Quality check complete.", style="magenta")
@@ -474,11 +478,14 @@ def _read_file_safe(path: str) -> str:
     return ""
 
 
-def run_ordering_check() -> bool:
+def run_ordering_check(model: str = "") -> bool:
     """Run the story ordering check and fix via LLM if needed.
 
     Reads BACKLOG.md, detects misordered stories using the dependency graph,
     and invokes a Copilot call to reorder if any are found.
+
+    Args:
+        model: when provided, overrides COPILOT_MODEL for this call.
 
     Returns True if ordering is correct or was fixed, False on failure.
     """
@@ -507,7 +514,7 @@ def run_ordering_check() -> bool:
         + f"\n\nThe following stories were detected as misordered:\n{issue_block}"
     )
 
-    exit_code = run_copilot("planner", prompt)
+    exit_code = run_copilot("planner", prompt, model=model)
     if exit_code != 0:
         log(
             "planner",

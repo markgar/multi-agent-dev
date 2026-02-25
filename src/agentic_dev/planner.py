@@ -9,6 +9,7 @@ from agentic_dev.milestone import get_tasks_per_milestone_from_dir
 from agentic_dev.prompts import (
     PLANNER_COMPLETENESS_PROMPT,
     PLANNER_INITIAL_PROMPT,
+    PLANNER_JOURNEYS_PROMPT,
     PLANNER_PROMPT,
     PLANNER_SPLIT_PROMPT,
 )
@@ -22,11 +23,14 @@ def register(app: typer.Typer) -> None:
     app.command()(plan)
 
 
-def plan(requirements_changed: bool = False, story_name: str = "") -> bool:
+def plan(requirements_changed: bool = False, story_name: str = "", model: str = "") -> bool:
     """Run the planner to create or update milestones based on SPEC.md.
 
     When story_name is provided, it is interpolated into the PLANNER_PROMPT
     so the LLM knows which story to expand.
+
+    When *model* is provided it is forwarded to every ``run_copilot`` call,
+    overriding the COPILOT_MODEL environment variable.
 
     Returns True if planning succeeded, False if it failed.
     """
@@ -42,7 +46,7 @@ def plan(requirements_changed: bool = False, story_name: str = "") -> bool:
     if is_fresh:
         # Case A: fresh project — create backlog, validate, then plan first milestone
         log("planner", "[Backlog Planner] Fresh project — creating backlog...", style="magenta")
-        exit_code = run_copilot("planner", PLANNER_INITIAL_PROMPT)
+        exit_code = run_copilot("planner", PLANNER_INITIAL_PROMPT, model=model)
         if exit_code != 0:
             log("planner", "")
             log("planner", "======================================", style="bold red")
@@ -53,16 +57,16 @@ def plan(requirements_changed: bool = False, story_name: str = "") -> bool:
         # Completeness pass: validate backlog covers all requirements
         log("planner", "")
         log("planner", "[Backlog Planner] Running completeness check on backlog...", style="magenta")
-        exit_code = run_copilot("planner", PLANNER_COMPLETENESS_PROMPT)
+        exit_code = run_copilot("planner", PLANNER_COMPLETENESS_PROMPT, model=model)
         if exit_code != 0:
             log("planner", "[Backlog Planner] WARNING: Completeness check failed. Continuing with existing backlog.", style="bold yellow")
 
         # Quality gate: structural checks + LLM quality review
-        quality_ok = check_backlog_quality()
+        quality_ok = check_backlog_quality(model=model)
         if not quality_ok:
             log("planner", "[Backlog Planner] Structural issues detected — re-running initial planner...", style="yellow")
             try:
-                exit_code = run_copilot("planner", PLANNER_INITIAL_PROMPT)
+                exit_code = run_copilot("planner", PLANNER_INITIAL_PROMPT, model=model)
             except Exception as e:
                 log("planner", f"[Backlog Planner] Re-plan crashed: {e}", style="bold red")
                 log("planner", "")
@@ -78,7 +82,7 @@ def plan(requirements_changed: bool = False, story_name: str = "") -> bool:
                 return False
 
             # Re-check after re-plan — if still failing, stop
-            quality_ok_2 = check_backlog_quality()
+            quality_ok_2 = check_backlog_quality(model=model)
             if not quality_ok_2:
                 log("planner", "")
                 log("planner", "======================================", style="bold red")
@@ -87,7 +91,15 @@ def plan(requirements_changed: bool = False, story_name: str = "") -> bool:
                 return False
 
         # Ordering pass: ensure stories are in topological dependency order
-        run_ordering_check()
+        run_ordering_check(model=model)
+
+        # Journeys pass: create JOURNEYS.md for the validator
+        if not os.path.exists("JOURNEYS.md"):
+            log("planner", "")
+            log("planner", "[Backlog Planner] Creating user journeys (JOURNEYS.md)...", style="magenta")
+            journeys_exit = run_copilot("planner", PLANNER_JOURNEYS_PROMPT, model=model)
+            if journeys_exit != 0:
+                log("planner", "[Backlog Planner] WARNING: JOURNEYS.md creation failed. Validator will use legacy scope.", style="bold yellow")
 
         # Builders will claim story #1 and plan its milestone — no milestone
         # planning here. The orchestrator only owns backlog creation.
@@ -105,7 +117,7 @@ def plan(requirements_changed: bool = False, story_name: str = "") -> bool:
             )
             prompt = prefix + prompt
 
-        exit_code = run_copilot("planner", prompt)
+        exit_code = run_copilot("planner", prompt, model=model)
         if exit_code != 0:
             log("planner", "")
             log("planner", "======================================", style="bold red")
@@ -120,7 +132,7 @@ def plan(requirements_changed: bool = False, story_name: str = "") -> bool:
     return True
 
 
-def check_milestone_sizes() -> None:
+def check_milestone_sizes(model: str = "") -> None:
     """If any uncompleted milestone exceeds the task limit, ask the planner to split it."""
     oversized = [
         ms for ms in get_tasks_per_milestone_from_dir("milestones")
@@ -138,7 +150,7 @@ def check_milestone_sizes() -> None:
             milestone_file=ms["path"],
             task_count=ms["task_count"],
         )
-        run_copilot("planner", prompt)
+        run_copilot("planner", prompt, model=model)
 
     # Verify once — if still oversized after one attempt, log a warning and proceed
     if oversized:

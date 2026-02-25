@@ -15,6 +15,7 @@ from agentic_dev.prompts import (
     LOCAL_BOOTSTRAP_PROMPT,
     PLANNER_COMPLETENESS_PROMPT,
     PLANNER_INITIAL_PROMPT,
+    PLANNER_JOURNEYS_PROMPT,
     PLANNER_PROMPT,
     PLANNER_SPLIT_PROMPT,
     REVIEWER_BATCH_PROMPT,
@@ -23,6 +24,10 @@ from agentic_dev.prompts import (
     REVIEWER_PROMPT,
     TESTER_MILESTONE_PROMPT,
     TESTER_PROMPT,
+    VALIDATOR_JOURNEY_RESULTS_TAGS,
+    VALIDATOR_JOURNEY_SECTION,
+    VALIDATOR_LEGACY_RESULTS_TAGS,
+    VALIDATOR_LEGACY_SCOPE,
     VALIDATOR_MILESTONE_PROMPT,
     VALIDATOR_PLAYWRIGHT_SECTION,
     VALIDATOR_PLAYWRIGHT_TRACE_SECTION,
@@ -44,7 +49,10 @@ PROMPT_FORMAT_CASES = [
     ("REVIEWER_MILESTONE_PROMPT", REVIEWER_MILESTONE_PROMPT, {"milestone_name": "M1", "milestone_start_sha": "aaa", "milestone_end_sha": "bbb", "code_analysis_findings": "No structural issues detected."}),
     ("TESTER_PROMPT", TESTER_PROMPT, {}),
     ("TESTER_MILESTONE_PROMPT", TESTER_MILESTONE_PROMPT, {"milestone_name": "M1", "milestone_start_sha": "aaa", "milestone_end_sha": "bbb"}),
-    ("VALIDATOR_MILESTONE_PROMPT", VALIDATOR_MILESTONE_PROMPT, {"milestone_name": "M1", "milestone_start_sha": "aaa", "milestone_end_sha": "bbb", "ui_testing_instructions": "", "compose_project_name": "test-proj", "app_port": 3456, "secondary_port": 3457}),
+    ("PLANNER_JOURNEYS_PROMPT", PLANNER_JOURNEYS_PROMPT, {}),
+    ("VALIDATOR_MILESTONE_PROMPT", VALIDATOR_MILESTONE_PROMPT, {"milestone_name": "M1", "milestone_start_sha": "aaa", "milestone_end_sha": "bbb", "validation_scope": "Test scope here.", "results_tag_instructions": "[A] tags", "ui_testing_instructions": "", "compose_project_name": "test-proj", "app_port": 3456, "secondary_port": 3457}),
+    ("VALIDATOR_LEGACY_SCOPE", VALIDATOR_LEGACY_SCOPE, {"milestone_name": "M1"}),
+    ("VALIDATOR_JOURNEY_SECTION", VALIDATOR_JOURNEY_SECTION, {"journey_list": "J-1: Smoke test"}),
     ("COPILOT_INSTRUCTIONS_TEMPLATE", COPILOT_INSTRUCTIONS_TEMPLATE, {"project_structure": "src/", "key_files": "app.py", "architecture": "monolith", "conventions": "PEP8"}),
     ("COPILOT_INSTRUCTIONS_PROMPT", COPILOT_INSTRUCTIONS_PROMPT, {"template": "...template..."}),
 ]
@@ -68,6 +76,8 @@ def test_validator_prompt_includes_playwright_when_frontend():
         milestone_name="UI Shell",
         milestone_start_sha="aaa",
         milestone_end_sha="bbb",
+        validation_scope=VALIDATOR_LEGACY_SCOPE.format(milestone_name="UI Shell"),
+        results_tag_instructions=VALIDATOR_LEGACY_RESULTS_TAGS,
         ui_testing_instructions=VALIDATOR_PLAYWRIGHT_SECTION,
         compose_project_name="test-proj",
         app_port=3456,
@@ -84,12 +94,33 @@ def test_validator_prompt_excludes_playwright_when_no_frontend():
         milestone_name="API Endpoints",
         milestone_start_sha="aaa",
         milestone_end_sha="bbb",
+        validation_scope=VALIDATOR_LEGACY_SCOPE.format(milestone_name="API Endpoints"),
+        results_tag_instructions=VALIDATOR_LEGACY_RESULTS_TAGS,
         ui_testing_instructions="",
         compose_project_name="test-proj",
         app_port=3456,
         secondary_port=3457,
     )
     assert "Playwright" not in result
+
+
+def test_validator_prompt_with_journey_scope():
+    """Formatting with journey scope injects journey instructions."""
+    journey_scope = VALIDATOR_JOURNEY_SECTION.format(journey_list="  J-1: Smoke test\n  Steps: Login and navigate\n")
+    result = VALIDATOR_MILESTONE_PROMPT.format(
+        milestone_name="Venues",
+        milestone_start_sha="aaa",
+        milestone_end_sha="bbb",
+        validation_scope=journey_scope,
+        results_tag_instructions=VALIDATOR_JOURNEY_RESULTS_TAGS,
+        ui_testing_instructions="",
+        compose_project_name="test-proj",
+        app_port=3456,
+        secondary_port=3457,
+    )
+    assert "J-1: Smoke test" in result
+    assert "[J-N]" in result
+    assert "three-part" not in result.lower()
 
 
 def test_playwright_section_is_well_formed():

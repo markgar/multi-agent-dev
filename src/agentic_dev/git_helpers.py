@@ -172,6 +172,13 @@ def create_milestone_branch(builder_id: int, milestone_name: str, agent_name: st
         # Stay on the branch — local work can still proceed
         # The LLM will need to push manually on first commit
 
+    # Defense-in-depth: explicitly set the branch's merge target so any
+    # accidental 'git pull' fetches from this feature branch, not main.
+    run_cmd(
+        ["git", "config", f"branch.{branch_name}.merge", f"refs/heads/{branch_name}"],
+        quiet=True,
+    )
+
     log(agent_name, f"Created branch: {branch_name}", style="cyan")
     return branch_name
 
@@ -188,10 +195,12 @@ def merge_milestone_to_main(
     4. git tag {milestone_name} HEAD
     5. git push origin main --tags
     On push failure: reset to origin/main, delete local tag, retry.
-    On merge conflict: abort merge, pull, retry.
+    On merge conflict: rebase the feature branch onto updated main, retry.
 
     Returns the merge commit SHA on success, empty string on failure.
     """
+    rebase_attempted = False
+
     for attempt in range(1, max_attempts + 1):
         run_cmd(["git", "checkout", "main"], quiet=True)
         pull = run_cmd(["git", "pull", "--rebase", "-q"], capture=True)
@@ -205,12 +214,33 @@ def merge_milestone_to_main(
             capture=True,
         )
         if merge_result.returncode != 0:
+            # Log the conflicting details for diagnostics
+            conflict_info = merge_result.stdout.strip() or merge_result.stderr.strip()
             log(
                 agent_name,
-                f"Merge conflict (attempt {attempt}/{max_attempts}), retrying...",
+                f"Merge conflict (attempt {attempt}/{max_attempts}): {conflict_info[:200]}",
                 style="yellow",
             )
             run_cmd(["git", "merge", "--abort"], quiet=True)
+
+            # Try rebase recovery once: replay feature branch commits onto updated main
+            if not rebase_attempted:
+                rebase_attempted = True
+                log(agent_name, "Attempting rebase recovery: rebasing feature branch onto main...", style="cyan")
+                run_cmd(["git", "checkout", branch_name], quiet=True)
+                rebase_result = run_cmd(["git", "rebase", "main"], capture=True)
+                if rebase_result.returncode == 0:
+                    # Force-push the rebased branch so remote matches
+                    run_cmd(["git", "push", "--force-with-lease", "origin", branch_name], quiet=True)
+                    log(agent_name, "Rebase succeeded. Retrying merge...", style="green")
+                    run_cmd(["git", "checkout", "main"], quiet=True)
+                    continue
+                else:
+                    rebase_info = rebase_result.stdout.strip() or rebase_result.stderr.strip()
+                    log(agent_name, f"Rebase failed: {rebase_info[:200]}", style="red")
+                    run_cmd(["git", "rebase", "--abort"], quiet=True)
+                    run_cmd(["git", "checkout", "main"], quiet=True)
+
             if attempt < max_attempts:
                 time.sleep(5)
             continue
@@ -240,6 +270,7 @@ def merge_milestone_to_main(
         )
         run_cmd(["git", "tag", "-d", milestone_name], quiet=True)
         run_cmd(["git", "reset", "--hard", "origin/main"], quiet=True)
+        rebase_attempted = False  # allow rebase on fresh main state
         if attempt < max_attempts:
             time.sleep(5)
 
@@ -256,3 +287,58 @@ def delete_milestone_branch(branch_name: str, agent_name: str) -> None:
     run_cmd(["git", "branch", "-d", branch_name], quiet=True)
     run_cmd(["git", "push", "origin", "--delete", branch_name], quiet=True)
     log(agent_name, f"Deleted branch: {branch_name}", style="cyan")
+
+
+# ============================================
+# Branch-attached reviewer helpers
+# ============================================
+
+
+def detect_builder_branch(builder_id: int) -> str:
+    """Find the active feature branch for a builder via git ls-remote.
+
+    Looks for refs/heads/builder-{N}/* on the remote. Returns the branch
+    name (e.g. 'builder-1/milestone-01') or empty string if none exists.
+    If multiple branches match, returns the first one alphabetically.
+    """
+    pattern = f"refs/heads/builder-{builder_id}/*"
+    result = run_cmd(["git", "ls-remote", "--heads", "origin", pattern], capture=True)
+    if result.returncode != 0 or not result.stdout.strip():
+        return ""
+    branches = parse_ls_remote_output(result.stdout)
+    return branches[0] if branches else ""
+
+
+def parse_ls_remote_output(output: str) -> list[str]:
+    """Parse git ls-remote output into a sorted list of branch names.
+
+    Pure function: each line is '<sha>\\trefs/heads/<name>'.
+    Returns branch names sorted alphabetically.
+    """
+    branches = []
+    for line in output.strip().split("\n"):
+        line = line.strip()
+        if not line:
+            continue
+        parts = line.split("\t")
+        if len(parts) == 2 and parts[1].startswith("refs/heads/"):
+            branch_name = parts[1][len("refs/heads/"):]
+            branches.append(branch_name)
+    branches.sort()
+    return branches
+
+
+def get_branch_head_sha(branch_name: str) -> str:
+    """Get the HEAD SHA of a branch after fetching latest from origin.
+
+    Fetches the specific branch and returns origin/<branch>'s SHA.
+    Returns empty string on failure.
+    """
+    run_cmd(["git", "fetch", "origin", branch_name], quiet=True)
+    result = run_cmd(
+        ["git", "rev-parse", f"origin/{branch_name}"],
+        capture=True,
+    )
+    if result.returncode == 0:
+        return result.stdout.strip()
+    return ""

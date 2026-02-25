@@ -25,7 +25,12 @@ from agentic_dev.milestone import (
     record_milestone_boundary,
 )
 from agentic_dev.prompts import BUILDER_PROMPT
-from agentic_dev.sentinel import are_agents_idle, write_builder_done
+from agentic_dev.sentinel import (
+    are_agents_idle,
+    clear_branch_review_head,
+    load_branch_review_head,
+    write_builder_done,
+)
 from agentic_dev.utils import count_open_items_in_dir, count_partitioned_open_items, log, run_cmd, run_copilot
 
 
@@ -293,6 +298,49 @@ def _build_partition_filter(builder_id: int, num_builders: int) -> str:
 
 
 # ============================================
+# Orphaned milestone cleanup
+# ============================================
+
+
+def _cleanup_orphaned_milestones(story_number: int, agent_name: str) -> None:
+    """Remove incomplete milestone files for a story after a build failure.
+
+    When a builder fails mid-story (e.g. merge conflict), its milestone files
+    remain on main with unchecked tasks. If another builder later claims the
+    same story, the planner creates fresh milestones — but the old incomplete
+    milestones would also be picked up by the prefix match in the build loop.
+    This function deletes the orphaned files so the next builder starts clean.
+
+    Deletes milestone files matching milestone-{NN}* that have unchecked tasks.
+    Completed milestone files (all tasks checked) are left alone.
+    """
+    milestones_dir = "milestones"
+    story_prefix = f"milestone-{story_number:02d}"
+
+    orphans = []
+    for ms in get_all_milestones(milestones_dir):
+        basename = os.path.basename(ms["path"])
+        if basename.startswith(story_prefix) and not ms["all_done"]:
+            orphans.append(ms["path"])
+
+    if not orphans:
+        return
+
+    for path in orphans:
+        try:
+            os.remove(path)
+            log(agent_name, f"Removed orphaned milestone: {os.path.basename(path)}", style="yellow")
+        except OSError:
+            pass
+
+    # Commit the removal so other builders see a clean state
+    run_cmd(["git", "add", "-A", milestones_dir])
+    run_cmd(["git", "commit", "-m",
+             f"[builder] Remove orphaned milestones for story {story_number}"])
+    git_push_with_retry(agent_name)
+
+
+# ============================================
 # Build loop helpers
 # ============================================
 
@@ -308,6 +356,8 @@ class BuildState:
 _MAX_FIX_ONLY_CYCLES = 4
 _AGENT_WAIT_INTERVAL = 15
 _AGENT_WAIT_MAX_CYCLES = 40  # 15s * 40 = 10 minutes max wait
+_REVIEWER_MERGE_TIMEOUT = 300  # 5 minutes max wait for reviewer before merge
+_REVIEWER_MERGE_POLL_INTERVAL = 5  # seconds between checks
 
 
 def classify_remaining_work(bugs: int, reviews: int, tasks: int, agents_idle: bool) -> str:
@@ -327,6 +377,37 @@ def classify_remaining_work(bugs: int, reviews: int, tasks: int, agents_idle: bo
     if agents_idle:
         return "done"
     return "waiting"
+
+
+def _wait_for_reviewer(
+    builder_id: int, branch_name: str, agent_name: str,
+    timeout: int = _REVIEWER_MERGE_TIMEOUT,
+) -> bool:
+    """Wait for the branch-attached reviewer to catch up before merging.
+
+    Polls the reviewer's branch-head checkpoint until the reviewed SHA matches
+    the current branch HEAD. Returns True if the reviewer caught up, False on
+    timeout. This is a soft gate — the caller should proceed with merge even
+    on timeout (the milestone reviewer will catch remaining issues).
+    """
+    head_result = run_cmd(["git", "rev-parse", "HEAD"], capture=True)
+    branch_head = head_result.stdout.strip() if head_result.returncode == 0 else ""
+    if not branch_head:
+        return True  # Can't determine HEAD, skip waiting
+
+    elapsed = 0
+    while elapsed < timeout:
+        reviewed_branch, reviewed_sha = load_branch_review_head(builder_id)
+        if reviewed_branch == branch_name and reviewed_sha == branch_head:
+            log(agent_name, "Reviewer has caught up. Proceeding to merge.", style="green")
+            return True
+        if elapsed == 0:
+            log(agent_name, "Waiting for reviewer to catch up...", style="yellow")
+        time.sleep(_REVIEWER_MERGE_POLL_INTERVAL)
+        elapsed += _REVIEWER_MERGE_POLL_INTERVAL
+
+    log(agent_name, f"Reviewer did not catch up within {timeout}s. Proceeding to merge.", style="yellow")
+    return False
 
 
 def _record_completed_milestone(
@@ -577,6 +658,9 @@ def build(
                 build_failed = True
                 break
 
+            # Clear stale reviewer signal from previous branch
+            clear_branch_review_head(builder_id)
+
             log(agent_name, "")
             log(agent_name, f"[Builder] Starting work on {milestone_file}...", style="green")
             log(agent_name, "")
@@ -595,6 +679,9 @@ def build(
                 ensure_on_main(agent_name)
                 build_failed = True
                 break
+
+            # Wait for branch-attached reviewer to catch up (soft gate)
+            _wait_for_reviewer(builder_id, branch_name, agent_name)
 
             # Merge feature branch back to main
             merge_sha = merge_milestone_to_main(branch_name, milestone_basename, agent_name)
@@ -616,9 +703,13 @@ def build(
             ensure_on_main(agent_name)
             if branch_name:
                 delete_milestone_branch(branch_name, agent_name)
+            # Clean up orphaned milestone files so the next builder that claims
+            # this story plans fresh milestones instead of inheriting stale ones.
+            _cleanup_orphaned_milestones(story["number"], agent_name)
             unclaim_story(story["number"], agent_name)
-            write_builder_done(builder_id)
-            return
+            # Don't terminate — continue the claim loop to try other stories.
+            log(agent_name, "Build failed for this story. Continuing to next eligible story...", style="yellow")
+            continue
 
         # Mark story as completed ([N] -> [x]) so downstream deps unlock
         mark_story_completed(story["number"], agent_name)

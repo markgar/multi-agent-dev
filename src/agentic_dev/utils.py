@@ -27,17 +27,18 @@ def pushd(path: str) -> Generator[None, None, None]:
 
 _AGENT_DIRS = {"builder", "reviewer", "milestone-reviewer", "tester", "validator", "watcher"}
 _BUILDER_DIR_RE = re.compile(r"^builder-\d+$")
+_REVIEWER_DIR_RE = re.compile(r"^reviewer-\d+$")
 
 
 def find_project_root(cwd: str) -> str:
     """Determine the project root from a working directory path.
 
     Pure function: if cwd ends in an agent directory name (including
-    numbered builder dirs like builder-1, builder-2), returns the parent.
-    Otherwise returns cwd itself.
+    numbered builder dirs like builder-1 or reviewer dirs like reviewer-1),
+    returns the parent. Otherwise returns cwd itself.
     """
     basename = os.path.basename(cwd)
-    if basename in _AGENT_DIRS or _BUILDER_DIR_RE.match(basename):
+    if basename in _AGENT_DIRS or _BUILDER_DIR_RE.match(basename) or _REVIEWER_DIR_RE.match(basename):
         return os.path.dirname(cwd)
     return cwd
 
@@ -103,6 +104,7 @@ MODEL_NAME_MAP = {
     "GPT-5.3-Codex": "gpt-5.3-codex",
     "Claude Opus 4.6": "claude-opus-4.6",
     "Claude Opus 4.6 Fast": "claude-opus-4.6-fast",
+    "Claude Sonnet 4.6": "claude-sonnet-4.6",
 }
 
 # Set of all accepted inputs (friendly names + CLI names).
@@ -228,14 +230,16 @@ def _run_copilot_once(agent_name: str, prompt: str, model: str, log_file: str) -
     return exit_code
 
 
-def run_copilot(agent_name: str, prompt: str) -> int:
+def run_copilot(agent_name: str, prompt: str, model: str = "") -> int:
     """Run 'copilot --allow-all-tools --model <model> -p <prompt>' with streaming output.
 
-    Reads the model from the COPILOT_MODEL environment variable (required).
+    When *model* is provided it is used directly; otherwise the value is read
+    from the COPILOT_MODEL environment variable (required).
     If copilot fails with an auth error, attempts 'gh auth refresh' and retries once.
     Returns the process exit code.
     """
-    model = os.environ.get("COPILOT_MODEL", "")
+    if not model:
+        model = os.environ.get("COPILOT_MODEL", "")
     if not model:
         raise SystemExit("COPILOT_MODEL environment variable is not set. Use --model on the go command.")
 

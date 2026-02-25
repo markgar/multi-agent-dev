@@ -47,15 +47,15 @@ When editing this codebase, keep this two-level structure in mind: the Python co
 - `src/agentic_dev/bootstrap.py` — Project scaffolding: repo creation, cloning reviewer/milestone-reviewer/tester/validator copies.
 - `src/agentic_dev/planner.py` — Backlog planner and milestone planner: `plan` command, `check_milestone_sizes()` helper.
 - `src/agentic_dev/builder.py` — Build loop: milestone completion, retry logic.
-- `src/agentic_dev/watcher.py` — Commit watcher: per-commit reviews.
+- `src/agentic_dev/watcher.py` — Commit watcher: branch-attached per-builder reviews and legacy main-polling mode.
 - `src/agentic_dev/milestone_reviewer.py` — Milestone reviewer: cross-cutting milestone reviews with code analysis and note frequency filtering.
 - `src/agentic_dev/tester.py` — Test loop: milestone-triggered testing.
 - `src/agentic_dev/validator.py` — Validator loop: milestone-triggered container build and acceptance testing.
 - `src/agentic_dev/terminal.py` — Terminal spawning helper for launching agents in new windows.
 - `src/agentic_dev/prompts/` — All LLM prompt templates (one file per agent). Constants only, no logic.
 - `src/agentic_dev/utils.py` — Core helpers: logging, command execution, platform detection.
-- `src/agentic_dev/git_helpers.py` — Git operations: push with retry, commit classification.
-- `src/agentic_dev/sentinel.py` — Builder-done sentinel, agent-idle detection, and reviewer checkpoint persistence.
+- `src/agentic_dev/git_helpers.py` — Git operations: push with retry, commit classification, branch detection.
+- `src/agentic_dev/sentinel.py` — Builder-done sentinel, agent-idle detection, per-builder reviewer checkpoints, and branch-review-head merge gate signals.
 - `src/agentic_dev/milestone.py` — Milestone parsing, boundary tracking, and per-agent milestone checkpoints.
 - `src/agentic_dev/config.py` — Language/stack configurations and thresholds for tree-sitter code analysis.
 - `src/agentic_dev/backlog_checker.py` — Backlog quality gate: deterministic structural checks (A1-A4) and LLM quality review (C1-C7) on BACKLOG.md and milestone files. Also runs story ordering checks for parallel builder throughput.

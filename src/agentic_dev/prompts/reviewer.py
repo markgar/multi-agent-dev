@@ -245,3 +245,71 @@ REVIEWER_MILESTONE_PROMPT = (
     "again (retry up to 3 times). "
     + _CONFLICT_RECOVERY
 )
+
+
+# ============================================
+# Branch-attached reviewer prompt variants
+# ============================================
+
+_BRANCH_CONTEXT = (
+    "You are reviewing code on feature branch '{branch_name}'. All your commits "
+    "(review files in reviews/) should be pushed to THIS branch, not main. The "
+    "builder is actively working on this branch — your findings will be visible "
+    "to them immediately via git pull on the branch. "
+)
+
+REVIEWER_BRANCH_COMMIT_PROMPT = (
+    _PRODUCTION_BAR
+    + _BRANCH_CONTEXT
+    + "Your only job is to review the changes in a single commit for quality issues. "
+    "Read SPEC.md and the milestone files in `milestones/` ONLY to understand the project goals — do NOT review "
+    "those files themselves. "
+    "Run `git log -1 --format=%s {commit_sha}` to see the commit message. "
+    "Run `git diff {prev_sha} {commit_sha}` to get the diff. This diff is your ONLY "
+    "input for review — do NOT read entire source files, do NOT review code outside the "
+    "diff, and do NOT look at older changes. Focus exclusively on the added and modified "
+    "lines shown in the diff. Use the surrounding context lines only to understand what "
+    "the changed code does. "
+    + _REVIEW_CHECKLIST
+    + _SEVERITY_RULES
+    + _DOC_RULES
+    + _COMMIT_FILING_RULES
+    + "Each finding or note file must contain: the commit SHA {commit_sha:.8}, the "
+    "severity tag, the file path and line(s), a clear description of the problem "
+    "explaining WHY it matters (not just what is wrong), and a concrete suggested fix "
+    "with example code when possible. "
+    "If there are genuinely no issues, do nothing — but be skeptical. In production "
+    "codebases, most commits have at least one improvable aspect. If you created any "
+    "files, commit with message '[reviewer] Code review: {commit_sha:.8}', run "
+    "git pull --rebase, and push. If the push fails, run git pull --rebase and push "
+    "again (retry up to 3 times). "
+    + _CONFLICT_RECOVERY
+)
+
+REVIEWER_BRANCH_BATCH_PROMPT = (
+    _PRODUCTION_BAR
+    + _BRANCH_CONTEXT
+    + "Your job is to review the combined changes from {commit_count} commits for "
+    "quality issues. Read SPEC.md and the milestone files in `milestones/` ONLY to understand the project goals — "
+    "do NOT review those files themselves. "
+    "Run `git log --oneline {base_sha}..{head_sha}` to see the commit messages. "
+    "Run `git diff {base_sha} {head_sha}` to get the combined diff. This diff is your "
+    "ONLY input for review — do NOT read entire source files, do NOT review code outside "
+    "the diff, and do NOT look at older changes. Focus exclusively on the added and "
+    "modified lines shown in the diff. Use the surrounding context lines only to "
+    "understand what the changed code does. "
+    + _REVIEW_CHECKLIST
+    + _SEVERITY_RULES
+    + _DOC_RULES
+    + _COMMIT_FILING_RULES
+    + "Each finding or note file must contain: the relevant commit SHA(s), the "
+    "severity tag, the file path and line(s), a clear description of the problem "
+    "explaining WHY it matters, and a concrete suggested fix with example code when "
+    "possible. "
+    "If there are genuinely no issues, do nothing — but be skeptical. Multiple commits "
+    "in a batch almost always contain at least one issue. If you created any "
+    "files, commit with message '[reviewer] Code review: {base_sha:.8}..{head_sha:.8}', "
+    "run git pull --rebase, and push. If the push fails, run git pull --rebase and push "
+    "again (retry up to 3 times). "
+    + _CONFLICT_RECOVERY
+)

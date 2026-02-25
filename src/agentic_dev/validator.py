@@ -11,12 +11,20 @@ from typing import Annotated
 import typer
 
 from agentic_dev.git_helpers import git_push_with_retry
+from agentic_dev.journeys import (
+    format_journey_prompt_block,
+    select_journeys_for_milestone,
+)
 from agentic_dev.milestone import (
     load_milestone_boundaries,
     load_reviewed_milestones,
     save_milestone_checkpoint,
 )
 from agentic_dev.prompts import (
+    VALIDATOR_JOURNEY_RESULTS_TAGS,
+    VALIDATOR_JOURNEY_SECTION,
+    VALIDATOR_LEGACY_RESULTS_TAGS,
+    VALIDATOR_LEGACY_SCOPE,
     VALIDATOR_MILESTONE_PROMPT,
     VALIDATOR_PLAYWRIGHT_SECTION,
     VALIDATOR_PLAYWRIGHT_TRACE_SECTION,
@@ -212,8 +220,11 @@ def _print_validation_summary(milestone_name: str) -> None:
         categories = {"[A]": "Milestone tests", "[B]": "Requirements coverage",
                       "[C]": "Bug verification", "[UI]": "Playwright UI"}
         counts: dict[str, dict[str, int]] = {}
-        for tag in list(categories.keys()) + ["other"]:
+        for tag in list(categories.keys()) + ["journey", "other"]:
             counts[tag] = {"PASS": 0, "FAIL": 0}
+
+        import re as _re
+        _journey_tag_re = _re.compile(r"\[J-\d+\]")
 
         failures: list[str] = []
         for line in lines:
@@ -226,10 +237,13 @@ def _print_validation_summary(milestone_name: str) -> None:
                 continue
             result_key = "PASS" if is_pass else "FAIL"
             matched_tag = "other"
-            for tag in categories:
-                if tag in stripped:
-                    matched_tag = tag
-                    break
+            if _journey_tag_re.search(stripped):
+                matched_tag = "journey"
+            else:
+                for tag in categories:
+                    if tag in stripped:
+                        matched_tag = tag
+                        break
             counts[matched_tag][result_key] += 1
             if is_fail:
                 failures.append(stripped)
@@ -244,6 +258,12 @@ def _print_validation_summary(milestone_name: str) -> None:
                 continue
             style = "green" if f == 0 else "red"
             log("validator", f"  {label} {tag}: {p} passed, {f} failed", style=style)
+
+        # Journey results
+        jp, jf = counts["journey"]["PASS"], counts["journey"]["FAIL"]
+        if jp + jf > 0:
+            style = "green" if jf == 0 else "red"
+            log("validator", f"  Journey tests [J-*]: {jp} passed, {jf} failed", style=style)
 
         op, of = counts["other"]["PASS"], counts["other"]["FAIL"]
         if op + of > 0:
@@ -291,12 +311,58 @@ def _copy_playwright_traces(milestone_name: str) -> None:
         log("validator", f"Could not copy Playwright traces: {exc}", style="yellow")
 
 
+def _read_file_at_sha(path: str) -> str:
+    """Read a file's content at the currently checked-out commit.
+
+    Returns the file content as a string, or empty string if the file
+    doesn't exist. Used to read JOURNEYS.md and BACKLOG.md at the
+    milestone's detached HEAD.
+    """
+    try:
+        if os.path.isfile(path):
+            with open(path, "r", encoding="utf-8") as f:
+                return f.read()
+    except OSError:
+        pass
+    return ""
+
+
+def _build_validation_scope(boundary: dict) -> tuple[str, str]:
+    """Determine the validation scope for a milestone.
+
+    Reads JOURNEYS.md and BACKLOG.md at the currently checked-out SHA.
+    If eligible journeys exist, returns a journey-based scope; otherwise
+    falls back to the legacy three-part (A/B/C) scope.
+
+    Returns (validation_scope, results_tag_instructions) — two prompt
+    fragments ready for interpolation into VALIDATOR_MILESTONE_PROMPT.
+    """
+    journeys_content = _read_file_at_sha("JOURNEYS.md")
+    backlog_content = _read_file_at_sha("BACKLOG.md")
+
+    selected = []
+    if journeys_content and backlog_content:
+        selected = select_journeys_for_milestone(journeys_content, backlog_content)
+
+    if selected:
+        journey_list = format_journey_prompt_block(selected)
+        journey_ids = ", ".join(j.id for j in selected)
+        log("validator", f"Journey-based validation: running {journey_ids}", style="cyan")
+        scope = VALIDATOR_JOURNEY_SECTION.format(journey_list=journey_list)
+        return scope, VALIDATOR_JOURNEY_RESULTS_TAGS
+
+    log("validator", "No eligible journeys found — using legacy A/B/C scope", style="dim")
+    scope = VALIDATOR_LEGACY_SCOPE.format(milestone_name=boundary["name"])
+    return scope, VALIDATOR_LEGACY_RESULTS_TAGS
+
+
 def _validate_milestone(boundary: dict, project_name: str, save_traces: bool = False) -> None:
     """Build a container, validate at the milestone's end SHA, and leave running.
 
     Flow: checkout milestone SHA (detached HEAD) → set COMPOSE_PROJECT_NAME for
-    container isolation → run Copilot validation → collect any commits Copilot made →
-    return to main → cherry-pick commits onto main → push.
+    container isolation → read JOURNEYS.md + BACKLOG.md to determine validation
+    scope → run Copilot validation → collect any commits Copilot made → return
+    to main → cherry-pick commits onto main → push.
     Containers are left running so the app is browsable after validation.
     """
     now = datetime.now().strftime("%H:%M:%S")
@@ -320,10 +386,14 @@ def _validate_milestone(boundary: dict, project_name: str, save_traces: bool = F
     if has_frontend and save_traces:
         ui_instructions += "\n\n" + VALIDATOR_PLAYWRIGHT_TRACE_SECTION
 
+    validation_scope, results_tag_instructions = _build_validation_scope(boundary)
+
     prompt = VALIDATOR_MILESTONE_PROMPT.format(
         milestone_name=boundary["name"],
         milestone_start_sha=boundary["start_sha"],
         milestone_end_sha=boundary["end_sha"],
+        validation_scope=validation_scope,
+        results_tag_instructions=results_tag_instructions,
         ui_testing_instructions=ui_instructions,
         compose_project_name=compose_name,
         app_port=app_port,

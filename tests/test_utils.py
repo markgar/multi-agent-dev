@@ -161,6 +161,21 @@ def test_agent_script_omits_model_when_unset(monkeypatch):
     assert "COPILOT_MODEL" not in script
 
 
+def test_agent_script_uses_explicit_model_over_env(monkeypatch):
+    """When model param is provided, it overrides the env var."""
+    monkeypatch.setenv("COPILOT_MODEL", "gpt-5.3-codex")
+    script = build_agent_script("/path/to/reviewer", "commitwatch", "macos", model="claude-sonnet-4.6")
+    assert "export COPILOT_MODEL='claude-sonnet-4.6'" in script
+    assert "gpt-5.3-codex" not in script
+
+
+def test_agent_script_explicit_model_when_env_unset(monkeypatch):
+    """Explicit model works even when COPILOT_MODEL is not in env."""
+    monkeypatch.delenv("COPILOT_MODEL", raising=False)
+    script = build_agent_script("/path/to/reviewer", "commitwatch", "macos", model="claude-opus-4.6")
+    assert "export COPILOT_MODEL='claude-opus-4.6'" in script
+
+
 # --- milestone filtering ---
 
 def test_find_unreviewed_milestones_excludes_already_reviewed():
@@ -212,6 +227,14 @@ def test_validate_model_accepts_opus_fast_cli_name():
     assert validate_model("claude-opus-4.6-fast") == "claude-opus-4.6-fast"
 
 
+def test_validate_model_accepts_sonnet_friendly_name():
+    assert validate_model("Claude Sonnet 4.6") == "claude-sonnet-4.6"
+
+
+def test_validate_model_accepts_sonnet_cli_name():
+    assert validate_model("claude-sonnet-4.6") == "claude-sonnet-4.6"
+
+
 def test_validate_model_rejects_unknown_model():
     with pytest.raises(SystemExit) as exc_info:
         validate_model("GPT-4.1")
@@ -225,6 +248,60 @@ def test_allowed_models_accepts_both_formats():
     assert "claude-opus-4.6" in ALLOWED_MODELS
     assert "Claude Opus 4.6 Fast" in ALLOWED_MODELS
     assert "claude-opus-4.6-fast" in ALLOWED_MODELS
+    assert "Claude Sonnet 4.6" in ALLOWED_MODELS
+    assert "claude-sonnet-4.6" in ALLOWED_MODELS
+
+
+# --- resolve_agent_models ---
+
+from agentic_dev.orchestrator import resolve_agent_models
+
+
+def test_resolve_agent_models_all_default():
+    """When no overrides given, every role gets the default model."""
+    result = resolve_agent_models("claude-opus-4.6")
+    assert result["builder"] == "claude-opus-4.6"
+    assert result["reviewer"] == "claude-opus-4.6"
+    assert result["milestone_reviewer"] == "claude-opus-4.6"
+    assert result["tester"] == "claude-opus-4.6"
+    assert result["validator"] == "claude-opus-4.6"
+    assert result["planner"] == "claude-opus-4.6"
+
+
+def test_resolve_agent_models_with_reviewer_override():
+    """Reviewer override is applied; other roles get default."""
+    result = resolve_agent_models("claude-opus-4.6", reviewer_model="claude-sonnet-4.6")
+    assert result["reviewer"] == "claude-sonnet-4.6"
+    assert result["builder"] == "claude-opus-4.6"
+    assert result["planner"] == "claude-opus-4.6"
+
+
+def test_resolve_agent_models_validates_overrides():
+    """Invalid override model raises SystemExit."""
+    with pytest.raises(SystemExit):
+        resolve_agent_models("claude-opus-4.6", builder_model="invalid-model")
+
+
+def test_resolve_agent_models_accepts_friendly_name_override():
+    """Friendly names in overrides are normalized to CLI names."""
+    result = resolve_agent_models("claude-opus-4.6", tester_model="Claude Sonnet 4.6")
+    assert result["tester"] == "claude-sonnet-4.6"
+
+
+def test_resolve_agent_models_multiple_overrides():
+    """Multiple per-agent overrides work independently."""
+    result = resolve_agent_models(
+        "gpt-5.3-codex",
+        reviewer_model="claude-sonnet-4.6",
+        milestone_reviewer_model="claude-opus-4.6",
+        validator_model="claude-sonnet-4.6",
+    )
+    assert result["builder"] == "gpt-5.3-codex"
+    assert result["reviewer"] == "claude-sonnet-4.6"
+    assert result["milestone_reviewer"] == "claude-opus-4.6"
+    assert result["tester"] == "gpt-5.3-codex"
+    assert result["validator"] == "claude-sonnet-4.6"
+    assert result["planner"] == "gpt-5.3-codex"
 
 
 # --- auth failure detection ---
