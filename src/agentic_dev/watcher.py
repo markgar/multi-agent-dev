@@ -75,6 +75,14 @@ def _initialize_watcher_checkpoint() -> str:
 def _should_skip_commit(commit_sha: str) -> str | None:
     """Return a skip reason if the commit should not be reviewed, or None to review it."""
     if is_merge_commit(commit_sha):
+        # Skip merge commits UNLESS they are milestone merges (which should be reviewed)
+        msg_result = run_cmd(
+            ["git", "log", "-1", "--format=%s", commit_sha],
+            capture=True,
+        )
+        msg = msg_result.stdout.strip() if msg_result.returncode == 0 else ""
+        if "[builder] Merge milestone-" in msg:
+            return None  # Don't skip — review this milestone merge
         return "merge commit"
     if is_reviewer_only_commit(commit_sha):
         return "reviewer commit"

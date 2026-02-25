@@ -177,9 +177,12 @@ Runs via `build --loop --builder-id N --num-builders M`. Multiple builders can r
 
 1. **Claim a story:** Find the next eligible unclaimed (`[ ]`) story in BACKLOG.md where all dependencies are completed (`[x]`). Mark it `[N]` (where N is the builder number), commit, and push. If the push fails (another builder claimed it), pull and try again.
 2. **Plan the milestone:** Call the milestone planner to expand the claimed story into a milestone file in `milestones/`.
-3. **Build it:** Fix bugs and review findings first, then complete all tasks in the milestone.
-4. **Complete the story:** Mark the story `[x]` in BACKLOG.md, commit, push.
-5. **Loop:** Go back to step 1. If no eligible stories remain, write `logs/builder-N.done` and exit.
+3. **Build it:** Create a feature branch (`builder-N/milestone-NN`), fix bugs and review findings first, then complete all tasks in the milestone. All per-task commits go to the feature branch.
+4. **Merge to main:** Merge the feature branch to main with `--no-ff`, tag the merge commit `milestone-NN`, and delete the branch.
+5. **Complete the story:** Mark the story `[x]` in BACKLOG.md, commit, push.
+6. **Loop:** Go back to step 1. If no eligible stories remain, write `logs/builder-N.done` and exit.
+
+**Branch isolation:** Each milestone is built on a feature branch (`builder-N/milestone-NN`). The builder creates the branch after planning (so milestone files land on main where all agents see them), pushes per-task commits to the branch, and merges to main with `--no-ff` when complete. The merge commit is tagged `milestone-NN` and recorded in `logs/milestones.log`. All other agents only see main, which contains only completed milestones. This eliminates dirty-main problems where downstream agents (validator, tester) see half-built milestones.
 
 **Bug/finding partitioning (multi-builder):** When multiple builders run in parallel (`--num-builders M` with M > 1), bugs and findings are partitioned by the last digit of the filename timestamp. Each builder only fixes items where `last_digit % num_builders == (builder_id - 1)`. For example, with 2 builders: builder-1 fixes filenames ending in 0, 2, 4, 6, 8; builder-2 fixes those ending in 1, 3, 5, 7, 9. This prevents two builders from racing to fix the same bug or finding. With a single builder, no filtering is applied. The partitioning is enforced both in the builder's LLM prompt and in the Python shutdown logic that counts remaining work.
 
@@ -199,9 +202,11 @@ Runs continuously via `commitwatch`, launched automatically by `go`. Polls for n
 
 **Persistent checkpoint:** The last-reviewed commit SHA is saved to `logs/reviewer.checkpoint` after each commit is processed. On restart, the watcher resumes from the checkpoint — no commits are ever missed or re-reviewed.
 
-**Filtering:** Merge commits and the reviewer's own commits (reviews/-only changes) are automatically skipped to avoid wasted work.
+**Filtering:** Merge commits (except milestone merges) and the reviewer's own commits (reviews/-only changes) are automatically skipped to avoid wasted work.
 
-For each new commit detected, the watcher enumerates all commits since the last checkpoint (`git log {last_sha}..HEAD --format=%H --reverse`), filters out skippable commits (merges, reviewer-only, coordination-only), and reviews the remaining ones. If there is a single reviewable commit, it reviews that commit individually. If there are multiple reviewable commits (e.g. the builder pushed several commits while the reviewer was busy), it reviews them as a single batch using the combined diff — one Copilot call instead of N:
+For each new commit detected, the watcher enumerates all commits since the last checkpoint (`git log {last_sha}..HEAD --format=%H --reverse`), filters out skippable commits (non-milestone merges, reviewer-only, coordination-only), and reviews the remaining ones. If there is a single reviewable commit, it reviews that commit individually. If there are multiple reviewable commits (e.g. the builder pushed several commits while the reviewer was busy), it reviews them as a single batch using the combined diff — one Copilot call instead of N:
+
+**Merge commit reviews:** With branch isolation, per-task builder commits no longer appear on main. The watcher reviews milestone merge commits (`[builder] Merge milestone-*`) when they land on main. This provides the full milestone diff as a single review, complementing the milestone reviewer's deeper analysis.
 
 **Severity-based filing:** Per-commit and batch reviews use a split filing strategy. [bug] and [security] issues are filed as `finding-<timestamp>.md` so the builder sees and fixes them immediately. [cleanup] and [robustness] issues are filed as `note-<timestamp>.md` — per-commit observations that the milestone reviewer later evaluates for recurring patterns. This reduces noise while ensuring critical issues reach the builder without delay.
 
@@ -216,7 +221,7 @@ For each new commit detected, the watcher enumerates all commits since the last 
 **Trigger:** Polls every 10 seconds for new commits  
 **Scope:** Per-commit diff for individual reviews; combined diff for batched reviews  
 **Checkpoint:** `logs/reviewer.checkpoint` (last reviewed commit SHA)  
-**Skips:** Merge commits, coordination-only commits (milestone files only, or reviews/ and bugs/ only)  
+**Skips:** Non-milestone merge commits, coordination-only commits (milestone files only, or reviews/ and bugs/ only)  
 **Runs from:** `reviewer/` clone  
 **Shutdown:** Checks for `logs/builder.done` each cycle; exits when builder is done  
 **Writes code:** [doc] fixes only (comments, README). Never changes application logic or DEPLOY.md directly.
@@ -352,6 +357,7 @@ The builder updates the project's copilot-instructions.md whenever project struc
 - The **Validator** builds the app in a Docker container after each milestone, starts it, and tests it against SPEC.md acceptance criteria. Files bugs in `bugs/`. Persists deployment knowledge in DEPLOY.md. Exits when the builder finishes.
 - Agents never edit or delete existing files in `reviews/` or `bugs/` — they only create new files. This eliminates merge conflicts on those directories.
 - **Bug/finding partitioning:** When multiple builders run concurrently, each builder is assigned a subset of bugs and findings based on the last digit of the filename's timestamp. The rule is `last_digit % num_builders == (builder_id - 1)`. This partitioning is enforced both in the builder's LLM prompt (which tells Copilot which items to fix) and in the Python shutdown logic (which counts only assigned items as remaining work). This eliminates races where two builders attempt to fix the same bug or review finding simultaneously.
+- **Branch model:** Builders push code to per-milestone feature branches (`builder-N/milestone-NN`), never directly to main. Coordination artifacts (BACKLOG.md claims/completions, milestone files from the planner) are committed on main before branching. Main receives completed milestones via `--no-ff` merge commits, each tagged `milestone-NN`.
 - All agents run `git pull --rebase` before pushing to avoid merge conflicts. Since `reviews/` and `bugs/` are append-only directories (no file is ever edited), concurrent new-file creations never conflict.
 - `SPEC.md` is the source of truth for technical decisions. `BACKLOG.md` is the story queue. Edit either anytime to steer the project — run `plan` to adapt.
 - Each milestone file in `milestones/` is exclusively owned by one builder — no two builders edit the same file.

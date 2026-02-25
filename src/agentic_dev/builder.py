@@ -8,7 +8,13 @@ from typing import Annotated
 
 import typer
 
-from agentic_dev.git_helpers import git_push_with_retry
+from agentic_dev.git_helpers import (
+    create_milestone_branch,
+    delete_milestone_branch,
+    ensure_on_main,
+    git_push_with_retry,
+    merge_milestone_to_main,
+)
 from agentic_dev.milestone import (
     get_all_milestones,
     get_last_milestone_end_sha,
@@ -324,14 +330,16 @@ def classify_remaining_work(bugs: int, reviews: int, tasks: int, agents_idle: bo
 
 
 def _record_completed_milestone(
-    milestone_file: str, agent_name: str,
+    milestone_file: str, agent_name: str, merge_sha: str = "",
 ) -> None:
-    """Pull latest, check if this builder's milestone is complete, record its boundary.
+    """Check if this builder's milestone is complete and record its boundary.
 
-    Only records the specific milestone this builder was working on.
-    Other builders' milestones are their responsibility to record.
+    When merge_sha is provided (loop mode with branches), uses the merge commit
+    directly. When omitted (legacy non-loop mode), pulls latest and reads HEAD.
     """
-    run_cmd(["git", "pull", "--rebase", "-q"], quiet=True)
+    if not merge_sha:
+        # Legacy/non-loop fallback: read HEAD on main
+        run_cmd(["git", "pull", "--rebase", "-q"], quiet=True)
 
     ms = parse_milestone_file(milestone_file)
     if not ms or not ms["all_done"]:
@@ -339,13 +347,15 @@ def _record_completed_milestone(
         return
 
     start_sha = get_last_milestone_end_sha()
-    head_result = run_cmd(["git", "rev-parse", "HEAD"], capture=True)
-    head_sha = head_result.stdout.strip() if head_result.returncode == 0 else ""
+    end_sha = merge_sha if merge_sha else ""
+    if not end_sha:
+        head_result = run_cmd(["git", "rev-parse", "HEAD"], capture=True)
+        end_sha = head_result.stdout.strip() if head_result.returncode == 0 else ""
 
-    record_milestone_boundary(ms["name"], start_sha, head_sha)
+    record_milestone_boundary(ms["name"], start_sha, end_sha)
     log(
         agent_name,
-        f"Recorded milestone boundary: {ms['name']} ({start_sha[:8]}..{head_sha[:8]})",
+        f"Recorded milestone boundary: {ms['name']} ({start_sha[:8]}..{end_sha[:8]})",
         style="cyan",
     )
 
@@ -500,6 +510,7 @@ def build(
     # Loop mode: claim-and-build pattern
     while True:
         state.cycle_count += 1
+        ensure_on_main(agent_name)
 
         story = claim_next_story(agent_name, builder_id)
         if story is None:
@@ -558,6 +569,14 @@ def build(
         # Build each milestone part sequentially
         build_failed = False
         for milestone_file in new_milestones:
+            milestone_basename = os.path.splitext(os.path.basename(milestone_file))[0]
+
+            # Create feature branch for this milestone
+            branch_name = create_milestone_branch(builder_id, milestone_basename, agent_name)
+            if not branch_name:
+                build_failed = True
+                break
+
             log(agent_name, "")
             log(agent_name, f"[Builder] Starting work on {milestone_file}...", style="green")
             log(agent_name, "")
@@ -573,10 +592,20 @@ def build(
                 log(agent_name, "======================================", style="bold red")
                 log(agent_name, " Builder failed! Check errors above", style="bold red")
                 log(agent_name, "======================================", style="bold red")
+                ensure_on_main(agent_name)
                 build_failed = True
                 break
 
-            _record_completed_milestone(milestone_file, agent_name)
+            # Merge feature branch back to main
+            merge_sha = merge_milestone_to_main(branch_name, milestone_basename, agent_name)
+            if not merge_sha:
+                log(agent_name, "Merge to main failed. Stopping builder.", style="bold red")
+                ensure_on_main(agent_name)
+                build_failed = True
+                break
+
+            _record_completed_milestone(milestone_file, agent_name, merge_sha=merge_sha)
+            delete_milestone_branch(branch_name, agent_name)
 
             log(agent_name, "")
             log(agent_name, "======================================", style="bold cyan")
@@ -584,6 +613,8 @@ def build(
             log(agent_name, "======================================", style="bold cyan")
 
         if build_failed:
+            ensure_on_main(agent_name)
+            unclaim_story(story["number"], agent_name)
             write_builder_done(builder_id)
             return
 

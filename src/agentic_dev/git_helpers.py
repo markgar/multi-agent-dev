@@ -115,3 +115,144 @@ def is_merge_commit(commit_sha: str) -> bool:
         capture=True,
     )
     return result.returncode == 0
+
+
+# ============================================
+# Branch isolation helpers
+# ============================================
+
+
+def ensure_on_main(agent_name: str) -> None:
+    """Ensure the working directory is on the main branch.
+
+    Called at the start of each builder loop iteration to handle crash recovery —
+    if the builder restarted while on a feature branch, this returns to main.
+    Also cleans up any stale local feature branches from prior runs.
+    """
+    result = run_cmd(["git", "rev-parse", "--abbrev-ref", "HEAD"], capture=True)
+    current_branch = result.stdout.strip() if result.returncode == 0 else ""
+    if current_branch != "main":
+        log(agent_name, f"On branch '{current_branch}', switching to main...", style="yellow")
+        run_cmd(["git", "checkout", "main"], quiet=True)
+
+    run_cmd(["git", "pull", "--rebase", "-q"], quiet=True)
+
+    # Clean up stale local feature branches (builder-*/milestone-*)
+    branch_result = run_cmd(
+        ["git", "branch", "--list", "builder-*/milestone-*"],
+        capture=True,
+    )
+    if branch_result.returncode == 0 and branch_result.stdout.strip():
+        for line in branch_result.stdout.strip().split("\n"):
+            branch = line.strip().lstrip("* ")
+            if branch:
+                run_cmd(["git", "branch", "-D", branch], quiet=True)
+                log(agent_name, f"Cleaned up stale branch: {branch}", style="yellow")
+
+
+def create_milestone_branch(builder_id: int, milestone_name: str, agent_name: str) -> str:
+    """Create a feature branch for a milestone and set upstream tracking.
+
+    Must be called while on main. Creates builder-{id}/{milestone_name} branch,
+    pushes it to origin with tracking set. Returns the branch name.
+    """
+    branch_name = f"builder-{builder_id}/{milestone_name}"
+
+    result = run_cmd(["git", "checkout", "-b", branch_name], capture=True)
+    if result.returncode != 0:
+        log(agent_name, f"Failed to create branch {branch_name}", style="red")
+        return ""
+
+    push_result = run_cmd(
+        ["git", "push", "-u", "origin", branch_name],
+        capture=True,
+    )
+    if push_result.returncode != 0:
+        log(agent_name, f"Failed to push branch {branch_name} to origin", style="red")
+        # Stay on the branch — local work can still proceed
+        # The LLM will need to push manually on first commit
+
+    log(agent_name, f"Created branch: {branch_name}", style="cyan")
+    return branch_name
+
+
+def merge_milestone_to_main(
+    branch_name: str, milestone_name: str, agent_name: str, max_attempts: int = 5,
+) -> str:
+    """Merge a milestone branch to main with a tagged merge commit.
+
+    Flow per attempt:
+    1. git checkout main
+    2. git pull --rebase
+    3. git merge --no-ff {branch} -m "[builder] Merge {milestone_name}"
+    4. git tag {milestone_name} HEAD
+    5. git push origin main --tags
+    On push failure: reset to origin/main, delete local tag, retry.
+    On merge conflict: abort merge, pull, retry.
+
+    Returns the merge commit SHA on success, empty string on failure.
+    """
+    for attempt in range(1, max_attempts + 1):
+        run_cmd(["git", "checkout", "main"], quiet=True)
+        pull = run_cmd(["git", "pull", "--rebase", "-q"], capture=True)
+        if pull.returncode != 0:
+            run_cmd(["git", "rebase", "--abort"], quiet=True)
+            run_cmd(["git", "pull", "--rebase", "-q"], quiet=True)
+
+        merge_result = run_cmd(
+            ["git", "merge", "--no-ff", branch_name, "-m",
+             f"[builder] Merge {milestone_name}"],
+            capture=True,
+        )
+        if merge_result.returncode != 0:
+            log(
+                agent_name,
+                f"Merge conflict (attempt {attempt}/{max_attempts}), retrying...",
+                style="yellow",
+            )
+            run_cmd(["git", "merge", "--abort"], quiet=True)
+            if attempt < max_attempts:
+                time.sleep(5)
+            continue
+
+        # Tag the merge commit
+        run_cmd(["git", "tag", milestone_name, "HEAD"], quiet=True)
+
+        push_result = run_cmd(
+            ["git", "push", "origin", "main", "--tags"],
+            capture=True,
+        )
+        if push_result.returncode == 0:
+            sha_result = run_cmd(["git", "rev-parse", "HEAD"], capture=True)
+            merge_sha = sha_result.stdout.strip() if sha_result.returncode == 0 else ""
+            log(
+                agent_name,
+                f"Merged {branch_name} to main (tag: {milestone_name}, sha: {merge_sha[:8]})",
+                style="bold cyan",
+            )
+            return merge_sha
+
+        # Push failed — another agent pushed to main. Reset and retry.
+        log(
+            agent_name,
+            f"Push rejected after merge (attempt {attempt}/{max_attempts}), resetting...",
+            style="yellow",
+        )
+        run_cmd(["git", "tag", "-d", milestone_name], quiet=True)
+        run_cmd(["git", "reset", "--hard", "origin/main"], quiet=True)
+        if attempt < max_attempts:
+            time.sleep(5)
+
+    log(agent_name, f"Failed to merge {branch_name} after {max_attempts} attempts.", style="red")
+    return ""
+
+
+def delete_milestone_branch(branch_name: str, agent_name: str) -> None:
+    """Delete a milestone branch locally and from origin.
+
+    Best-effort — swallows failures since the branch may already be gone
+    (e.g. from a prior cleanup or manual deletion).
+    """
+    run_cmd(["git", "branch", "-d", branch_name], quiet=True)
+    run_cmd(["git", "push", "origin", "--delete", branch_name], quiet=True)
+    log(agent_name, f"Deleted branch: {branch_name}", style="cyan")
