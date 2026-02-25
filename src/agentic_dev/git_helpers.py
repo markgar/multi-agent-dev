@@ -51,8 +51,8 @@ def git_push_with_retry(agent_name: str = "", max_attempts: int = 3, backoff: in
 
 SKIP_ONLY_FILES = {"TASKS.md", "BACKLOG.md"}
 
-# Paths under these directories are coordination-only (reviews/, bugs/, milestones/)
-_COORDINATION_DIRS = ("reviews/", "bugs/")
+# Paths under these directories are coordination-only (reviews/, milestones/)
+_COORDINATION_DIRS = ("reviews/",)
 
 
 def is_reviewer_only_files(file_list: list[str]) -> bool:
@@ -67,7 +67,7 @@ def is_reviewer_only_files(file_list: list[str]) -> bool:
 def is_coordination_only_files(file_list: list[str]) -> bool:
     """Check if every file in the list is a coordination file.
 
-    Coordination files: TASKS.md, BACKLOG.md, any file under reviews/, bugs/,
+    Coordination files: TASKS.md, BACKLOG.md, any file under reviews/
     or milestones/. Pure function: returns True if the commit should be skipped
     because it only touches coordination files with no code changes.
     """

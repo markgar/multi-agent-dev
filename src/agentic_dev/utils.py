@@ -361,3 +361,56 @@ def count_partitioned_open_items(
         if item_id and item_id[-1].isdigit()
         and int(item_id[-1]) % num_builders == (builder_id - 1)
     )
+
+
+def _parse_gh_issue_numbers(json_output: str) -> list[int]:
+    """Extract issue numbers from gh issue list JSON output.
+
+    Pure function: parses JSON array of objects with 'number' keys.
+    Returns sorted list of issue numbers, or empty list on parse error.
+    """
+    import json
+    try:
+        issues = json.loads(json_output)
+    except (json.JSONDecodeError, TypeError):
+        return []
+    numbers = []
+    for issue in issues:
+        if isinstance(issue, dict) and "number" in issue:
+            numbers.append(issue["number"])
+    numbers.sort()
+    return numbers
+
+
+def count_open_bug_issues(builder_id: int = 1, num_builders: int = 1) -> int:
+    """Count open GitHub Issues labeled 'bug' assigned to this builder.
+
+    Assignment is by issue number modulo: number % num_builders == (builder_id - 1).
+    When num_builders is 1, returns total open bug issue count.
+    """
+    result = run_cmd(
+        ["gh", "issue", "list", "--label", "bug", "--state", "open",
+         "--json", "number", "--limit", "200"],
+        capture=True,
+    )
+    if result.returncode != 0:
+        return 0
+    numbers = _parse_gh_issue_numbers(result.stdout)
+    if num_builders <= 1:
+        return len(numbers)
+    return sum(
+        1 for n in numbers
+        if n % num_builders == (builder_id - 1)
+    )
+
+
+def ensure_bug_label_exists() -> None:
+    """Create the 'bug' label on the GitHub repo if it doesn't already exist.
+
+    Idempotent: silently succeeds if the label already exists.
+    """
+    run_cmd(
+        ["gh", "label", "create", "bug", "--description", "Bug report",
+         "--color", "d73a4a", "--force"],
+        quiet=True,
+    )

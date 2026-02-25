@@ -14,6 +14,7 @@ from agentic_dev.utils import (
 from agentic_dev.git_helpers import is_reviewer_only_files, is_coordination_only_files
 from agentic_dev.terminal import build_agent_script
 from agentic_dev.utils import count_open_items_in_dir, count_partitioned_open_items, _extract_item_ids
+from agentic_dev.utils import _parse_gh_issue_numbers
 from agentic_dev.milestone_reviewer import find_unreviewed_milestones
 from agentic_dev.tester import find_untested_milestones
 
@@ -82,16 +83,18 @@ def test_reviews_only_is_coordination_only():
     assert is_coordination_only_files(["reviews/finding-20260215-120000.md"]) is True
 
 
-def test_bugs_only_commit_is_skipped():
-    assert is_coordination_only_files(["bugs/bug-20260215-120000.md"]) is True
+def test_bugs_commit_is_no_longer_coordination_only():
+    """bugs/ is not a coordination dir now that bugs use GH Issues."""
+    assert is_coordination_only_files(["bugs/bug-20260215-120000.md"]) is False
 
 
 def test_mixed_coordination_files_are_skipped():
     assert is_coordination_only_files(["TASKS.md", "reviews/finding-20260215-120000.md"]) is True
 
 
-def test_bugs_and_reviews_coordination_only():
-    assert is_coordination_only_files(["bugs/fixed-20260215-120000.md", "reviews/resolved-20260215-110000.md"]) is True
+def test_bugs_and_reviews_mixed_not_coordination_only():
+    """bugs/ files are no longer coordination-only; reviews/ still are."""
+    assert is_coordination_only_files(["bugs/fixed-20260215-120000.md", "reviews/resolved-20260215-110000.md"]) is False
 
 
 def test_coordination_with_code_is_not_skipped():
@@ -518,3 +521,32 @@ def test_single_builder_done_status():
         log_ages={"builder-1.log": 2.0},
         timeout_minutes=30.0,
     ) is True
+
+
+# --- _parse_gh_issue_numbers (pure function) ---
+
+
+def test_parse_gh_issue_numbers_empty_json():
+    assert _parse_gh_issue_numbers("[]") == []
+
+
+def test_parse_gh_issue_numbers_valid():
+    assert _parse_gh_issue_numbers('[{"number":1},{"number":5},{"number":12}]') == [1, 5, 12]
+
+
+def test_parse_gh_issue_numbers_invalid_json():
+    assert _parse_gh_issue_numbers("not json") == []
+
+
+def test_parse_gh_issue_numbers_empty_string():
+    assert _parse_gh_issue_numbers("") == []
+
+
+def test_parse_gh_issue_numbers_missing_number_key():
+    assert _parse_gh_issue_numbers('[{"title":"bug"}]') == []
+
+
+def test_parse_gh_issue_numbers_mixed_entries():
+    """Entries without a 'number' key are skipped."""
+    result = _parse_gh_issue_numbers('[{"number":3},{"title":"oops"},{"number":7}]')
+    assert result == [3, 7]

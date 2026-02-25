@@ -8,7 +8,7 @@ re-exports every constant so existing ``from agentic_dev.prompts import X``
 imports continue to work unchanged.
 """
 
-from agentic_dev.prompts.bootstrap import BOOTSTRAP_PROMPT, LOCAL_BOOTSTRAP_PROMPT
+from agentic_dev.prompts.bootstrap import BOOTSTRAP_PROMPT
 from agentic_dev.prompts.builder import BUILDER_PROMPT
 from agentic_dev.prompts.copilot_instructions import (
     COPILOT_INSTRUCTIONS_PROMPT,
@@ -43,7 +43,6 @@ __all__ = [
     "BACKLOG_ORDERING_PROMPT",
     "BACKLOG_QUALITY_PROMPT",
     "BOOTSTRAP_PROMPT",
-    "LOCAL_BOOTSTRAP_PROMPT",
     "BUILDER_PROMPT",
     "COPILOT_INSTRUCTIONS_PROMPT",
     "COPILOT_INSTRUCTIONS_TEMPLATE",

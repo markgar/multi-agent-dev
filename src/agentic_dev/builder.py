@@ -31,7 +31,7 @@ from agentic_dev.sentinel import (
     load_branch_review_head,
     write_builder_done,
 )
-from agentic_dev.utils import count_open_items_in_dir, count_partitioned_open_items, log, run_cmd, run_copilot
+from agentic_dev.utils import count_open_bug_issues, count_partitioned_open_items, log, run_cmd, run_copilot
 
 
 def register(app: typer.Typer) -> None:
@@ -284,15 +284,18 @@ def _build_partition_filter(builder_id: int, num_builders: int) -> str:
     """Build the prompt text that tells this builder which bugs/findings to fix.
 
     When num_builders is 1, returns empty string (no filtering).
-    Otherwise returns a sentence listing the assigned last digits.
+    Otherwise returns a sentence describing the issue-number modulo rule for bugs
+    and the filename last-digit rule for review findings.
     """
     if num_builders <= 1:
         return ""
-    assigned = [d for d in range(10) if d % num_builders == (builder_id - 1)]
-    digits_str = ", ".join(str(d) for d in assigned)
     return (
-        f"You are builder {builder_id} of {num_builders}. Only fix bugs/findings "
-        f"whose filename ends in one of these digits (before `.md`): {digits_str}. "
+        f"You are builder {builder_id} of {num_builders}. "
+        f"For bug issues: only fix issues whose issue number satisfies "
+        f"`number % {num_builders} == {builder_id - 1}`. "
+        f"For review findings: only fix findings whose filename ends in one of these "
+        f"digits (before `.md`): "
+        f"{', '.join(str(d) for d in range(10) if d % num_builders == (builder_id - 1))}. "
         "Skip all others — another builder will handle them. "
     )
 
@@ -475,9 +478,7 @@ def _check_remaining_work(
     while wait_cycle < _AGENT_WAIT_MAX_CYCLES:
         run_cmd(["git", "pull", "--rebase", "-q"], quiet=True)
 
-        remaining_bugs = count_partitioned_open_items(
-            "bugs", "bug-", "fixed-", builder_id, num_builders,
-        )
+        remaining_bugs = count_open_bug_issues(builder_id, num_builders)
         remaining_reviews = count_partitioned_open_items(
             "reviews", "finding-", "resolved-", builder_id, num_builders,
         )

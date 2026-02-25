@@ -178,10 +178,10 @@ REVIEWER_MILESTONE_PROMPT = (
 # ============================================
 
 _BRANCH_CONTEXT = (
-    "You are reviewing code on feature branch '{branch_name}'. All your commits "
-    "(review files in reviews/) should be pushed to THIS branch, not main. The "
-    "builder is actively working on this branch — your findings will be visible "
-    "to them immediately via git pull on the branch. "
+    "You are reviewing code from feature branch '{branch_name}'. You are currently "
+    "on the main branch — do NOT checkout the feature branch. The diffs you review "
+    "use explicit commit SHAs so you can review from main. All your commits "
+    "(finding and note files in reviews/) go on main and are pushed to main. "
 )
 
 REVIEWER_BRANCH_COMMIT_PROMPT = (

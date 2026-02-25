@@ -154,30 +154,28 @@ def _review_branch_commits(
 
 
 def _watch_builder_branch(builder_id: int, branch_name: str) -> None:
-    """Attach to a builder's feature branch and review commits until branch disappears.
+    """Watch a builder's feature branch and review commits, staying on main.
 
-    Checks out the branch locally, polls for new commits, and reviews them.
-    When the branch is deleted from origin (merged or abandoned), returns.
+    The reviewer stays on main throughout — it fetches branch commits and
+    reviews them via SHA-based diffs. Findings are committed and pushed to
+    main so they are never orphaned when the builder merges/deletes the branch.
     """
     agent_name = f"reviewer-{builder_id}"
-    log(agent_name, f"Attaching to branch: {branch_name}", style="cyan")
+    log(agent_name, f"Watching branch: {branch_name} (reviewing from main)", style="cyan")
 
-    # Fetch and checkout the branch
+    # Ensure we're on main with latest
+    run_cmd(["git", "checkout", "main"], quiet=True)
+    run_cmd(["git", "pull", "--rebase", "-q"], quiet=True)
+
+    # Fetch the branch so we have its objects
     run_cmd(["git", "fetch", "origin", branch_name], quiet=True)
-    checkout_result = run_cmd(
-        ["git", "checkout", "-B", branch_name, f"origin/{branch_name}"],
-        capture=True,
-    )
-    if checkout_result.returncode != 0:
-        log(agent_name, f"Failed to checkout {branch_name}", style="red")
-        return
 
     # Determine starting point: checkpoint or branch base
     last_sha = load_reviewer_checkpoint(builder_id)
     if not last_sha:
         # First time seeing this branch — start from the merge-base with main
         base_result = run_cmd(
-            ["git", "merge-base", "main", branch_name],
+            ["git", "merge-base", "main", f"origin/{branch_name}"],
             capture=True,
         )
         last_sha = base_result.stdout.strip() if base_result.returncode == 0 else ""
@@ -198,13 +196,13 @@ def _watch_builder_branch(builder_id: int, branch_name: str) -> None:
             log(agent_name, f"[{now}] Branch {branch_name} no longer on remote (merged or deleted).", style="cyan")
             break
 
-        # Pull latest commits on the branch
-        pull_result = run_cmd(["git", "pull", "--rebase", "-q"], capture=True)
-        if pull_result.returncode != 0:
-            run_cmd(["git", "rebase", "--abort"], quiet=True)
-            run_cmd(["git", "pull", "--rebase", "-q"], quiet=True)
+        # Fetch latest commits on the branch (stay on main)
+        run_cmd(["git", "fetch", "origin", branch_name], quiet=True)
 
-        head_result = run_cmd(["git", "rev-parse", "HEAD"], capture=True)
+        # Read the remote branch head via the fetched ref
+        head_result = run_cmd(
+            ["git", "rev-parse", f"origin/{branch_name}"], capture=True,
+        )
         current_head = head_result.stdout.strip() if head_result.returncode == 0 else ""
 
         if current_head and current_head != last_sha and last_sha:
@@ -217,8 +215,7 @@ def _watch_builder_branch(builder_id: int, branch_name: str) -> None:
 
         time.sleep(10)
 
-    # Branch disappeared — return to main
-    run_cmd(["git", "checkout", "main"], quiet=True)
+    # Branch disappeared — pull main to pick up the merged code
     run_cmd(["git", "pull", "--rebase", "-q"], quiet=True)
 
 

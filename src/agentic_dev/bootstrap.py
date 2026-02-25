@@ -5,7 +5,7 @@ from typing import Annotated
 
 import typer
 
-from agentic_dev.prompts import BOOTSTRAP_PROMPT, LOCAL_BOOTSTRAP_PROMPT
+from agentic_dev.prompts import BOOTSTRAP_PROMPT
 from agentic_dev.utils import (
     check_command,
     console,
@@ -70,15 +70,14 @@ def _resolve_description(description, spec_file):
     return description
 
 
-def _check_required_tools(local: bool) -> bool:
+def _check_required_tools() -> bool:
     """Verify required CLI tools are installed. Returns True if all present."""
     tools = [
         ("git", "brew install git", "winget install Git.Git", "sudo apt install git"),
+        ("gh", "brew install gh", "winget install GitHub.cli", "sudo apt install gh"),
         ("docker", "brew install --cask docker", "winget install Docker.DockerDesktop", "sudo apt install docker.io"),
         ("copilot", None, None, None),
     ]
-    if not local:
-        tools.insert(1, ("gh", "brew install gh", "winget install GitHub.cli", "sudo apt install gh"))
     for tool, install_mac, install_win, install_linux in tools:
         if not check_command(tool):
             console.print(f"ERROR: {tool} is not installed.", style="bold red")
@@ -96,28 +95,24 @@ def _check_required_tools(local: bool) -> bool:
     return True
 
 
-def _check_prerequisites(local=False):
+def _check_prerequisites():
     """Check all prerequisites (GitHub user, core tools, auth). Returns gh_user or None."""
-    if local:
-        gh_user = "local"
-    else:
-        result = run_cmd(["gh", "api", "user", "--jq", ".login"], capture=True)
-        gh_user = result.stdout.strip() if result.returncode == 0 else ""
-        if not gh_user:
-            console.print("ERROR: Could not determine GitHub username.", style="bold red")
-            console.print("Run: gh auth login", style="yellow")
-            return None
-
-    if not _check_required_tools(local):
+    result = run_cmd(["gh", "api", "user", "--jq", ".login"], capture=True)
+    gh_user = result.stdout.strip() if result.returncode == 0 else ""
+    if not gh_user:
+        console.print("ERROR: Could not determine GitHub username.", style="bold red")
+        console.print("Run: gh auth login", style="yellow")
         return None
 
-    if not local:
-        auth_result = run_cmd(["gh", "auth", "status"], quiet=True)
-        if auth_result.returncode != 0:
-            console.print("ERROR: GitHub CLI is not authenticated.", style="bold red")
-            console.print("Run: gh auth login", style="yellow")
-            return None
-        console.print("✓ gh auth  - OK (authenticated)", style="green")
+    if not _check_required_tools():
+        return None
+
+    auth_result = run_cmd(["gh", "auth", "status"], quiet=True)
+    if auth_result.returncode != 0:
+        console.print("ERROR: GitHub CLI is not authenticated.", style="bold red")
+        console.print("Run: gh auth login", style="yellow")
+        return None
+    console.print("✓ gh auth  - OK (authenticated)", style="green")
 
     return gh_user
 
@@ -138,7 +133,6 @@ separate clones of the project repo, each used by a different agent.
 | `milestone-reviewer/` | Milestone reviewer agent — cross-cutting review when milestones complete |
 | `tester/` | Tester agent — runs scoped tests after each milestone |
 | `validator/` | Validator agent — builds Docker containers and validates against spec |
-| `remote.git/` | Local bare git repo (local mode only; replaced by GitHub in production) |
 | `logs/` | Agent logs, checkpoints, and coordination signals |
 
 Each agent directory is an independent git clone of the same repo.
@@ -153,7 +147,6 @@ They coordinate through git push/pull and shared markdown files.
 | `milestones/` | Per-story milestone files — one file per story, owned by one builder |
 | `REQUIREMENTS.md` | Original user requirements (may be updated between sessions) |
 | `reviews/` | Directory-based review findings (one file per finding, never edited) |
-| `bugs/` | Directory-based bug reports (one file per bug, never edited) |
 | `DEPLOY.md` | Deployment knowledge accumulated by the validator |
 | `.github/copilot-instructions.md` | Coding guidelines and project conventions for the builder |
 
@@ -212,8 +205,8 @@ def _write_requirements_file(builder_dir: str, description: str) -> None:
 
 
 def _create_tracking_directories(builder_dir: str) -> None:
-    """Create reviews/ and bugs/ directories with .gitkeep files for directory-based tracking."""
-    for dirname in ("reviews", "bugs"):
+    """Create reviews/ directory with .gitkeep file for directory-based tracking."""
+    for dirname in ("reviews",):
         dirpath = os.path.join(builder_dir, dirname)
         os.makedirs(dirpath, exist_ok=True)
         gitkeep = os.path.join(dirpath, ".gitkeep")
@@ -223,34 +216,30 @@ def _create_tracking_directories(builder_dir: str) -> None:
     console.print("✓ Saved original requirements to REQUIREMENTS.md", style="green")
 
 
-def _clone_agent_copies(local: bool, gh_user: str, name: str) -> None:
+def _clone_agent_copies(gh_user: str, name: str) -> None:
     """Clone reviewer, tester, and validator copies from the repo."""
-    if local:
-        clone_source = os.path.join(os.getcwd(), "remote.git")
-    else:
-        clone_source = f"https://github.com/{gh_user}/{name}"
+    clone_source = f"https://github.com/{gh_user}/{name}"
     log("bootstrap", "")
     for agent_name in ("reviewer", "milestone-reviewer", "tester", "validator"):
         log("bootstrap", f"Cloning {agent_name} copy...", style="cyan")
         run_cmd(["git", "clone", clone_source, agent_name])
 
 
-def _scaffold_project(directory, name, description, gh_user, local=False):
+def _scaffold_project(directory, name, description, gh_user):
     """Create repo, write REQUIREMENTS.md, run Copilot bootstrap, clone reviewer/tester.
 
     directory: absolute path to the project parent directory.
-    name: project name (used for GitHub repo name in non-local mode).
+    name: project name (used for GitHub repo name).
     Returns True on success.
     """
-    if not local:
-        repo_check = run_cmd(["gh", "repo", "view", f"{gh_user}/{name}"], quiet=True)
-        if repo_check.returncode == 0:
-            console.print(f"ERROR: Repository {gh_user}/{name} already exists on GitHub.", style="bold red")
-            console.print(
-                f"Delete it first (gh repo delete {gh_user}/{name}) or choose a different name.",
-                style="yellow",
-            )
-            return False
+    repo_check = run_cmd(["gh", "repo", "view", f"{gh_user}/{name}"], quiet=True)
+    if repo_check.returncode == 0:
+        console.print(f"ERROR: Repository {gh_user}/{name} already exists on GitHub.", style="bold red")
+        console.print(
+            f"Delete it first (gh repo delete {gh_user}/{name}) or choose a different name.",
+            style="yellow",
+        )
+        return False
 
     os.makedirs(directory, exist_ok=True)
     os.chdir(directory)
@@ -258,22 +247,12 @@ def _scaffold_project(directory, name, description, gh_user, local=False):
     # Write workspace README immediately so the directory is self-documenting
     write_workspace_readme(os.getcwd())
 
-    # Create local bare repo when running in local mode (no GitHub)
-    if local:
-        bare_repo_path = os.path.join(os.getcwd(), "remote.git")
-        run_cmd(["git", "init", "--bare", bare_repo_path])
-        console.print("✓ Created local bare repo at remote.git", style="green")
-
     builder_dir = os.path.join(os.getcwd(), "builder")
     os.makedirs(builder_dir, exist_ok=True)
     _write_requirements_file(builder_dir, description)
     _create_tracking_directories(builder_dir)
 
-    if local:
-        remote_path = os.path.join(os.getcwd(), "remote.git")
-        prompt = LOCAL_BOOTSTRAP_PROMPT.format(description=description, remote_path=remote_path)
-    else:
-        prompt = BOOTSTRAP_PROMPT.format(description=description, gh_user=gh_user, name=name)
+    prompt = BOOTSTRAP_PROMPT.format(description=description, gh_user=gh_user, name=name)
     exit_code = run_copilot("bootstrap", prompt)
 
     if exit_code != 0:
@@ -283,7 +262,7 @@ def _scaffold_project(directory, name, description, gh_user, local=False):
         log("bootstrap", "======================================", style="bold red")
         return False
 
-    _clone_agent_copies(local, gh_user, name)
+    _clone_agent_copies(gh_user, name)
 
     write_workspace_readme(os.getcwd())
 
@@ -299,9 +278,8 @@ def run_bootstrap(
     name: str,
     description: str = None,
     spec_file: str = None,
-    local: bool = False,
 ) -> None:
-    """Internal: scaffold a new project — git repo, GitHub remote (or local bare repo), clone reviewer/tester copies.
+    """Internal: scaffold a new project — git repo, GitHub remote, clone reviewer/tester copies.
 
     directory: absolute path to the project parent directory.
     name: project name (used for GitHub repo name, display labels).
@@ -323,14 +301,13 @@ def run_bootstrap(
             console.print("Bootstrap cancelled.", style="yellow")
             return
 
-    gh_user = _check_prerequisites(local=local)
+    gh_user = _check_prerequisites()
     if not gh_user:
         return
 
-    mode_label = " (local mode)" if local else ""
     console.print()
-    console.print(f"Bootstrapping {name}{mode_label}...", style="cyan")
+    console.print(f"Bootstrapping {name}...", style="cyan")
     console.print()
 
-    if not _scaffold_project(directory, name, description, gh_user, local=local):
+    if not _scaffold_project(directory, name, description, gh_user):
         return

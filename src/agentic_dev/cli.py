@@ -7,7 +7,7 @@ from typing import Annotated
 import typer
 
 from agentic_dev.milestone import get_all_milestones
-from agentic_dev.utils import console
+from agentic_dev.utils import console, run_cmd
 from agentic_dev.version import get_version
 
 
@@ -122,8 +122,24 @@ def status() -> None:
         with open("BUGS.md", "r", encoding="utf-8") as f:
             console.print(f.read().rstrip())
 
-    if os.path.isdir("bugs"):
-        console.print("=== BUGS ===", style="bold red")
-        _print_dir_status("bugs", "bug-", "fixed-")
+    console.print("=== BUGS (GitHub Issues) ===", style="bold red")
+    gh_output = run_cmd(
+        ["gh", "issue", "list", "--label", "bug", "--state", "all",
+         "--json", "number,title,state", "--limit", "50"],
+        capture=True,
+    )
+    if gh_output:
+        import json as _json
+        try:
+            issues = _json.loads(gh_output)
+            open_issues = [i for i in issues if i.get("state") == "OPEN"]
+            closed_issues = [i for i in issues if i.get("state") == "CLOSED"]
+            console.print(f"  Open: {len(open_issues)}  Closed: {len(closed_issues)}")
+            for issue in open_issues:
+                console.print(f"  [ ] #{issue['number']}: {issue['title']}", style="red")
+        except (ValueError, KeyError):
+            console.print("  (could not parse gh issue list output)", style="yellow")
+    else:
+        console.print("  No bug issues found (or gh CLI not available).", style="yellow")
 
     console.print()

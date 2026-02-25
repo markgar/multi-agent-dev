@@ -17,7 +17,7 @@ from agentic_dev.prompts import (
 )
 from agentic_dev.sentinel import clear_builder_done, is_builder_done
 from agentic_dev.terminal import spawn_agent_in_terminal
-from agentic_dev.utils import console, log, pushd, run_cmd, run_copilot, validate_model
+from agentic_dev.utils import console, ensure_bug_label_exists, log, pushd, run_cmd, run_copilot, validate_model
 
 
 # Per-agent model map. Keys are agent roles, values are Copilot CLI model names.
@@ -71,13 +71,9 @@ def register(app: typer.Typer) -> None:
 def _detect_clone_source(parent_dir: str) -> str:
     """Determine the git clone source for creating missing agent clones.
 
-    Checks for a local bare repo first, then reads the remote URL from the
-    first builder clone found (builder-1/ or legacy builder/).
-    Returns empty string if neither is found.
+    Reads the remote URL from the first builder clone found (builder-1/ or
+    legacy builder/). Returns empty string if neither is found.
     """
-    bare_repo = os.path.join(parent_dir, "remote.git")
-    if os.path.exists(bare_repo):
-        return bare_repo
     # Check numbered builders first, then legacy builder/
     for candidate in ("builder-1", "builder"):
         candidate_dir = os.path.join(parent_dir, candidate)
@@ -89,18 +85,11 @@ def _detect_clone_source(parent_dir: str) -> str:
     return ""
 
 
-def _find_existing_repo(parent_dir: str, name: str, local: bool) -> str:
+def _find_existing_repo(parent_dir: str, name: str) -> str:
     """Check if the project repo already exists. Returns the clone URL/path, or empty string.
 
-    Local mode: checks for <parent_dir>/remote.git.
-    GitHub mode: checks for the repo on GitHub via gh repo view.
+    Checks for the repo on GitHub via gh repo view.
     """
-    if local:
-        bare_repo = os.path.join(parent_dir, "remote.git")
-        if os.path.exists(bare_repo):
-            return bare_repo
-        return ""
-
     result = run_cmd(["gh", "api", "user", "--jq", ".login"], capture=True)
     gh_user = result.stdout.strip() if result.returncode == 0 else ""
     if not gh_user:
@@ -246,6 +235,7 @@ def _launch_agents_and_build(
     if agent_models is None:
         agent_models = {}
     clear_builder_done(num_builders)
+    ensure_bug_label_exists()
 
     log("orchestrator", "")
     log("orchestrator", "======================================", style="bold magenta")
@@ -352,7 +342,7 @@ def _resolve_directory(directory: str) -> str | None:
 
 def _bootstrap_new_project(
     parent_dir: str, project_name: str, description: str, spec_file: str,
-    local: bool, start_dir: str, num_builders: int = 1,
+    start_dir: str, num_builders: int = 1,
     agent_models: AgentModels | None = None,
 ) -> None:
     """Bootstrap a brand-new project: create repo, plan, and launch agents."""
@@ -360,7 +350,7 @@ def _bootstrap_new_project(
         console.print("ERROR: New project requires --description or --spec-file.", style="bold red")
         return
 
-    run_bootstrap(directory=parent_dir, name=project_name, description=description, spec_file=spec_file, local=local)
+    run_bootstrap(directory=parent_dir, name=project_name, description=description, spec_file=spec_file)
     if not os.path.exists(os.path.join(parent_dir, "builder")):
         log("orchestrator", "ERROR: Bootstrap did not create the expected directory structure.", style="bold red")
         os.chdir(start_dir)
@@ -428,7 +418,6 @@ def go(
     model: Annotated[str, typer.Option(help="Copilot model to use (required). Allowed: gpt-5.3-codex, claude-opus-4.6, claude-opus-4.6-fast, claude-sonnet-4.6")],
     description: Annotated[str, typer.Option(help="What the project should do")] = None,
     spec_file: Annotated[str, typer.Option(help="Path to a markdown file containing the project requirements")] = None,
-    local: Annotated[bool, typer.Option(help="Use a local bare git repo instead of GitHub")] = False,
     name: Annotated[str, typer.Option(help="GitHub repo name (defaults to directory basename)")] = None,
     builders: Annotated[int, typer.Option(help="Number of parallel builders (default 1)")] = 1,
     builder_model: Annotated[str, typer.Option(help="Model override for builder agents")] = None,
@@ -483,12 +472,12 @@ def go(
 
     project_name = name or os.path.basename(parent_dir)
 
-    # --- Check if the repo already exists (locally or on GitHub) ---
-    repo_source = _find_existing_repo(parent_dir, project_name, local)
+    # --- Check if the repo already exists (on GitHub) ---
+    repo_source = _find_existing_repo(parent_dir, project_name)
 
     if not repo_source:
         _bootstrap_new_project(
-            parent_dir, project_name, description, spec_file, local, start_dir,
+            parent_dir, project_name, description, spec_file, start_dir,
             num_builders=builders, agent_models=agent_models,
         )
     else:

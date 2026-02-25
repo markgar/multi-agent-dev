@@ -76,7 +76,7 @@ def find_resume_target(runs_dir: Path, project_name: str) -> Path | None:
         if not ts_dir.is_dir():
             continue
         project_dir = ts_dir / project_name
-        if (project_dir / "remote.git").is_dir():
+        if (project_dir / "builder-1").is_dir() or (project_dir / "builder").is_dir():
             candidates.append(project_dir)
     if not candidates:
         return None
@@ -150,7 +150,7 @@ def run_harness() -> int:
                 print(f"  Removing {builder_path.name}/...")
                 shutil.rmtree(builder_path)
 
-        command = [agentic_dev, "go", "--directory", str(project_dir), "--model", args.model, "--local",
+        command = [agentic_dev, "go", "--directory", str(project_dir), "--model", args.model,
                    "--builders", str(args.builders)]
         if spec_file_for_resume:
             command.extend(["--spec-file", str(spec_file_for_resume)])
@@ -192,7 +192,6 @@ def run_harness() -> int:
                 str(spec_file),
                 "--builders",
                 str(args.builders),
-                "--local",
             ]
         )
 
@@ -205,8 +204,6 @@ def run_harness() -> int:
     print(f"  Reviewer:   {project_dir / 'reviewer'}")
     print(f"  Tester:     {project_dir / 'tester'}")
     print(f"  Validator:  {project_dir / 'validator'}")
-    if (project_dir / "remote.git").is_dir():
-        print(f"  Bare repo:  {project_dir / 'remote.git'}")
     print("============================================")
 
     return exit_code
