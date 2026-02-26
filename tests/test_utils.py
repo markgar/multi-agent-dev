@@ -1,5 +1,10 @@
 """Tests for sentinel logic, unchecked item counting, path resolution, and commit filtering."""
 
+import subprocess
+import sys
+import threading
+import time
+
 import pytest
 
 from agentic_dev.sentinel import check_all_builders_done_status
@@ -10,6 +15,8 @@ from agentic_dev.utils import (
     ALLOWED_MODELS,
     _AUTH_ERROR_MARKERS,
     _detect_auth_failure,
+    _stream_with_idle_timeout,
+    _TIMEOUT_EXIT_CODE,
 )
 from agentic_dev.git_helpers import is_reviewer_only_files, is_coordination_only_files
 from agentic_dev.terminal import build_agent_script
@@ -552,3 +559,98 @@ def test_parse_gh_issue_numbers_mixed_entries():
     """Entries without a 'number' key are skipped."""
     result = _parse_gh_issue_numbers('[{"number":3},{"title":"oops"},{"number":7}]')
     assert result == [3, 7]
+
+
+# --- idle timeout streaming ---
+
+def _make_fake_proc(lines, delay_per_line=0, hang_after=None):
+    """Create a fake Popen-like object that yields lines from stdout.
+
+    Args:
+        lines: list of strings (each should end with newline).
+        delay_per_line: seconds to sleep between yielding lines.
+        hang_after: if set, stop producing output after this many lines
+                    and block until the process is killed.
+    """
+    class FakeStdout:
+        def __init__(self):
+            self._lines = list(lines)
+            self._hang_after = hang_after
+            self._delay = delay_per_line
+            self._killed = threading.Event()
+
+        def __iter__(self):
+            for i, line in enumerate(self._lines):
+                if self._hang_after is not None and i >= self._hang_after:
+                    # Simulate a hang — block until killed
+                    self._killed.wait()
+                    return
+                if self._delay:
+                    time.sleep(self._delay)
+                yield line
+
+    class FakeProc:
+        def __init__(self):
+            self.stdout = FakeStdout()
+            self.returncode = 0
+            self._killed = self.stdout._killed
+
+        def kill(self):
+            self._killed.set()
+
+        def wait(self):
+            pass
+
+    return FakeProc()
+
+
+def test_stream_idle_timeout_completes_normally(tmp_path):
+    """Process that produces output and exits normally returns 0."""
+    log_file = str(tmp_path / "test.log")
+    proc = _make_fake_proc(["line 1\n", "line 2\n", "line 3\n"])
+
+    exit_code = _stream_with_idle_timeout(proc, log_file, idle_timeout=30)
+
+    assert exit_code == 0
+    log_content = (tmp_path / "test.log").read_text(encoding="utf-8")
+    assert "line 1" in log_content
+    assert "line 3" in log_content
+
+
+def test_stream_idle_timeout_kills_on_no_output(tmp_path):
+    """Process that hangs (no output) is killed after idle timeout."""
+    log_file = str(tmp_path / "test.log")
+    # Process produces 1 line then hangs forever
+    proc = _make_fake_proc(["first line\n", "never seen\n"], hang_after=1)
+
+    # Use a very short timeout so the test completes quickly
+    exit_code = _stream_with_idle_timeout(proc, log_file, idle_timeout=1)
+
+    assert exit_code == _TIMEOUT_EXIT_CODE
+
+
+def test_stream_idle_timeout_resets_on_output(tmp_path):
+    """Process producing regular output should NOT be killed."""
+    log_file = str(tmp_path / "test.log")
+    # 5 lines, each with a small delay — well within a 5s timeout
+    proc = _make_fake_proc(
+        ["line {}\n".format(i) for i in range(5)],
+        delay_per_line=0.2,
+    )
+
+    exit_code = _stream_with_idle_timeout(proc, log_file, idle_timeout=5)
+
+    assert exit_code == 0
+    log_content = (tmp_path / "test.log").read_text(encoding="utf-8")
+    assert "line 4" in log_content
+
+
+def test_stream_idle_timeout_nonzero_exit(tmp_path):
+    """Process that exits with non-zero code propagates the exit code."""
+    log_file = str(tmp_path / "test.log")
+    proc = _make_fake_proc(["output\n"])
+    proc.returncode = 42
+
+    exit_code = _stream_with_idle_timeout(proc, log_file, idle_timeout=30)
+
+    assert exit_code == 42

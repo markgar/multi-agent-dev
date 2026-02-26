@@ -6,6 +6,8 @@ import re
 import shutil
 import subprocess
 import sys
+import threading
+import time
 from collections.abc import Generator
 from datetime import datetime
 
@@ -199,6 +201,63 @@ def _refresh_github_auth() -> bool:
         return False
 
 
+# Idle timeout for copilot subprocess calls (seconds).
+# If no output is received for this long, the process is killed.
+_COPILOT_IDLE_TIMEOUT = 300  # 5 minutes
+
+# Exit code returned when a copilot call is killed due to idle timeout.
+_TIMEOUT_EXIT_CODE = -99
+
+
+def _stream_with_idle_timeout(
+    proc: subprocess.Popen, log_file: str, idle_timeout: int,
+) -> int:
+    """Stream subprocess output with an idle timeout.
+
+    Reads stdout in a background thread while the main thread monitors
+    for idle periods. If no output arrives for *idle_timeout* seconds,
+    the process is killed.
+
+    Returns the process exit code (_TIMEOUT_EXIT_CODE on timeout).
+    """
+    last_output_time = time.monotonic()
+    lock = threading.Lock()
+    finished = threading.Event()
+
+    def _reader() -> None:
+        nonlocal last_output_time
+        try:
+            with open(log_file, "a", encoding="utf-8") as f:
+                for line in proc.stdout:
+                    with lock:
+                        last_output_time = time.monotonic()
+                    sys.stdout.write(line)
+                    sys.stdout.flush()
+                    _write_line_to_log(f, line)
+        except Exception:
+            pass
+        finally:
+            finished.set()
+
+    reader_thread = threading.Thread(target=_reader, daemon=True)
+    reader_thread.start()
+
+    # Poll for idle timeout while the reader is active
+    while not finished.wait(timeout=10):
+        with lock:
+            idle_seconds = time.monotonic() - last_output_time
+        if idle_seconds >= idle_timeout:
+            try:
+                proc.kill()
+            except Exception:
+                pass
+            finished.set()
+            return _TIMEOUT_EXIT_CODE
+
+    proc.wait()
+    return proc.returncode
+
+
 def _run_copilot_once(agent_name: str, prompt: str, model: str, log_file: str) -> int:
     """Run a single copilot invocation. Returns the exit code."""
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -222,11 +281,12 @@ def _run_copilot_once(agent_name: str, prompt: str, model: str, log_file: str) -
         bufsize=1,
     )
 
-    _stream_process_output(proc, log_file)
-    proc.wait()
-    exit_code = proc.returncode
+    exit_code = _stream_with_idle_timeout(proc, log_file, _COPILOT_IDLE_TIMEOUT)
 
-    _write_log_entry(log_file, f"--- end (exit: {exit_code}) ---\n")
+    if exit_code == _TIMEOUT_EXIT_CODE:
+        _write_log_entry(log_file, f"--- TIMEOUT (no output for {_COPILOT_IDLE_TIMEOUT}s) ---\n")
+    else:
+        _write_log_entry(log_file, f"--- end (exit: {exit_code}) ---\n")
 
     return exit_code
 
@@ -248,6 +308,14 @@ def run_copilot(agent_name: str, prompt: str, model: str = "") -> int:
     log_file = os.path.join(logs_dir, f"{agent_name}.log")
 
     exit_code = _run_copilot_once(agent_name, prompt, model, log_file)
+
+    # Retry once on idle timeout
+    if exit_code == _TIMEOUT_EXIT_CODE:
+        log(agent_name, "[Timeout] Copilot call timed out — retrying once...", style="yellow")
+        exit_code = _run_copilot_once(agent_name, prompt, model, log_file)
+        if exit_code == _TIMEOUT_EXIT_CODE:
+            log(agent_name, "[Timeout] Copilot call timed out again — giving up.", style="red")
+        return exit_code
 
     if exit_code != 0 and _detect_auth_failure(log_file):
         log(agent_name, "[Auth] Token expired — attempting gh auth refresh...", style="yellow")
