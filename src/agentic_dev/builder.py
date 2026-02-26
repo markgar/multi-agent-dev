@@ -666,20 +666,22 @@ def build(
             if has_pending_backlog_stories_in_file(_BACKLOG_FILE):
                 log(agent_name, "")
                 log(agent_name, "No eligible stories (dependency deadlock or all claimed). "
-                    "Checking for bugs/findings to fix while waiting...", style="yellow")
+                    "Waiting for stories to become eligible...", style="yellow")
 
-                # Fix issues while waiting for stories to become eligible
-                run_cmd(["git", "pull", "--rebase", "-q"], quiet=True)
-                remaining_bugs = count_open_bug_issues()
-                remaining_reviews = count_open_finding_issues()
-                if remaining_bugs > 0 or remaining_reviews > 0:
-                    log(agent_name, f"Found {remaining_bugs} bug(s) and "
-                        f"{remaining_reviews} finding(s). Fixing while waiting...",
-                        style="cyan")
-                    run_copilot(agent_name, BUILDER_FIX_ONLY_PROMPT)
+                if not has_issue_builder:
+                    # Solo mode: fix issues while waiting for stories
+                    run_cmd(["git", "pull", "--rebase", "-q"], quiet=True)
+                    remaining_bugs = count_open_bug_issues()
+                    remaining_reviews = count_open_finding_issues()
+                    if remaining_bugs > 0 or remaining_reviews > 0:
+                        log(agent_name, f"Found {remaining_bugs} bug(s) and "
+                            f"{remaining_reviews} finding(s). Fixing while waiting...",
+                            style="cyan")
+                        run_copilot(agent_name, BUILDER_FIX_ONLY_PROMPT)
+                    else:
+                        time.sleep(30)
                 else:
-                    log(agent_name, "No open issues. Waiting 30s for stories...",
-                        style="dim")
+                    # Issue builder handles bugs/findings — just wait
                     time.sleep(30)
 
                 if has_pending_backlog_stories_in_file(_BACKLOG_FILE):
@@ -690,6 +692,10 @@ def build(
 
             # Enter shutdown: wait for agents, fix remaining bugs/reviews
             milestone_file = find_milestone_file_for_story("milestones") or "milestones/done.md"
+            if has_issue_builder:
+                # Issue builder handles remaining work — just exit
+                write_builder_done(builder_id)
+                return
             signal = _check_remaining_work(state, agent_name, milestone_file, builder_id, num_builders)
             if signal == "done":
                 write_builder_done(builder_id)
