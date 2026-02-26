@@ -13,7 +13,7 @@ Key distinctions:
 - **`copilot-instructions.md` in the source code** — `_generate_copilot_instructions()`, `COPILOT_INSTRUCTIONS_TEMPLATE`, and prompt references to `.github/copilot-instructions.md` all deal with a file generated *inside target project repos* for the builder agent to follow. They are not self-referential to this file.
 - **`SPEC.md`, `BACKLOG.md`, `milestones/`, `DEPLOY.md`, `REVIEW-THEMES.md`** — planning and coordination artifacts that exist *inside target project repos*. This project does not have these files itself.
 - **GitHub Issues** (labels `bug`, `finding`, `note`) — bugs and review findings are tracked as GitHub Issues, not files. These labels are used in target project repos, not this project.
-- **`builder/`, `reviewer/`, `milestone-reviewer/`, `tester/`, `validator/`** — separate git clone directories of the *target project*, one per agent. These are working copies created at runtime, not subdirectories of this project.
+- **`builder-N/`, `reviewer-N/`, `milestone-reviewer/`, `tester/`, `validator/`** — separate git clone directories of the *target project*, one per agent. These are working copies created at runtime, not subdirectories of this project.
 - **Prompt templates in `src/agentic_dev/prompts/`** — instructions sent to Copilot CLI agents operating *on the target project*. They reference target-project files and conventions, not this project's internals.
 
 When editing this codebase, keep this two-level structure in mind: the Python code here is orchestration logic; the prompts and templates describe work that happens in a *different* repo.
@@ -55,7 +55,7 @@ When editing this codebase, keep this two-level structure in mind: the Python co
 - `src/agentic_dev/prompts/` — All LLM prompt templates (one file per agent). Constants only, no logic.
 - `src/agentic_dev/utils.py` — Core helpers: logging, command execution, platform detection.
 - `src/agentic_dev/git_helpers.py` — Git operations: push with retry, commit classification, branch detection.
-- `src/agentic_dev/sentinel.py` — Builder-done sentinel, agent-idle detection, per-builder reviewer checkpoints, and branch-review-head merge gate signals.
+- `src/agentic_dev/sentinel.py` — Builder-done sentinel, agent-idle detection, and per-builder reviewer checkpoints.
 - `src/agentic_dev/milestone.py` — Milestone parsing, boundary tracking, and per-agent milestone checkpoints.
 - `src/agentic_dev/config.py` — Language/stack configurations and thresholds for tree-sitter code analysis.
 - `src/agentic_dev/backlog_checker.py` — Backlog quality gate: deterministic structural checks (A1-A4) and LLM quality review (C1-C7) on BACKLOG.md and milestone files. Also runs story ordering checks for parallel builder throughput.
@@ -65,13 +65,11 @@ When editing this codebase, keep this two-level structure in mind: the Python co
 
 ## Architecture
 
-This is a multi-agent orchestrator that uses GitHub Copilot CLI (`copilot --yolo`) as the execution engine. Agents (builder, planner, commit watcher, milestone reviewer, tester, validator) run as separate processes in separate git clones of the same repo. They coordinate through:
+CLI application built with typer. Each command (`go`, `plan`, `build`, `commitwatch`, `milestonewatch`, `testloop`, `validateloop`) maps to a module in `src/agentic_dev/`. The `go` command (`orchestrator.py`) is the primary entry point — it calls the others.
 
-- **Markdown files** (`BACKLOG.md`, `milestones/`, `DEPLOY.md`, `REVIEW-THEMES.md`) — shared state via git push/pull.
-- **GitHub Issues** (labels `finding`, `note`, `bug`) — review findings and bugs tracked via `gh` CLI.
-- **Log files** (`logs/`) — local coordination signals like `builder.done`, `reviewer.checkpoint`, `milestone-reviewer.log`, `milestones.log`, `validator.milestone`.
+Core pattern: Python code handles deterministic orchestration (milestone tracking, git operations, agent lifecycle, shutdown coordination), while Copilot CLI (`copilot --yolo`) handles creative work (writing code, reviewing diffs, planning tasks). Each `run_copilot()` call sends a prompt string and waits for completion.
 
-The build loop (Python code in `builder.py`) handles deterministic orchestration — milestone boundary tracking, SHA recording, shutdown signals. The LLM agents handle creative work — writing code, reviewing diffs, writing tests.
+Prompts are plain format strings in `prompts/`. Pure decision logic (parsing, validation, selection) is separated from I/O (subprocess calls, file reads) for testability.
 
 ## Testing conventions
 
