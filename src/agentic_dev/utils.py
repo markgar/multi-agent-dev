@@ -342,7 +342,8 @@ def check_command(name: str) -> bool:
 
 
 def run_cmd(
-    args: list[str], capture: bool = False, quiet: bool = False
+    args: list[str], capture: bool = False, quiet: bool = False,
+    cwd: str | None = None,
 ) -> subprocess.CompletedProcess:
     """Run a shell command, optionally capturing output."""
     kwargs = {}
@@ -350,6 +351,8 @@ def run_cmd(
         kwargs["stdout"] = subprocess.PIPE
         kwargs["stderr"] = subprocess.PIPE
         kwargs["text"] = True
+    if cwd is not None:
+        kwargs["cwd"] = cwd
     return subprocess.run(args, **kwargs)
 
 
