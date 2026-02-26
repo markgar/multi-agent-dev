@@ -252,6 +252,11 @@ def _scaffold_project(directory, name, description, gh_user, org=""):
     _write_requirements_file(builder_dir, description)
     _create_tracking_directories(builder_dir)
 
+    # Pre-initialize git in builder/ so copilot never accidentally commits
+    # to a parent repo when the project dir is nested inside another git tree
+    # (e.g. test harness runs under multi-agent-dev).
+    run_cmd(["git", "init"], cwd=builder_dir, quiet=True)
+
     prompt = BOOTSTRAP_PROMPT.format(description=description, gh_user=owner, name=name)
     exit_code = run_copilot("bootstrap", prompt)
 
