@@ -51,13 +51,11 @@ _SEVERITY_RULES = (
 
 _DOC_RULES = (
     "NON-CODE ISSUES — [doc]: If you find a non-code issue — stale documentation, "
-    "misleading comments, inaccurate README content — fix it directly yourself instead "
-    "of filing a finding. Make the edit, then commit with a descriptive message prefixed "
-    "with '[reviewer]'. Non-code fixes do not need to go through the builder. "
-    "IMPORTANT: Do NOT directly edit DEPLOY.md. If you find stale or inaccurate content "
-    "in DEPLOY.md, file it as a finding issue: "
-    "`gh issue create --title '[finding] DEPLOY.md: <summary>' --body '<details>' --label finding,{milestone_label}` "
-    "so the builder or validator can address it. "
+    "misleading comments, inaccurate README content, incorrect .github/copilot-instructions.md — "
+    "do NOT fix it yourself. File it as a finding issue so the builder can fix it: "
+    "`gh issue create --title '[finding] [doc] <one-line summary>' "
+    "--body '<detailed description>' --label finding,{milestone_label}`. "
+    "Do NOT commit any changes. The reviewer is read-only — all fixes go through the builder. "
 )
 
 _FILING_RULES = (
@@ -168,7 +166,7 @@ REVIEWER_MILESTONE_PROMPT = (
     "(4) Rewrite the file with all old themes plus any new ones. "
     "Format: a '# Review Themes' heading, a 'Last updated: {milestone_name}' "
     "subline, then a numbered list of all entries (old and new). "
-    "If you created any finding or note issues, updated REVIEW-THEMES.md, or fixed doc issues, "
+    "If you created any finding or note issues or updated REVIEW-THEMES.md, "
     "commit with message '[reviewer] Milestone review: {milestone_name}', run "
     "git pull --rebase, and push. If the push fails, run git pull --rebase and push "
     "again (retry up to 3 times). If you only created/closed GitHub Issues (no file "
@@ -186,7 +184,7 @@ _BRANCH_CONTEXT = (
     "on the main branch — do NOT checkout the feature branch. The diffs you review "
     "use explicit commit SHAs so you can review from main. Your finding and note "
     "issues are filed via `gh issue create` (no files to commit for reviews). "
-    "Any [doc] fixes you make are committed and pushed to main. "
+    "Do NOT commit or push any changes. The reviewer is read-only — all fixes go through the builder. "
 )
 
 REVIEWER_BRANCH_COMMIT_PROMPT = (
@@ -210,12 +208,8 @@ REVIEWER_BRANCH_COMMIT_PROMPT = (
     "explaining WHY it matters (not just what is wrong), and a concrete suggested fix "
     "with example code when possible. "
     "If there are genuinely no issues, do nothing — but be skeptical. In production "
-    "codebases, most commits have at least one improvable aspect. If you created any "
-    "issues or made [doc] fixes, commit doc changes with message "
-    "'[reviewer] Code review: {commit_sha:.8}', run "
-    "git pull --rebase, and push. If you only created GitHub Issues (no file "
-    "changes), no commit is needed. If the push fails, run git pull --rebase and push "
-    "again (retry up to 3 times). "
+    "codebases, most commits have at least one improvable aspect. "
+    "Do NOT commit or push any changes. Your only output is GitHub Issues. "
     + _CONFLICT_RECOVERY
 )
 
@@ -240,11 +234,7 @@ REVIEWER_BRANCH_BATCH_PROMPT = (
     "explaining WHY it matters, and a concrete suggested fix with example code when "
     "possible. "
     "If there are genuinely no issues, do nothing — but be skeptical. Multiple commits "
-    "in a batch almost always contain at least one issue. If you created any "
-    "issues or made [doc] fixes, commit doc changes with message "
-    "'[reviewer] Code review: {base_sha:.8}..{head_sha:.8}', "
-    "run git pull --rebase, and push. If you only created GitHub Issues (no file "
-    "changes), no commit is needed. If the push fails, run git pull --rebase and push "
-    "again (retry up to 3 times). "
+    "in a batch almost always contain at least one issue. "
+    "Do NOT commit or push any changes. Your only output is GitHub Issues. "
     + _CONFLICT_RECOVERY
 )
