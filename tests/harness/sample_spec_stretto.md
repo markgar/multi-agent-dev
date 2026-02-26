@@ -263,8 +263,8 @@ The application should look like a modern, professional SaaS tool — clean, spa
 
 - The app should start with seed data for development/demo purposes:
   - Organization: "My Choir"
-  - Admin user: `mgarner22@gmail.com` (belongs to "My Choir")
-  - Member user: `mgarner@outlook.com` (belongs to "My Choir")
+  - Admin user: `admin@stretto-demo.example` (belongs to "My Choir")
+  - Member user: `member@stretto-demo.example` (belongs to "My Choir")
 
 ### Business Rules to Enforce
 
