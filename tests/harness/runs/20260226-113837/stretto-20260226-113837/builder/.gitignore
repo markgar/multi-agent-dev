@@ -1,0 +1,33 @@
+# .NET
+bin/
+obj/
+*.dll
+*.exe
+*.pdb
+*.user
+*.suo
+.vs/
+.vscode/
+*.csproj.user
+appsettings.Development.json
+
+# Node / npm
+node_modules/
+dist/
+.env
+.env.local
+npm-debug.log
+package-lock.json
+
+# IDE
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Build output
+publish/
