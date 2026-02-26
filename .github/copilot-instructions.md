@@ -86,7 +86,7 @@ The build loop (Python code in `builder.py`) handles deterministic orchestration
 
 ## Test harness
 
-End-to-end tests run via `tests/harness/run_test.sh` using `--local` mode. See AGENTS.md § "Test harness" for full options (`--model`, `--name`, `--spec-file`, `--resume`). Run output lands in `tests/harness/runs/<timestamp>/<project-name>/` with subdirectories for each agent clone and a `logs/` directory capturing all prompts, output, and results.
+End-to-end tests run via `python tests/harness/run_test.py`. See AGENTS.md § "Test harness" for full options (`--model`, `--name`, `--spec-file`, `--resume`). Run output lands in `tests/harness/runs/<timestamp>/<project-name-timestamp>/` with subdirectories for each agent clone and a `logs/` directory capturing all prompts, output, and results.
 
 When asked to run or monitor the harness, do NOT run it in a background terminal. Have the user run it in a visible terminal and monitor progress by reading log files (`builder.log`, `orchestrator.log`, `reviewer.log`, `tester.log`) in the run's `logs/` directory.
 

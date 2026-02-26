@@ -1,7 +1,30 @@
+"""Platform-agnostic test harness for end-to-end orchestration runs.
+
+Usage:
+    python tests/harness/run_test.py --name stretto --model claude-opus-4.6 \\
+        --spec-file tests/harness/sample_spec_stretto.md
+    python tests/harness/run_test.py --name stretto --model claude-opus-4.6 --resume
+    python tests/harness/run_test.py --name stretto --model claude-opus-4.6 \\
+        --builders 4 --reviewer-model claude-sonnet-4.6
+
+Handles all setup automatically:
+  1. Cleans stale build/ artifacts
+  2. Installs the package in editable mode (pip install -e .)
+  3. Runs existing tests to catch problems early
+  4. Creates a timestamped run directory under tests/harness/runs/
+  5. Launches agentic-dev go
+  6. Prints log locations for post-mortem analysis
+
+Resume mode (--resume):
+  Finds the latest existing run matching --name and resumes it via --directory.
+  Deletes agent clone directories to simulate starting on a fresh machine.
+  Optionally accepts a new --spec-file to add requirements.
+"""
+
 from __future__ import annotations
 
 import argparse
-import os
+import fnmatch
 import shutil
 import subprocess
 import sys
@@ -9,27 +32,30 @@ from datetime import datetime
 from pathlib import Path
 
 
-def run_command(command: list[str], cwd: Path | None = None, quiet: bool = False) -> int:
-    stdout = subprocess.DEVNULL if quiet else None
-    stderr = subprocess.STDOUT if quiet else None
-    process = subprocess.run(command, cwd=str(cwd) if cwd else None, stdout=stdout, stderr=stderr)
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+def run_command(command: list[str], cwd: Path | None = None) -> int:
+    """Run a command, inheriting stdin/stdout/stderr. Returns exit code."""
+    process = subprocess.run(command, cwd=str(cwd) if cwd else None)
     return process.returncode
 
 
 def ensure_python() -> str:
+    """Find the best Python executable (prefer venv)."""
     project_root = Path(__file__).resolve().parents[2]
-    # Check platform-appropriate venv paths
-    for venv_path in (
+    for venv_python in (
         project_root / ".venv" / "Scripts" / "python.exe",  # Windows
         project_root / ".venv" / "bin" / "python",          # Unix
     ):
-        if venv_path.exists():
-            return str(venv_path)
+        if venv_python.exists():
+            return str(venv_python)
     return sys.executable
 
 
 def ensure_agentic_dev(project_root: Path) -> str | None:
-    # Check platform-appropriate venv paths
+    """Find the agentic-dev CLI executable."""
     for agent_path in (
         project_root / ".venv" / "Scripts" / "agentic-dev.exe",  # Windows
         project_root / ".venv" / "bin" / "agentic-dev",          # Unix
@@ -39,7 +65,12 @@ def ensure_agentic_dev(project_root: Path) -> str | None:
     return shutil.which("agentic-dev")
 
 
+# ---------------------------------------------------------------------------
+# Pre-flight
+# ---------------------------------------------------------------------------
+
 def run_preflight(project_root: Path, python_exe: str) -> bool:
+    """Clean, install, verify CLI, run tests. Returns True on success."""
     print("============================================")
     print(" Pre-flight setup")
     print("============================================")
@@ -50,7 +81,9 @@ def run_preflight(project_root: Path, python_exe: str) -> bool:
         shutil.rmtree(build_dir)
 
     print("  Installing package (pip install -e .)...")
-    if run_command([python_exe, "-m", "pip", "install", "-e", str(project_root)], quiet=False) != 0:
+    rc = run_command([python_exe, "-m", "pip", "install", "-e", str(project_root), "--quiet"])
+    if rc != 0:
+        print("ERROR: pip install failed.")
         return False
 
     if not ensure_agentic_dev(project_root):
@@ -60,7 +93,8 @@ def run_preflight(project_root: Path, python_exe: str) -> bool:
     print("  ✓ agentic-dev is available")
 
     print("  Running unit tests...")
-    if run_command([python_exe, "-m", "pytest", str(project_root / "tests"), "-q"], quiet=False) != 0:
+    rc = run_command([python_exe, "-m", "pytest", str(project_root / "tests"), "-q"])
+    if rc != 0:
         print("")
         print("ERROR: Unit tests failed. Fix them before running the harness.")
         return False
@@ -68,41 +102,157 @@ def run_preflight(project_root: Path, python_exe: str) -> bool:
     return True
 
 
-def find_resume_target(runs_dir: Path, project_name: str) -> Path | None:
+# ---------------------------------------------------------------------------
+# Resume helpers
+# ---------------------------------------------------------------------------
+
+def find_resume_candidates(runs_dir: Path, project_name: str) -> list[Path]:
+    """Find all run directories matching project_name (exact or name-* glob).
+
+    Matches are detected by the presence of remote.git/ or builder-1/.
+    Returns newest-first.
+    """
     if not runs_dir.exists():
-        return None
+        return []
     candidates: list[Path] = []
     for ts_dir in sorted(runs_dir.iterdir(), reverse=True):
         if not ts_dir.is_dir():
             continue
-        project_dir = ts_dir / project_name
-        if (project_dir / "builder-1").is_dir() or (project_dir / "builder").is_dir():
-            candidates.append(project_dir)
+        for child in sorted(ts_dir.iterdir()):
+            if not child.is_dir():
+                continue
+            if child.name == project_name or fnmatch.fnmatch(child.name, f"{project_name}-*"):
+                if (child / "remote.git").is_dir() or (child / "builder-1").is_dir():
+                    candidates.append(child)
+    return candidates
+
+
+def pick_resume_target(candidates: list[Path], project_name: str, runs_dir: Path) -> Path | None:
+    """Prompt the user to pick a resume target if multiple matches exist."""
     if not candidates:
+        print(f"ERROR: No existing run found for project '{project_name}'.")
+        print("")
+        print(f"Available runs in {runs_dir}:")
+        found_any = False
+        if runs_dir.exists():
+            for ts_dir in sorted(runs_dir.iterdir(), reverse=True):
+                if not ts_dir.is_dir():
+                    continue
+                for child in sorted(ts_dir.iterdir()):
+                    if child.is_dir() and ((child / "remote.git").is_dir() or (child / "builder-1").is_dir()):
+                        print(f"  {child}")
+                        found_any = True
+        if not found_any:
+            print("  (none found)")
         return None
-    return candidates[0]
+
+    if len(candidates) == 1:
+        return candidates[0]
+
+    # Multiple matches — let the user pick
+    print("")
+    print(f"Multiple runs found for '{project_name}':")
+    print("")
+    for i, candidate in enumerate(candidates):
+        ts_name = candidate.parent.name
+        marker = " (latest)" if i == 0 else ""
+        print(f"  {i + 1}) {ts_name}/{candidate.name}{marker}")
+    print("")
+    try:
+        pick = input("Which run? [1] ").strip() or "1"
+        idx = int(pick) - 1
+        if 0 <= idx < len(candidates):
+            return candidates[idx]
+    except (ValueError, EOFError):
+        pass
+    print("Invalid selection.")
+    return None
 
 
-def confirm(prompt: str) -> bool:
-    answer = input(prompt).strip().lower()
-    return answer in ("", "y", "yes")
+def clean_agent_dirs(project_dir: Path) -> None:
+    """Delete agent clone directories to simulate starting on a fresh machine."""
+    for agent_name in ("builder", "reviewer", "milestone-reviewer", "tester", "validator"):
+        path = project_dir / agent_name
+        if path.exists():
+            print(f"  Removing {agent_name}/...")
+            shutil.rmtree(path)
+    for pattern in ("builder-*", "reviewer-*"):
+        for agent_path in sorted(project_dir.glob(pattern)):
+            if agent_path.is_dir():
+                print(f"  Removing {agent_path.name}/...")
+                shutil.rmtree(agent_path)
+
+
+# ---------------------------------------------------------------------------
+# GO command assembly
+# ---------------------------------------------------------------------------
+
+def build_go_command(
+    agentic_dev: str,
+    project_dir: Path,
+    model: str,
+    builders: int,
+    spec_file: Path | None = None,
+    org: str | None = None,
+    builder_model: str | None = None,
+    reviewer_model: str | None = None,
+    milestone_reviewer_model: str | None = None,
+    tester_model: str | None = None,
+    validator_model: str | None = None,
+    planner_model: str | None = None,
+) -> list[str]:
+    """Assemble the agentic-dev go command with all flags."""
+    command = [agentic_dev, "go", "--directory", str(project_dir), "--model", model, "--builders", str(builders)]
+    if spec_file:
+        command.extend(["--spec-file", str(spec_file)])
+    if org:
+        command.extend(["--org", org])
+    if builder_model:
+        command.extend(["--builder-model", builder_model])
+    if reviewer_model:
+        command.extend(["--reviewer-model", reviewer_model])
+    if milestone_reviewer_model:
+        command.extend(["--milestone-reviewer-model", milestone_reviewer_model])
+    if tester_model:
+        command.extend(["--tester-model", tester_model])
+    if validator_model:
+        command.extend(["--validator-model", validator_model])
+    if planner_model:
+        command.extend(["--planner-model", planner_model])
+    return command
+
+
+# ---------------------------------------------------------------------------
+# Main
+# ---------------------------------------------------------------------------
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        description="Platform-agnostic test harness for end-to-end orchestration runs.",
+    )
+    parser.add_argument("--name", required=True, help="Project name (required)")
+    parser.add_argument("--model", required=True, help="Copilot model (e.g. claude-opus-4.6)")
+    parser.add_argument("--spec-file", default=None, help="Path to spec markdown file")
+    parser.add_argument("--resume", action="store_true", help="Resume the latest run for --name")
+    parser.add_argument("--builders", type=int, default=1, help="Number of parallel builders (default 1)")
+    parser.add_argument("--org", default=None, help="GitHub org (default: personal account)")
+    parser.add_argument("--builder-model", default=None, help="Model override for builders")
+    parser.add_argument("--reviewer-model", default=None, help="Model override for commit-watcher reviewers")
+    parser.add_argument("--milestone-reviewer-model", default=None, help="Model override for milestone reviewer")
+    parser.add_argument("--tester-model", default=None, help="Model override for tester")
+    parser.add_argument("--validator-model", default=None, help="Model override for validator")
+    parser.add_argument("--planner-model", default=None, help="Model override for planner")
+    return parser.parse_args()
 
 
 def run_harness() -> int:
-    script_path = Path(__file__).resolve()
-    harness_dir = script_path.parent
+    args = parse_args()
+
+    harness_dir = Path(__file__).resolve().parent
     project_root = harness_dir.parent.parent
+    runs_dir = harness_dir / "runs"
 
-    parser = argparse.ArgumentParser(description="Run local test harness")
-    parser.add_argument("--spec-file", default=None)
-    parser.add_argument("--name", default="test-run",
-                        help="Base project name (timestamp appended for new runs, exact match for --resume)")
-    parser.add_argument("--model", required=True, help="Copilot model to use (e.g. gpt-5.3-codex, claude-opus-4.6)")
-    parser.add_argument("--resume", action="store_true")
-    parser.add_argument("--builders", type=int, default=1, help="Number of parallel builders (default 1)")
-    parser.add_argument("--org", default=None, help="GitHub org to create repos in (default: personal account)")
-    args = parser.parse_args()
-
+    # Pre-flight
     python_exe = ensure_python()
     if not run_preflight(project_root, python_exe):
         return 1
@@ -112,65 +262,49 @@ def run_harness() -> int:
         print("ERROR: agentic-dev not found.")
         return 1
 
-    runs_dir = harness_dir / "runs"
-    runs_dir.mkdir(parents=True, exist_ok=True)
+    # Agent model kwargs (shared between fresh and resume)
+    model_kwargs = dict(
+        builder_model=args.builder_model,
+        reviewer_model=args.reviewer_model,
+        milestone_reviewer_model=args.milestone_reviewer_model,
+        tester_model=args.tester_model,
+        validator_model=args.validator_model,
+        planner_model=args.planner_model,
+    )
 
     if args.resume:
-        spec_file_for_resume: Path | None = None
+        # --- Resume existing run ---
+        spec_file: Path | None = None
         if args.spec_file:
             candidate = Path(args.spec_file).resolve()
             if candidate.exists():
-                spec_file_for_resume = candidate
+                spec_file = candidate
 
-        project_dir = find_resume_target(runs_dir, args.name)
+        candidates = find_resume_candidates(runs_dir, args.name)
+        project_dir = pick_resume_target(candidates, args.name, runs_dir)
         if not project_dir:
-            print(f"ERROR: No existing run found for project '{args.name}'.")
-            print("  For --resume, provide the exact project name including timestamp,")
-            print("  e.g. --name bookstore-20260225-152411")
             return 1
-
-        # Derive the repo name from the directory name (includes timestamp)
-        repo_name = project_dir.name
 
         print("============================================")
         print(" Resuming existing run")
         print("============================================")
         print(f"  Directory:  {project_dir}")
-        print(f"  Repo name:  {repo_name}")
-        if spec_file_for_resume:
-            print(f"  New spec:   {spec_file_for_resume}")
+        print(f"  Project:    {project_dir.name}")
+        if spec_file:
+            print(f"  New spec:   {spec_file}")
         print("============================================")
         print("")
 
-        if not confirm("Proceed? [Y/n] "):
-            print("Aborted.")
-            return 0
+        clean_agent_dirs(project_dir)
+        print("")
 
-        for agent_dir in ("builder", "reviewer", "tester", "validator"):
-            path = project_dir / agent_dir
-            if path.exists():
-                print(f"  Removing {agent_dir}/...")
-                shutil.rmtree(path)
-        # Also remove numbered builder/reviewer directories
-        for agent_path in sorted(project_dir.glob("builder-*")) + sorted(project_dir.glob("reviewer-*")):
-            if agent_path.is_dir():
-                print(f"  Removing {agent_path.name}/...")
-                shutil.rmtree(agent_path)
-        for agent_name in ("milestone-reviewer", "tester", "validator"):
-            path = project_dir / agent_name
-            if path.exists():
-                print(f"  Removing {agent_name}/...")
-                shutil.rmtree(path)
-
-        command = [agentic_dev, "go", "--directory", str(project_dir),
-                   "--name", repo_name, "--model", args.model,
-                   "--builders", str(args.builders)]
-        if spec_file_for_resume:
-            command.extend(["--spec-file", str(spec_file_for_resume)])
-        if args.org:
-            command.extend(["--org", args.org])
+        command = build_go_command(
+            agentic_dev, project_dir, args.model, args.builders,
+            spec_file=spec_file, org=args.org, **model_kwargs,
+        )
         exit_code = run_command(command)
     else:
+        # --- Fresh run ---
         spec_arg = args.spec_file or str(harness_dir / "sample_spec_cli_calculator.md")
         spec_file = Path(spec_arg).resolve()
         if not spec_file.exists():
@@ -178,42 +312,24 @@ def run_harness() -> int:
             return 1
 
         timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-        repo_name = f"{args.name}-{timestamp}"
         run_dir = runs_dir / timestamp
-        project_dir = run_dir / repo_name
+        project_dir = run_dir / f"{args.name}-{timestamp}"
 
         print("============================================")
         print(" Test Harness Run")
         print("============================================")
         print(f"  Run dir:    {run_dir}")
         print(f"  Spec file:  {spec_file}")
-        print(f"  Repo name:  {repo_name}")
-        if args.org:
-            print(f"  Org:        {args.org}")
+        print(f"  Project:    {args.name}-{timestamp}")
         print("============================================")
         print("")
 
-        if not confirm("Proceed? [Y/n] "):
-            print("Aborted.")
-            return 0
-
         run_dir.mkdir(parents=True, exist_ok=True)
-        command = [
-            agentic_dev,
-            "go",
-            "--directory",
-            str(project_dir),
-            "--name",
-            repo_name,
-            "--model",
-            args.model,
-            "--spec-file",
-            str(spec_file),
-            "--builders",
-            str(args.builders),
-        ]
-        if args.org:
-            command.extend(["--org", args.org])
+
+        command = build_go_command(
+            agentic_dev, project_dir, args.model, args.builders,
+            spec_file=spec_file, org=args.org, **model_kwargs,
+        )
         exit_code = run_command(command)
 
     print("")
@@ -222,7 +338,7 @@ def run_harness() -> int:
     print("============================================")
     print(f"  Logs:       {project_dir / 'logs'}")
     print(f"  Project:    {project_dir}")
-    print(f"  Resume:     --resume --name {project_dir.name}")
+    print(f"  Resume:     --resume --name {args.name}")
     print("============================================")
 
     return exit_code

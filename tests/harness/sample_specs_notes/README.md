@@ -37,23 +37,23 @@ agentic-dev go --directory notes-app --spec-file tests/harness/sample_specs_note
 
 ### Test Harness
 
-The harness creates a timestamped `runs/` directory, passes `--directory` and `--local` automatically, and supports `--resume` to find and continue the latest run. On resume, the harness deletes agent clone directories (`builder-1/`, `reviewer/`, `tester/`, `validator/`) and lets `go` reconstitute them from `remote.git/` — simulating a fresh-machine resume against the repo.
+The harness creates a timestamped `runs/` directory, passes `--directory` automatically, and supports `--resume` to find and continue the latest run. On resume, the harness deletes agent clone directories (`builder-1/`, `reviewer/`, `tester/`, `validator/`) and lets `go` reconstitute them from the repo — simulating a fresh-machine resume.
 
 > `--name` here is the harness's flag (names the subdirectory inside `runs/<timestamp>/`), not the CLI's `--name`.
 
 **Path A — incremental (two sessions):**
 ```bash
 # Session 1: build the base app
-./tests/harness/run_test.sh --name notes-app --spec-file tests/harness/sample_specs_notes/sample_spec_notes_1_base.md
+python tests/harness/run_test.py --name notes-app --model claude-opus-4.6 --spec-file tests/harness/sample_specs_notes/sample_spec_notes_1_base.md
 # Session 2: resume the latest run with the delta spec
-./tests/harness/run_test.sh --name notes-app --spec-file tests/harness/sample_specs_notes/sample_spec_notes_2_add_delete.md --resume
+python tests/harness/run_test.py --name notes-app --model claude-opus-4.6 --spec-file tests/harness/sample_specs_notes/sample_spec_notes_2_add_delete.md --resume
 # Session 3: resume and add timestamps
-./tests/harness/run_test.sh --name notes-app --spec-file tests/harness/sample_specs_notes/sample_spec_notes_3_add_timestamps.md --resume
+python tests/harness/run_test.py --name notes-app --model claude-opus-4.6 --spec-file tests/harness/sample_specs_notes/sample_spec_notes_3_add_timestamps.md --resume
 ```
 
 **Path B — combined (single session):**
 ```bash
-./tests/harness/run_test.sh --name notes-app --spec-file tests/harness/sample_specs_notes/sample_spec_notes_full.md
+python tests/harness/run_test.py --name notes-app --model claude-opus-4.6 --spec-file tests/harness/sample_specs_notes/sample_spec_notes_full.md
 ```
 
 ---
