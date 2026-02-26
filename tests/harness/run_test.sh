@@ -7,7 +7,7 @@
 #   2. Installs the package in editable mode (pip install -e .)
 #   3. Runs existing tests to catch problems early
 #   4. Creates a timestamped run directory under tests/harness/runs/
-#   5. Launches agentic-dev go --local
+#   5. Launches agentic-dev go
 #   6. Prints log locations for post-mortem analysis
 #
 # Resume mode (--resume):
@@ -217,10 +217,12 @@ if [[ "$RESUME" == true ]]; then
     # so we can find runs even after agent dirs have been deleted.
     MATCHING_RUNS=()
     for ts_dir in $(ls -1dr "$HARNESS_DIR/runs/"* 2>/dev/null); do
-        candidate="$ts_dir/$PROJECT_NAME"
-        if [[ -d "$candidate/remote.git" ]]; then
-            MATCHING_RUNS+=("$candidate")
-        fi
+        # Match directories starting with PROJECT_NAME (with optional timestamp suffix)
+        for candidate in "$ts_dir/$PROJECT_NAME" "$ts_dir/${PROJECT_NAME}"-*; do
+            if [[ -d "$candidate/remote.git" ]]; then
+                MATCHING_RUNS+=("$candidate")
+            fi
+        done
     done
 
     if [[ ${#MATCHING_RUNS[@]} -eq 0 ]]; then
@@ -281,7 +283,7 @@ if [[ "$RESUME" == true ]]; then
     done
     echo ""
 
-    GO_ARGS=(--directory "$PROJ_DIR" --model "$MODEL" --local --builders "$BUILDERS")
+    GO_ARGS=(--directory "$PROJ_DIR" --model "$MODEL" --builders "$BUILDERS")
     if [[ "$SPEC_FILE_EXPLICIT" == true && -n "${SPEC_FILE:-}" && -f "${SPEC_FILE:-}" ]]; then
         GO_ARGS+=(--spec-file "$SPEC_FILE")
     fi
@@ -298,7 +300,8 @@ else
     # Fresh run: create new timestamped directory
     TIMESTAMP="$(date +%Y%m%d-%H%M%S)"
     RUN_DIR="$HARNESS_DIR/runs/$TIMESTAMP"
-    PROJ_DIR="$RUN_DIR/$PROJECT_NAME"
+    # Append timestamp to project dir so the GitHub repo name is unique per run
+    PROJ_DIR="$RUN_DIR/${PROJECT_NAME}-${TIMESTAMP}"
 
     echo "============================================"
     echo " Test Harness Run"
@@ -311,7 +314,7 @@ else
 
     mkdir -p "$RUN_DIR"
 
-    GO_ARGS=(--directory "$PROJ_DIR" --model "$MODEL" --spec-file "$SPEC_FILE" --builders "$BUILDERS" --local)
+    GO_ARGS=(--directory "$PROJ_DIR" --model "$MODEL" --spec-file "$SPEC_FILE" --builders "$BUILDERS")
     [[ -n "$BUILDER_MODEL" ]] && GO_ARGS+=(--builder-model "$BUILDER_MODEL")
     [[ -n "$REVIEWER_MODEL" ]] && GO_ARGS+=(--reviewer-model "$REVIEWER_MODEL")
     [[ -n "$MILESTONE_REVIEWER_MODEL" ]] && GO_ARGS+=(--milestone-reviewer-model "$MILESTONE_REVIEWER_MODEL")
