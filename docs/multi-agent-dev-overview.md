@@ -130,8 +130,8 @@ style: |
 | **Mission** | Claim stories, write application code, fix bugs and review findings — the only agent that writes production code |
 | **Triggered by** | Orchestrator spawns it at startup; runs a continuous claim loop |
 | **Runs from** | `builder-N/` clone (one per builder, supports 1..N in parallel) |
-| **Reads** | `BACKLOG.md`, `milestones/`, `bugs/`, `reviews/`, `DEPLOY.md`, `REVIEW-THEMES.md`, `.github/copilot-instructions.md`, `SPEC.md` |
-| **Writes** | Application code, `.github/copilot-instructions.md` updates, `.gitignore` updates, `fixed-*.md` (bug fixes), `resolved-*.md` (finding fixes) |
+| **Reads** | `BACKLOG.md`, `milestones/`, `DEPLOY.md`, `REVIEW-THEMES.md`, `.github/copilot-instructions.md`, `SPEC.md`, GitHub Issues (bugs, findings) |
+| **Writes** | Application code, `.github/copilot-instructions.md` updates, `.gitignore` updates |
 | **Talks to** | **Planner** (calls it to expand next story) · **Commit Watcher** (reads its findings) · **Milestone Reviewer** (reads its findings + themes) · **Tester** (reads its bugs) · **Validator** (reads its bugs + DEPLOY.md) |
 | **Writes code** | Yes — the **only** agent that writes production code |
 | **Key detail** | Builds on feature branches (`builder-N/milestone-NN`), merges to main with `--no-ff`. Fixes all bugs and findings **before** starting milestone tasks. Multi-builder: work is partitioned by timestamp digit. |
@@ -146,7 +146,7 @@ style: |
 | **Triggered by** | Polls every 10s for new commits on the builder's feature branch |
 | **Runs from** | `reviewer-N/` clone (one per builder, branch-attached) |
 | **Reads** | Builder's feature branch commits (diffs) |
-| **Writes** | `finding-*.md` for [bug]/[security] issues · `note-*.md` for [cleanup]/[robustness] issues |
+| **Writes** | GitHub Issues with `--label finding` for [bug]/[security] issues · GitHub Issues with `--label note` for [cleanup]/[robustness] issues |
 | **Talks to** | **Builder** (files findings the builder must fix) · **Milestone Reviewer** (notes feed the frequency filter) |
 | **Writes code** | No — [doc] fixes only (comments, README). Never changes application logic. |
 | **Key detail** | Severity split: critical issues → `finding-*.md` (builder acts immediately), minor issues → `note-*.md` (milestone reviewer evaluates later). Signals merge readiness via `logs/reviewer-N.branch-head`. |
@@ -160,8 +160,8 @@ style: |
 | **Mission** | Run a cross-cutting review of the full milestone diff — catch what per-commit reviews miss: inconsistent patterns, API mismatches, duplicated logic, architectural problems |
 | **Triggered by** | Milestone completes (polls `logs/milestones.log` every 10s) |
 | **Runs from** | `milestone-reviewer/` clone (single instance) |
-| **Reads** | Full milestone diff, all `note-*.md` from commit watchers, tree-sitter code analysis results |
-| **Writes** | `finding-*.md` (promoted recurring patterns), `resolved-*.md` (cleans up stale findings), `REVIEW-THEMES.md` (cumulative lessons learned) |
+| **Reads** | Full milestone diff, all `note`-labeled GitHub Issues from commit watchers, tree-sitter code analysis results |
+| **Writes** | Promotes `note` → `finding` (via `gh issue edit`), closes stale findings, updates `REVIEW-THEMES.md` (cumulative lessons learned) |
 | **Talks to** | **Builder** (files findings, updates themes the builder reads) · **Commit Watcher** (consumes its notes as input) |
 | **Writes code** | No — [doc] fixes only. Never changes application logic or DEPLOY.md. |
 | **Key detail** | **Frequency filter** — [cleanup]/[robustness] notes only promoted to findings if the pattern recurs in 2+ locations. One-off issues stay as notes. Runs tree-sitter structural analysis before review. |
@@ -176,7 +176,7 @@ style: |
 | **Triggered by** | Milestone completes (polls `logs/milestones.log` every 10s) |
 | **Runs from** | `tester/` clone (single instance) |
 | **Reads** | `SPEC.md`, `milestones/` (current milestone), milestone diff (`--name-only`), existing test files |
-| **Writes** | New test files, `bug-*.md` in `bugs/` for failures |
+| **Writes** | New test files, GitHub Issues with `--label bug` for failures |
 | **Talks to** | **Builder** (files bugs the builder must fix before next milestone) |
 | **Writes code** | Tests only — never writes application code |
 | **Key detail** | Max 20 new tests per run. Does **not** start the app or test live endpoints — that's the Validator. More milestones completed → more integration tests → catches cross-feature regressions. |
@@ -190,8 +190,8 @@ style: |
 | **Mission** | Build the app in Docker, start it, and verify it works — the final acceptance gate for each milestone |
 | **Triggered by** | Milestone completes (polls `logs/milestones.log` every 10s) |
 | **Runs from** | `validator/` clone (single instance) |
-| **Reads** | `SPEC.md`, `DEPLOY.md`, `REQUIREMENTS.md`, `BACKLOG.md`, `milestones/` (current), `bugs/` (for fixed-bug re-testing) |
-| **Writes** | `bug-*.md` (with `[missing-requirement]` or `[UI]` prefix), `DEPLOY.md`, `Dockerfile`, `docker-compose.yml`, Playwright tests (if frontend), `validation-results.txt` |
+| **Reads** | `SPEC.md`, `DEPLOY.md`, `REQUIREMENTS.md`, `BACKLOG.md`, `milestones/` (current), GitHub Issues (for fixed-bug re-testing) |
+| **Writes** | GitHub Issues with `--label bug` (with `[missing-requirement]` or `[UI]` prefix), `DEPLOY.md`, `Dockerfile`, `docker-compose.yml`, Playwright tests (if frontend), `validation-results.txt` |
 | **Talks to** | **Builder** (files bugs, maintains DEPLOY.md the builder reads for compatibility) |
 | **Writes code** | Deployment config + Playwright tests only — never writes application code |
 | **Key detail** | Three checks per milestone: **(A)** milestone acceptance, **(B)** requirements coverage, **(C)** fixed-bug verification. Auto-detects frontends → adds Playwright. DEPLOY.md creates a **ratchet effect** — each run inherits all prior deployment knowledge. Containers left running for browsing. |

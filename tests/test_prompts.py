@@ -9,6 +9,7 @@ import pytest
 
 from agentic_dev.prompts import (
     BOOTSTRAP_PROMPT,
+    BUILDER_FIX_ONLY_PROMPT,
     BUILDER_PROMPT,
     COPILOT_INSTRUCTIONS_PROMPT,
     COPILOT_INSTRUCTIONS_TEMPLATE,
@@ -36,7 +37,8 @@ PROMPT_FORMAT_CASES = [
     ("PLANNER_COMPLETENESS_PROMPT", PLANNER_COMPLETENESS_PROMPT, {}),
     ("PLANNER_PROMPT", PLANNER_PROMPT, {"story_name": "Members backend"}),
     ("PLANNER_SPLIT_PROMPT", PLANNER_SPLIT_PROMPT, {"milestone_name": "M1", "milestone_file": "milestones/milestone-01-scaffolding.md", "task_count": 8}),
-    ("BUILDER_PROMPT", BUILDER_PROMPT, {"milestone_file": "milestones/milestone-01-scaffolding.md", "partition_filter": ""}),
+    ("BUILDER_PROMPT", BUILDER_PROMPT, {"milestone_file": "milestones/milestone-01-scaffolding.md"}),
+    ("BUILDER_FIX_ONLY_PROMPT", BUILDER_FIX_ONLY_PROMPT, {}),
     ("REVIEWER_MILESTONE_PROMPT", REVIEWER_MILESTONE_PROMPT, {"milestone_name": "M1", "milestone_start_sha": "aaa", "milestone_end_sha": "bbb", "code_analysis_findings": "No structural issues detected."}),
     ("TESTER_MILESTONE_PROMPT", TESTER_MILESTONE_PROMPT, {"milestone_name": "M1", "milestone_start_sha": "aaa", "milestone_end_sha": "bbb"}),
     ("PLANNER_JOURNEYS_PROMPT", PLANNER_JOURNEYS_PROMPT, {}),

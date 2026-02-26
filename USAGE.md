@@ -153,12 +153,12 @@ tail -f logs/builder.log
 | Scenario | What happens | Mitigation |
 |---|---|---|
 | GitHub Copilot generates bad code | Tests fail, tester files bugs, builder tries to fix them | Review commits periodically — don't let it run unattended forever |
-| Both agents create files in `bugs/` at the same time | Push fails due to conflict | All prompts include `git pull --rebase` before pushing; `bugs/` is append-only (no edits) so concurrent new-file creations never conflict |
+| Agents create conflicting GitHub Issues | Unlikely — issue creation is atomic | All agents use `gh issue create` which is non-conflicting |
 | Tester starts a server and doesn't stop it | Port stays bound, next test run fails | GitHub Copilot is prompted to stop it, but if it doesn't, kill the process manually |
 | Validator container won't build | Validator files bug, builder fixes Dockerfile next cycle | Check DEPLOY.md for known issues; ensure Docker is running |
 | Orphaned Docker containers | Port conflicts or resource waste | Validator cleans up before/after each run; run `docker ps` to check |
 | Bootstrap creates wrong project structure | Tasks reference files that don't exist | Edit SPEC.md to clarify requirements, then run `plan` |
-| GitHub Copilot enters an infinite fix loop | Builder and tester keep passing bugs back and forth | Stop all agents, review `bugs/` and the code, fix the root cause |
+| GitHub Copilot enters an infinite fix loop | Builder and tester keep passing bugs back and forth | Stop all agents, review GitHub Issues and the code, fix the root cause |
 | Reviewer creates endless review items | Builder fixes reviews, reviewer reviews the fix commits, repeat | The reviewer fixes [doc] issues directly and only files [code] items. Milestone reviews clean up stale/resolved items. The builder caps fix-only cycles and treats remaining reviews as best-effort after bugs and tasks are done. |
 
 ## Troubleshooting

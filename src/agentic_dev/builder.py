@@ -24,7 +24,7 @@ from agentic_dev.milestone import (
     parse_milestone_file,
     record_milestone_boundary,
 )
-from agentic_dev.prompts import BUILDER_PROMPT
+from agentic_dev.prompts import BUILDER_FIX_ONLY_PROMPT, BUILDER_PROMPT
 from agentic_dev.sentinel import (
     are_agents_idle,
     clear_branch_review_head,
@@ -283,20 +283,11 @@ def find_milestone_file_for_story(milestones_dir: str = "milestones") -> str | N
 def _build_partition_filter(builder_id: int, num_builders: int) -> str:
     """Build the prompt text that tells this builder which bugs/findings to fix.
 
-    When num_builders is 1, returns empty string (no filtering).
-    Otherwise returns a sentence describing the issue-number modulo rule for both
-    bug issues and finding issues.
+    Returns empty string — builders race to fix issues rather than partitioning
+    by issue number. Any builder can pick up any open issue; the first to close
+    it wins. Kept as a function for call-site compatibility.
     """
-    if num_builders <= 1:
-        return ""
-    return (
-        f"You are builder {builder_id} of {num_builders}. "
-        f"For bug issues: only fix issues whose issue number satisfies "
-        f"`number % {num_builders} == {builder_id - 1}`. "
-        f"For finding issues: only fix issues whose issue number satisfies "
-        f"`number % {num_builders} == {builder_id - 1}`. "
-        "Skip all others — another builder will handle them. "
-    )
+    return ""
 
 
 # ============================================
@@ -540,7 +531,6 @@ def _run_fix_only_cycle(
     log(agent_name, "")
     prompt = BUILDER_PROMPT.format(
         milestone_file=milestone_file,
-        partition_filter=_build_partition_filter(builder_id, num_builders),
     )
     run_copilot(agent_name, prompt)
     return "continue"
@@ -578,7 +568,6 @@ def build(
 
         prompt = BUILDER_PROMPT.format(
             milestone_file=milestone_file,
-            partition_filter=_build_partition_filter(builder_id, num_builders),
         )
         exit_code = run_copilot(agent_name, prompt)
         if exit_code != 0:
@@ -597,8 +586,22 @@ def build(
             if has_pending_backlog_stories_in_file(_BACKLOG_FILE):
                 log(agent_name, "")
                 log(agent_name, "No eligible stories (dependency deadlock or all claimed). "
-                    "Waiting for other builders...", style="yellow")
-                time.sleep(30)
+                    "Checking for bugs/findings to fix while waiting...", style="yellow")
+
+                # Fix issues while waiting for stories to become eligible
+                run_cmd(["git", "pull", "--rebase", "-q"], quiet=True)
+                remaining_bugs = count_open_bug_issues()
+                remaining_reviews = count_open_finding_issues()
+                if remaining_bugs > 0 or remaining_reviews > 0:
+                    log(agent_name, f"Found {remaining_bugs} bug(s) and "
+                        f"{remaining_reviews} finding(s). Fixing while waiting...",
+                        style="cyan")
+                    run_copilot(agent_name, BUILDER_FIX_ONLY_PROMPT)
+                else:
+                    log(agent_name, "No open issues. Waiting 30s for stories...",
+                        style="dim")
+                    time.sleep(30)
+
                 if has_pending_backlog_stories_in_file(_BACKLOG_FILE):
                     continue  # retry -- another builder may complete a dep
             # All done or permanently blocked
@@ -665,7 +668,6 @@ def build(
 
             prompt = BUILDER_PROMPT.format(
                 milestone_file=milestone_file,
-                partition_filter=_build_partition_filter(builder_id, num_builders),
             )
             exit_code = run_copilot(agent_name, prompt)
 

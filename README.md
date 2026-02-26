@@ -111,13 +111,13 @@ See [EXAMPLES.md](EXAMPLES.md) for ready-to-run commands — Hello World, REST A
 ## How It Works
 
 ```
-Planner ──milestones/──→ Builder ──git push──→ Reviewer ──reviews/──→ Builder
+Planner ──milestones/──→ Builder ──git push──→ Reviewer ──GitHub Issues──→ Builder
                            ↑                                              
                            │         Builder ──git push──→ Tester
                            │                                  │
                            │         Builder ──git push──→ Validator
                            │                                  │
-                           └──────────── bugs/ ←──────────────┘
+                           └───── GitHub Issues ───────────┘
 ```
 
 | From | To | Mechanism | What it says |
@@ -127,10 +127,10 @@ Planner ──milestones/──→ Builder ──git push──→ Reviewer ─�
 | Builder | Reviewer | `git push` | I finished a commit or milestone, review it |
 | Builder | Tester | `milestones.log` | A milestone is complete, test it |
 | Builder | Validator | `milestones.log` | A milestone is complete, validate it in a container |
-| Reviewer | Builder | `reviews/` | I found code-level issues, address these |
+| Reviewer | Builder | GitHub Issues | I found code-level issues, address these |
 | Reviewer | (self) | direct commit | I found a doc issue (stale comment, inaccurate README), fixed it myself |
-| Tester | Builder | `bugs/` | I found test failures, fix these |
-| Validator | Builder | `bugs/` | The app failed validation in a container, fix these |
+| Tester | Builder | GitHub Issues | I found test failures, fix these |
+| Validator | Builder | GitHub Issues | The app failed validation in a container, fix these |
 | Validator | Builder | `DEPLOY.md` | Here's what I learned about deploying this app |
 
 ### Positive Feedback Loops

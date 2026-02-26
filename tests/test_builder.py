@@ -266,7 +266,7 @@ def test_find_milestone_file_returns_none_when_dir_missing(tmp_path):
 
 
 # ============================================
-# _build_partition_filter (pure function)
+# _build_partition_filter (pure function — always returns empty)
 # ============================================
 
 
@@ -274,25 +274,10 @@ def test_partition_filter_single_builder_returns_empty():
     assert _build_partition_filter(1, 1) == ""
 
 
-def test_partition_filter_two_builders_has_modulo_for_bugs_and_findings():
-    result = _build_partition_filter(1, 2)
-    # Both bug and finding partitioning use issue-number modulo
-    assert "builder 1 of 2" in result
-    assert "number %" in result or "issue number" in result.lower()
-    # Findings now also use issue-number modulo, not digit-based
-    assert "finding issues" in result.lower()
-
-    result = _build_partition_filter(2, 2)
-    assert "builder 2 of 2" in result
-
-
-def test_partition_filter_three_builders():
-    result = _build_partition_filter(1, 3)
-    # Should reference modulo rule for both bugs and findings
-    assert "number % 3 == 0" in result
-
-    result = _build_partition_filter(2, 3)
-    assert "number % 3 == 1" in result
-
-    result = _build_partition_filter(3, 3)
-    assert "number % 3 == 2" in result
+def test_partition_filter_multiple_builders_returns_empty():
+    """Partitioning is removed — builders race to fix issues."""
+    assert _build_partition_filter(1, 2) == ""
+    assert _build_partition_filter(2, 2) == ""
+    assert _build_partition_filter(1, 3) == ""
+    assert _build_partition_filter(2, 3) == ""
+    assert _build_partition_filter(3, 3) == ""

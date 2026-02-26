@@ -8,7 +8,7 @@ All agents push directly to `main`. This causes three categories of leakage:
 
 2. **SHA contamination.** `_record_completed_milestone()` in `builder.py` does `git pull --rebase` then `git rev-parse HEAD`. Between the LLM's last push and this pull, other agents may have pushed. The recorded `end_sha` includes their commits. Downstream agents (validator, tester, milestone reviewer) operate on a polluted SHA range.
 
-3. **Cherry-pick loss.** The validator creates artifacts (Dockerfile, DEPLOY.md, bugs/) on a detached HEAD, returns to main, and cherry-picks. If main has moved, cherry-pick conflicts silently drop the commits — deployment knowledge is lost.
+3. **Cherry-pick loss.** The validator creates artifacts (Dockerfile, DEPLOY.md) on a detached HEAD, returns to main, and cherry-picks. If main has moved, cherry-pick conflicts silently drop the commits — deployment knowledge is lost.
 
 ## Solution
 

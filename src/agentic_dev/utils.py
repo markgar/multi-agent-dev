@@ -383,10 +383,11 @@ def _parse_gh_issue_numbers(json_output: str) -> list[int]:
 
 
 def count_open_bug_issues(builder_id: int = 1, num_builders: int = 1) -> int:
-    """Count open GitHub Issues labeled 'bug' assigned to this builder.
+    """Count open GitHub Issues labeled 'bug'.
 
-    Assignment is by issue number modulo: number % num_builders == (builder_id - 1).
-    When num_builders is 1, returns total open bug issue count.
+    Returns the total count of open bug issues. All builders race to fix
+    issues rather than partitioning by issue number. Parameters kept for
+    call-site compatibility.
     """
     result = run_cmd(
         ["gh", "issue", "list", "--label", "bug", "--state", "open",
@@ -396,12 +397,7 @@ def count_open_bug_issues(builder_id: int = 1, num_builders: int = 1) -> int:
     if result.returncode != 0:
         return 0
     numbers = _parse_gh_issue_numbers(result.stdout)
-    if num_builders <= 1:
-        return len(numbers)
-    return sum(
-        1 for n in numbers
-        if n % num_builders == (builder_id - 1)
-    )
+    return len(numbers)
 
 
 def ensure_bug_label_exists() -> None:
@@ -436,10 +432,11 @@ def ensure_review_labels_exist() -> None:
 
 
 def count_open_finding_issues(builder_id: int = 1, num_builders: int = 1) -> int:
-    """Count open GitHub Issues labeled 'finding' assigned to this builder.
+    """Count open GitHub Issues labeled 'finding'.
 
-    Assignment is by issue number modulo: number % num_builders == (builder_id - 1).
-    When num_builders is 1, returns total open finding issue count.
+    Returns the total count of open finding issues. All builders race to fix
+    issues rather than partitioning by issue number. Parameters kept for
+    call-site compatibility.
     """
     result = run_cmd(
         ["gh", "issue", "list", "--label", "finding", "--state", "open",
@@ -449,9 +446,4 @@ def count_open_finding_issues(builder_id: int = 1, num_builders: int = 1) -> int
     if result.returncode != 0:
         return 0
     numbers = _parse_gh_issue_numbers(result.stdout)
-    if num_builders <= 1:
-        return len(numbers)
-    return sum(
-        1 for n in numbers
-        if n % num_builders == (builder_id - 1)
-    )
+    return len(numbers)
