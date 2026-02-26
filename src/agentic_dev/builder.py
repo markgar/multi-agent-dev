@@ -35,7 +35,14 @@ from agentic_dev.sentinel import (
     load_branch_review_head,
     write_builder_done,
 )
-from agentic_dev.utils import count_open_bug_issues, count_open_finding_issues, log, run_cmd, run_copilot
+from agentic_dev.utils import (
+    count_open_bug_issues,
+    count_open_finding_issues,
+    ensure_milestone_label_exists,
+    log,
+    run_cmd,
+    run_copilot,
+)
 
 
 def register(app: typer.Typer) -> None:
@@ -409,11 +416,13 @@ def _wait_for_reviewer(
 
 def _record_completed_milestone(
     milestone_file: str, agent_name: str, merge_sha: str = "",
+    milestone_label: str = "",
 ) -> None:
     """Check if this builder's milestone is complete and record its boundary.
 
     When merge_sha is provided (loop mode with branches), uses the merge commit
     directly. When omitted (legacy non-loop mode), pulls latest and reads HEAD.
+    milestone_label is written to milestones.log so agents can tag GitHub Issues.
     """
     if not merge_sha:
         # Legacy/non-loop fallback: read HEAD on main
@@ -430,7 +439,7 @@ def _record_completed_milestone(
         head_result = run_cmd(["git", "rev-parse", "HEAD"], capture=True)
         end_sha = head_result.stdout.strip() if head_result.returncode == 0 else ""
 
-    record_milestone_boundary(ms["name"], start_sha, end_sha)
+    record_milestone_boundary(ms["name"], start_sha, end_sha, label=milestone_label)
     log(
         agent_name,
         f"Recorded milestone boundary: {ms['name']} ({start_sha[:8]}..{end_sha[:8]})",
@@ -518,17 +527,37 @@ def _check_remaining_work(
 _ISSUE_POLL_INTERVAL = 30  # seconds between polls when no issues found
 
 
+def _format_issue_list(issues: list[dict]) -> str:
+    """Format a list of GitHub Issues into a prompt-friendly string.
+
+    Each issue is rendered as '#N: title' on its own line so the LLM knows
+    exactly which issues to fix without running `gh issue list` itself.
+    """
+    lines = []
+    for issue in issues:
+        num = issue.get("number", "?")
+        title = issue.get("title", "")
+        lines.append(f"  #{num}: {title}")
+    return "\n".join(lines)
+
+
 def _run_issue_builder_loop(
     agent_name: str, builder_id: int, state: BuildState,
 ) -> None:
     """Run the dedicated issue builder loop.
 
-    Polls for open bugs and findings. When any exist, runs a fix-only Copilot
-    session on main. When none exist, checks whether all milestone builders
-    have finished (all other builder-N.done sentinels present). If so, writes
-    its own sentinel and returns. Otherwise sleeps and polls again.
+    Only fixes issues whose milestone label appears in milestones.log (i.e. the
+    milestone has been merged to main). This prevents the issue builder from
+    racing ahead — pulling branch-only code that hasn't landed on main yet.
+
+    Polls for eligible issues. When any exist, builds a prompt with the specific
+    issue numbers and runs a fix-only Copilot session on main. When none exist,
+    checks whether all milestone builders have finished. If so, writes its own
+    sentinel and returns. Otherwise sleeps and polls again.
     """
+    from agentic_dev.milestone import get_merged_milestone_labels
     from agentic_dev.sentinel import are_other_builders_done
+    from agentic_dev.utils import list_open_issues_for_milestones
 
     log(agent_name, "")
     log(agent_name, "[Issue Builder] Starting dedicated issue fixing loop.", style="green")
@@ -538,29 +567,34 @@ def _run_issue_builder_loop(
         ensure_on_main(agent_name)
         run_cmd(["git", "pull", "--rebase"])
 
-        bugs = count_open_bug_issues(agent_name)
-        findings = count_open_finding_issues(agent_name)
-        total_issues = bugs + findings
+        # Only fix issues from milestones that have landed on main
+        merged_labels = get_merged_milestone_labels()
+        eligible_issues = list_open_issues_for_milestones(merged_labels)
+        total_issues = len(eligible_issues)
 
         if total_issues > 0:
+            issue_list = _format_issue_list(eligible_issues)
             log(agent_name, "")
-            log(agent_name, f"[Issue Builder] Found {bugs} bug(s) and {findings} finding(s). "
-                "Fixing...", style="green")
+            log(agent_name, f"[Issue Builder] Found {total_issues} issue(s) from merged "
+                f"milestones ({', '.join(sorted(merged_labels))}). Fixing...", style="green")
             log(agent_name, "")
-            run_copilot(agent_name, BUILDER_FIX_ONLY_PROMPT)
+            prompt = BUILDER_FIX_ONLY_PROMPT.format(issue_list=issue_list)
+            run_copilot(agent_name, prompt)
             state.fix_only_cycles += 1
             continue
 
-        # No issues right now — check if milestone builders are all done
+        # No eligible issues right now — check if milestone builders are all done
         if are_other_builders_done(builder_id):
             # All builders (including us if sentinel already written) are done.
             # Do one final check for issues that may have been filed during shutdown.
-            bugs = count_open_bug_issues(agent_name)
-            findings = count_open_finding_issues(agent_name)
-            if bugs + findings > 0:
-                log(agent_name, f"[Issue Builder] {bugs + findings} issue(s) filed during "
+            merged_labels = get_merged_milestone_labels()
+            eligible_issues = list_open_issues_for_milestones(merged_labels)
+            if eligible_issues:
+                issue_list = _format_issue_list(eligible_issues)
+                log(agent_name, f"[Issue Builder] {len(eligible_issues)} issue(s) filed during "
                     "shutdown. Fixing...", style="green")
-                run_copilot(agent_name, BUILDER_FIX_ONLY_PROMPT)
+                prompt = BUILDER_FIX_ONLY_PROMPT.format(issue_list=issue_list)
+                run_copilot(agent_name, prompt)
                 continue
 
             log(agent_name, "")
@@ -739,6 +773,9 @@ def build(
         for milestone_file in new_milestones:
             milestone_basename = os.path.splitext(os.path.basename(milestone_file))[0]
 
+            # Create milestone label so agents can tag GitHub Issues
+            ensure_milestone_label_exists(milestone_basename)
+
             # Create feature branch for this milestone
             branch_name = create_milestone_branch(builder_id, milestone_basename, agent_name)
             if not branch_name:
@@ -778,7 +815,10 @@ def build(
                 build_failed = True
                 break
 
-            _record_completed_milestone(milestone_file, agent_name, merge_sha=merge_sha)
+            _record_completed_milestone(
+                milestone_file, agent_name, merge_sha=merge_sha,
+                milestone_label=milestone_basename,
+            )
             delete_milestone_branch(branch_name, agent_name)
 
             log(agent_name, "")

@@ -36,7 +36,7 @@ TESTER_MILESTONE_PROMPT = (
     "Run the new tests. For any test that fails — whether existing or new — create a "
     "GitHub issue: `gh issue create --title '[bug] <short description>' "
     "--body 'What failed: <details>. Steps to reproduce: <steps>. "
-    "Milestone: {milestone_name}' --label bug`. "
+    "Milestone: {milestone_name}' --label bug,{milestone_label}`. "
     "Before creating, check for duplicates: "
     "`gh issue list --label bug --state open --json number,title` and skip if a "
     "similar issue already exists. "

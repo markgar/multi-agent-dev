@@ -4,6 +4,7 @@ from agentic_dev.builder import (
     BuildState,
     _MAX_FIX_ONLY_CYCLES,
     _build_partition_filter,
+    _format_issue_list,
     classify_remaining_work,
     mark_story_claimed,
     mark_story_completed_text,
@@ -281,3 +282,29 @@ def test_partition_filter_multiple_builders_returns_empty():
     assert _build_partition_filter(1, 3) == ""
     assert _build_partition_filter(2, 3) == ""
     assert _build_partition_filter(3, 3) == ""
+
+
+# ============================================
+# _format_issue_list (pure function)
+# ============================================
+
+
+def test_format_issue_list_renders_number_and_title():
+    issues = [
+        {"number": 1, "title": "Server crash on empty input"},
+        {"number": 5, "title": "Missing validation on email field"},
+    ]
+    result = _format_issue_list(issues)
+    assert "#1: Server crash on empty input" in result
+    assert "#5: Missing validation on email field" in result
+
+
+def test_format_issue_list_empty_input():
+    assert _format_issue_list([]) == ""
+
+
+def test_format_issue_list_handles_missing_fields():
+    issues = [{"number": 3}, {"title": "No number"}]
+    result = _format_issue_list(issues)
+    assert "#3:" in result
+    assert "#?:" in result

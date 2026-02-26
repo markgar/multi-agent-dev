@@ -44,6 +44,7 @@ def _test_milestone(boundary: dict) -> None:
         milestone_name=boundary["name"],
         milestone_start_sha=boundary["start_sha"],
         milestone_end_sha=boundary["end_sha"],
+        milestone_label=boundary.get("label", ""),
     )
     exit_code = run_copilot("tester", prompt)
     git_push_with_retry("tester")

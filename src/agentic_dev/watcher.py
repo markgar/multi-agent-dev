@@ -77,10 +77,24 @@ def _partition_commits(commits: list[str], last_sha: str) -> tuple[list[str], st
     return reviewable, base_sha
 
 
+def _extract_milestone_label(branch_name: str) -> str:
+    """Extract the milestone label from a feature branch name.
+
+    Branch format: 'builder-N/milestone-NN' or 'builder-N/milestone-NNa'.
+    Returns e.g. 'milestone-01' or 'milestone-08a'. Falls back to the part
+    after the slash if the format doesn't match the expected pattern.
+    """
+    if "/" in branch_name:
+        return branch_name.split("/", 1)[1]
+    return branch_name
+
+
 def _review_branch_single_commit(prev_sha: str, commit_sha: str, branch_name: str, builder_id: int) -> int:
     """Review a single commit on a feature branch. Returns copilot exit code."""
+    milestone_label = _extract_milestone_label(branch_name)
     prompt = REVIEWER_BRANCH_COMMIT_PROMPT.format(
         prev_sha=prev_sha, commit_sha=commit_sha, branch_name=branch_name,
+        milestone_label=milestone_label,
     )
     return run_copilot(f"reviewer-{builder_id}", prompt)
 
@@ -88,11 +102,13 @@ def _review_branch_single_commit(prev_sha: str, commit_sha: str, branch_name: st
 def _review_branch_batch(base_sha: str, reviewable: list[str], branch_name: str, builder_id: int) -> int:
     """Review multiple commits on a feature branch as a batch. Returns copilot exit code."""
     head_sha = reviewable[-1]
+    milestone_label = _extract_milestone_label(branch_name)
     prompt = REVIEWER_BRANCH_BATCH_PROMPT.format(
         commit_count=len(reviewable),
         base_sha=base_sha,
         head_sha=head_sha,
         branch_name=branch_name,
+        milestone_label=milestone_label,
     )
     return run_copilot(f"reviewer-{builder_id}", prompt)
 

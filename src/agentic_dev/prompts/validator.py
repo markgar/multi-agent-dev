@@ -51,7 +51,7 @@ VALIDATOR_PLAYWRIGHT_SECTION = (
     "  PASS  [UI] Navigation to /members shows members table\n"
     "  FAIL  [UI] Submit member form -> expected success toast, got JS error\n"
     "- Report UI failures by creating a GitHub issue: "
-    "`gh issue create --title '[UI] <description>' --body '<details>' --label bug`.\n\n"
+    "`gh issue create --title '[UI] <description>' --body '<details>' --label bug,{milestone_label}`.\n\n"
     "IMPORTANT: Playwright tests complement curl tests — do not replace API tests "
     "with browser tests. Test APIs with curl AND test UI rendering with Playwright.\n"
 )
@@ -91,7 +91,7 @@ VALIDATOR_JOURNEY_SECTION = (
     "{journey_list}\n"
     "For any journey failure, create a GitHub issue: "
     "`gh issue create --title '[journey] <journey-id>: <failing step>' "
-    "--body '<expected vs actual behavior, milestone: {milestone_name}>' --label bug`.\n"
+    "--body '<expected vs actual behavior, milestone: {milestone_name}>' --label bug,{milestone_label}`.\n"
 )
 
 
@@ -165,7 +165,7 @@ VALIDATOR_MILESTONE_PROMPT = (
     "wrong data, error case not handled — create a GitHub issue: "
     "`gh issue create --title '[bug] <short description>' "
     "--body '<what failed, expected vs actual, milestone: {milestone_name}>' "
-    "--label bug`. "
+    "--label bug,{milestone_label}`. "
     "Before creating, check for duplicates: "
     "`gh issue list --label bug --state open --json number,title` and skip if a "
     "similar issue already exists.\n\n"
@@ -215,7 +215,7 @@ VALIDATOR_LEGACY_SCOPE = (
     "- Verify each of those requirements is working in the running app.\n"
     "- For any requirement that should be deliverable by this story but isn't, "
     "create a GitHub issue: `gh issue create --title '[missing-requirement] <description>' "
-    "--body '<what was required and what is missing>' --label bug`.\n\n"
+    "--body '<what was required and what is missing>' --label bug,{milestone_label}`.\n\n"
 )
 
 VALIDATOR_LEGACY_RESULTS_TAGS = (

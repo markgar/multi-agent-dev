@@ -114,8 +114,8 @@ def test_parses_milestone_log_with_multiple_entries():
     )
     result = parse_milestone_log(log_text)
     assert len(result) == 3
-    assert result[0] == {"name": "Project scaffolding", "start_sha": "abc1234", "end_sha": "def5678"}
-    assert result[2] == {"name": "API endpoints", "start_sha": "789abcd", "end_sha": "eee1111"}
+    assert result[0] == {"name": "Project scaffolding", "start_sha": "abc1234", "end_sha": "def5678", "label": ""}
+    assert result[2] == {"name": "API endpoints", "start_sha": "789abcd", "end_sha": "eee1111", "label": ""}
 
 
 def test_milestone_log_skips_corrupted_lines():
@@ -586,3 +586,40 @@ def test_get_tasks_per_milestone_from_dir(tmp_path):
     assert result[0]["name"] == "Members management"
     assert result[0]["task_count"] == 5
     assert result[0]["path"] == str(d / "milestone-02-members.md")
+
+
+# ============================================
+# parse_milestone_log with labels (4-field format)
+# ============================================
+
+
+def test_parse_milestone_log_with_labels():
+    log_text = (
+        "Scaffolding|abc1234|def5678|milestone-01\n"
+        "Members API|def5678|789abcd|milestone-02\n"
+    )
+    result = parse_milestone_log(log_text)
+    assert len(result) == 2
+    assert result[0] == {"name": "Scaffolding", "start_sha": "abc1234", "end_sha": "def5678", "label": "milestone-01"}
+    assert result[1] == {"name": "Members API", "start_sha": "def5678", "end_sha": "789abcd", "label": "milestone-02"}
+
+
+def test_parse_milestone_log_mixed_3_and_4_field_lines():
+    """Old 3-field lines and new 4-field lines coexist in the same log."""
+    log_text = (
+        "Scaffolding|abc|def\n"
+        "Members API|def|789|milestone-02\n"
+        "Auth|789|eee|milestone-03\n"
+    )
+    result = parse_milestone_log(log_text)
+    assert len(result) == 3
+    assert result[0]["label"] == ""
+    assert result[1]["label"] == "milestone-02"
+    assert result[2]["label"] == "milestone-03"
+
+
+def test_parse_milestone_log_split_milestone_label():
+    """Split milestones use suffixed labels like milestone-08a."""
+    log_text = "Members Part A|aaa|bbb|milestone-08a\n"
+    result = parse_milestone_log(log_text)
+    assert result[0]["label"] == "milestone-08a"

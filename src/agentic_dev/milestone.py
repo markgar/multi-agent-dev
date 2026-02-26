@@ -9,18 +9,22 @@ _MILESTONE_CHECKPOINT_FILE = "reviewer.milestone"
 _MILESTONE_LOG_FILE = "milestones.log"
 
 
-def record_milestone_boundary(name: str, start_sha: str, end_sha: str) -> None:
+def record_milestone_boundary(
+    name: str, start_sha: str, end_sha: str, label: str = "",
+) -> None:
     """Append a completed milestone's SHA range to logs/milestones.log.
 
     This is the shared source of truth for milestone boundaries.
     Written by the build loop (deterministic code, not prompts).
-    Format: name|start_sha|end_sha
+    Format: name|start_sha|end_sha|label
+    The label field (e.g. 'milestone-01') is used by agents to tag GitHub Issues
+    so the issue builder can filter by merged milestones.
     """
     try:
         logs_dir = resolve_logs_dir()
         path = os.path.join(logs_dir, _MILESTONE_LOG_FILE)
         with open(path, "a", encoding="utf-8") as f:
-            f.write(f"{name}|{start_sha}|{end_sha}\n")
+            f.write(f"{name}|{start_sha}|{end_sha}|{label}\n")
     except Exception:
         pass
 
@@ -29,16 +33,18 @@ def parse_milestone_log(text: str) -> list[dict]:
     """Parse milestone log text into boundary dicts.
 
     Pure function: takes raw text, returns structured data.
-    Format per line: name|start_sha|end_sha
+    Format per line: name|start_sha|end_sha|label
+    Backward-compatible: accepts 3-field lines (label defaults to "").
     """
     boundaries = []
     for line in text.strip().split("\n"):
         parts = line.strip().split("|")
-        if len(parts) == 3:
+        if len(parts) >= 3:
             boundaries.append({
                 "name": parts[0],
                 "start_sha": parts[1],
                 "end_sha": parts[2],
+                "label": parts[3] if len(parts) >= 4 else "",
             })
     return boundaries
 
@@ -58,6 +64,17 @@ def load_milestone_boundaries() -> list[dict]:
     except Exception:
         pass
     return []
+
+
+def get_merged_milestone_labels() -> set[str]:
+    """Return the set of milestone labels that have been merged to main.
+
+    Reads milestones.log and collects non-empty label fields. The issue builder
+    uses this to filter GitHub Issues — only fixing issues whose milestone has
+    already landed on main.
+    """
+    boundaries = load_milestone_boundaries()
+    return {b["label"] for b in boundaries if b.get("label")}
 
 
 def get_last_milestone_end_sha() -> str:

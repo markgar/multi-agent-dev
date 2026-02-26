@@ -67,6 +67,7 @@ def _review_milestone(boundary: dict) -> None:
         milestone_start_sha=boundary["start_sha"],
         milestone_end_sha=boundary["end_sha"],
         code_analysis_findings=analysis_text,
+        milestone_label=boundary.get("label", ""),
     )
     exit_code = run_copilot("milestone-reviewer", milestone_prompt)
 

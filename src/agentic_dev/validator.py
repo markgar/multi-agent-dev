@@ -349,12 +349,16 @@ def _build_validation_scope(boundary: dict) -> tuple[str, str]:
         journey_ids = ", ".join(j.id for j in selected)
         log("validator", f"Journey-based validation: running {journey_ids}", style="cyan")
         scope = VALIDATOR_JOURNEY_SECTION.format(
-            journey_list=journey_list, milestone_name=boundary["name"]
+            journey_list=journey_list, milestone_name=boundary["name"],
+            milestone_label=boundary.get("label", ""),
         )
         return scope, VALIDATOR_JOURNEY_RESULTS_TAGS
 
     log("validator", "No eligible journeys found — using legacy A/B/C scope", style="dim")
-    scope = VALIDATOR_LEGACY_SCOPE.format(milestone_name=boundary["name"])
+    scope = VALIDATOR_LEGACY_SCOPE.format(
+        milestone_name=boundary["name"],
+        milestone_label=boundary.get("label", ""),
+    )
     return scope, VALIDATOR_LEGACY_RESULTS_TAGS
 
 
@@ -384,7 +388,8 @@ def _validate_milestone(boundary: dict, project_name: str, save_traces: bool = F
     _cleanup_containers()
 
     has_frontend = detect_has_frontend(".")
-    ui_instructions = VALIDATOR_PLAYWRIGHT_SECTION if has_frontend else ""
+    milestone_label = boundary.get("label", "")
+    ui_instructions = VALIDATOR_PLAYWRIGHT_SECTION.format(milestone_label=milestone_label) if has_frontend else ""
     if has_frontend and save_traces:
         ui_instructions += "\n\n" + VALIDATOR_PLAYWRIGHT_TRACE_SECTION
 
@@ -400,6 +405,7 @@ def _validate_milestone(boundary: dict, project_name: str, save_traces: bool = F
         compose_project_name=compose_name,
         app_port=app_port,
         secondary_port=secondary_port,
+        milestone_label=boundary.get("label", ""),
     )
     exit_code = run_copilot("validator", prompt)
 

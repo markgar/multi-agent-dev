@@ -309,6 +309,7 @@ def test_branch_prompts_can_be_formatted():
         branch_name="builder-1/milestone-01",
         prev_sha="abc12345",
         commit_sha="def67890",
+        milestone_label="milestone-01",
     )
     assert "builder-1/milestone-01" in result
     assert "abc12345" in result
@@ -318,9 +319,35 @@ def test_branch_prompts_can_be_formatted():
         base_sha="aaa11111",
         head_sha="bbb22222",
         commit_count=5,
+        milestone_label="milestone-03",
     )
     assert "builder-2/milestone-03" in result
     assert "5" in result
+
+
+# ============================================
+# _extract_milestone_label from branch names
+# ============================================
+
+
+def test_extract_milestone_label_standard_branch():
+    from agentic_dev.watcher import _extract_milestone_label
+    assert _extract_milestone_label("builder-1/milestone-01") == "milestone-01"
+
+
+def test_extract_milestone_label_split_branch():
+    from agentic_dev.watcher import _extract_milestone_label
+    assert _extract_milestone_label("builder-2/milestone-08a") == "milestone-08a"
+
+
+def test_extract_milestone_label_no_slash_returns_whole_name():
+    from agentic_dev.watcher import _extract_milestone_label
+    assert _extract_milestone_label("milestone-01") == "milestone-01"
+
+
+def test_extract_milestone_label_multi_slash():
+    from agentic_dev.watcher import _extract_milestone_label
+    assert _extract_milestone_label("origin/builder-1/milestone-01") == "builder-1/milestone-01"
 
 
 # ============================================

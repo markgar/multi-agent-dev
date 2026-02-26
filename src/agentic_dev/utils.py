@@ -448,3 +448,61 @@ def count_open_finding_issues(builder_id: int = 1, num_builders: int = 1) -> int
         return 0
     numbers = _parse_gh_issue_numbers(result.stdout)
     return len(numbers)
+
+
+def ensure_milestone_label_exists(label: str) -> None:
+    """Create a milestone label on the GitHub repo if it doesn't already exist.
+
+    Idempotent: silently succeeds if the label already exists.
+    Milestone labels (e.g. 'milestone-01') tag every GitHub Issue with the
+    milestone that generated it, so the issue builder can filter by merged
+    milestones.
+    """
+    if not label:
+        return
+    run_cmd(
+        ["gh", "label", "create", label, "--description",
+         f"Issues from {label}", "--color", "bfd4f2", "--force"],
+        quiet=True,
+    )
+
+
+def list_open_issues_for_milestones(labels: set[str]) -> list[dict]:
+    """List open bug and finding issues that belong to any of the given milestone labels.
+
+    Returns a deduplicated list of dicts with 'number', 'title', 'body', and 'labels'
+    keys, sorted by issue number. Only issues that carry BOTH a severity label
+    (bug or finding) AND one of the milestone labels are returned.
+    """
+    import json
+
+    if not labels:
+        return []
+
+    seen: set[int] = set()
+    result_issues: list[dict] = []
+
+    for milestone_label in sorted(labels):
+        for severity_label in ("bug", "finding"):
+            combined_label = f"{severity_label},{milestone_label}"
+            result = run_cmd(
+                ["gh", "issue", "list", "--label", combined_label,
+                 "--state", "open", "--json", "number,title,body,labels",
+                 "--limit", "200"],
+                capture=True,
+            )
+            if result.returncode != 0:
+                continue
+            try:
+                issues = json.loads(result.stdout)
+            except (json.JSONDecodeError, TypeError):
+                continue
+            for issue in issues:
+                if isinstance(issue, dict) and "number" in issue:
+                    num = issue["number"]
+                    if num not in seen:
+                        seen.add(num)
+                        result_issues.append(issue)
+
+    result_issues.sort(key=lambda i: i["number"])
+    return result_issues
