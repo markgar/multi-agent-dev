@@ -254,8 +254,11 @@ def _launch_agents_and_build(
     check_milestone_sizes(model=agent_models.get("planner", ""))
     _generate_copilot_instructions(model=agent_models.get("planner", ""))
 
+    # Launch branch-attached reviewers for milestone builders only.
+    # The issue builder (last builder when num_builders > 1) doesn't get a reviewer.
+    milestone_builder_count = num_builders - 1 if num_builders > 1 else num_builders
     log("orchestrator", "")
-    for i in range(1, num_builders + 1):
+    for i in range(1, milestone_builder_count + 1):
         log("orchestrator", f"Launching branch-attached reviewer-{i}...", style="yellow")
         reviewer_dir = os.path.join(parent_dir, f"reviewer-{i}")
         spawn_agent_in_terminal(reviewer_dir, f"commitwatch --builder-id {i}",
@@ -277,10 +280,14 @@ def _launch_agents_and_build(
     # Spawn builders as terminal processes.
     # Claim races are handled by optimistic locking in the builder
     # (push fails → reset → pull → try next story), so no stagger needed.
+    # When num_builders > 1, the last builder is the dedicated issue builder.
     for i in range(1, num_builders + 1):
         builder_dir = os.path.join(parent_dir, f"builder-{i}")
-        builder_cmd = f"build --loop --builder-id {i} --num-builders {num_builders}"
-        log("orchestrator", f"Launching builder-{i}...", style="yellow")
+        is_issue_builder = num_builders > 1 and i == num_builders
+        role_flag = " --role issue" if is_issue_builder else ""
+        builder_cmd = f"build --loop --builder-id {i} --num-builders {num_builders}{role_flag}"
+        role_label = "issue builder" if is_issue_builder else f"builder-{i}"
+        log("orchestrator", f"Launching {role_label}...", style="yellow")
         spawn_agent_in_terminal(builder_dir, builder_cmd,
                                 model=agent_models.get("builder", ""))
 
@@ -420,7 +427,7 @@ def _resume_existing_project(
 
 def go(
     directory: Annotated[str, typer.Option(help="Project directory path (created if new, resumed if existing)")],
-    model: Annotated[str, typer.Option(help="Copilot model to use (required). Allowed: gpt-5.3-codex, claude-opus-4.6, claude-opus-4.6-fast, claude-sonnet-4.6")],
+    model: Annotated[str, typer.Option(help="Copilot model to use (required). Allowed: gpt-5.3-codex, claude-opus-4.6, claude-opus-4.6-fast, claude-sonnet-4.6, claude-haiku-4.5")],
     description: Annotated[str, typer.Option(help="What the project should do")] = None,
     spec_file: Annotated[str, typer.Option(help="Path to a markdown file containing the project requirements")] = None,
     name: Annotated[str, typer.Option(help="GitHub repo name (defaults to directory basename)")] = None,

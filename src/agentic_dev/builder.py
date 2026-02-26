@@ -24,7 +24,11 @@ from agentic_dev.milestone import (
     parse_milestone_file,
     record_milestone_boundary,
 )
-from agentic_dev.prompts import BUILDER_FIX_ONLY_PROMPT, BUILDER_PROMPT
+from agentic_dev.prompts import (
+    BUILDER_FIX_ONLY_PROMPT,
+    BUILDER_ISSUE_FIXING_SECTION,
+    BUILDER_PROMPT,
+)
 from agentic_dev.sentinel import (
     are_agents_idle,
     clear_branch_review_head,
@@ -507,6 +511,69 @@ def _check_remaining_work(
     return "done"
 
 
+# ============================================
+# Issue builder loop
+# ============================================
+
+_ISSUE_POLL_INTERVAL = 30  # seconds between polls when no issues found
+
+
+def _run_issue_builder_loop(
+    agent_name: str, builder_id: int, state: BuildState,
+) -> None:
+    """Run the dedicated issue builder loop.
+
+    Polls for open bugs and findings. When any exist, runs a fix-only Copilot
+    session on main. When none exist, checks whether all milestone builders
+    have finished (all other builder-N.done sentinels present). If so, writes
+    its own sentinel and returns. Otherwise sleeps and polls again.
+    """
+    from agentic_dev.sentinel import are_other_builders_done
+
+    log(agent_name, "")
+    log(agent_name, "[Issue Builder] Starting dedicated issue fixing loop.", style="green")
+    log(agent_name, "")
+
+    while True:
+        ensure_on_main(agent_name)
+        run_cmd(agent_name, "git pull --rebase")
+
+        bugs = count_open_bug_issues(agent_name)
+        findings = count_open_finding_issues(agent_name)
+        total_issues = bugs + findings
+
+        if total_issues > 0:
+            log(agent_name, "")
+            log(agent_name, f"[Issue Builder] Found {bugs} bug(s) and {findings} finding(s). "
+                "Fixing...", style="green")
+            log(agent_name, "")
+            run_copilot(agent_name, BUILDER_FIX_ONLY_PROMPT)
+            state.fix_only_cycles += 1
+            continue
+
+        # No issues right now — check if milestone builders are all done
+        if are_other_builders_done(builder_id):
+            # All builders (including us if sentinel already written) are done.
+            # Do one final check for issues that may have been filed during shutdown.
+            bugs = count_open_bug_issues(agent_name)
+            findings = count_open_finding_issues(agent_name)
+            if bugs + findings > 0:
+                log(agent_name, f"[Issue Builder] {bugs + findings} issue(s) filed during "
+                    "shutdown. Fixing...", style="green")
+                run_copilot(agent_name, BUILDER_FIX_ONLY_PROMPT)
+                continue
+
+            log(agent_name, "")
+            log(agent_name, "[Issue Builder] All milestone builders done, no open issues. "
+                "Shutting down.", style="bold green")
+            write_builder_done(builder_id)
+            return
+
+        # Milestone builders still working, nothing to fix yet — wait
+        log(agent_name, "[Issue Builder] No open issues. Waiting for work...", style="dim")
+        time.sleep(_ISSUE_POLL_INTERVAL)
+
+
 def _run_fix_only_cycle(
     state: BuildState, agent_name: str, milestone_file: str,
     builder_id: int = 1, num_builders: int = 1,
@@ -531,6 +598,7 @@ def _run_fix_only_cycle(
     log(agent_name, "")
     prompt = BUILDER_PROMPT.format(
         milestone_file=milestone_file,
+        issue_fixing_section=BUILDER_ISSUE_FIXING_SECTION,
     )
     run_copilot(agent_name, prompt)
     return "continue"
@@ -545,14 +613,20 @@ def build(
     loop: Annotated[bool, typer.Option(help="Run continuously until all work is done")] = False,
     builder_id: Annotated[int, typer.Option(help="Builder instance number (1-based)")] = 1,
     num_builders: Annotated[int, typer.Option(help="Total number of builder instances")] = 1,
+    role: Annotated[str, typer.Option(help="Builder role: 'milestone' (claim stories) or 'issue' (fix bugs/findings)")] = "milestone",
 ) -> None:
     """Claim stories from BACKLOG.md, fix bugs, address reviews, complete milestones.
 
     In loop mode: claim -> plan -> build -> complete -> repeat until all stories done.
     In non-loop mode: build a single milestone (legacy compatibility).
+    Role 'issue': dedicated issue fixer — polls for bugs/findings, never claims stories.
     """
     agent_name = f"builder-{builder_id}"
     state = BuildState()
+
+    if role == "issue":
+        _run_issue_builder_loop(agent_name, builder_id, state)
+        return
 
     if not loop:
         # Non-loop mode: find the first incomplete milestone file and build it
@@ -568,12 +642,18 @@ def build(
 
         prompt = BUILDER_PROMPT.format(
             milestone_file=milestone_file,
+            issue_fixing_section=BUILDER_ISSUE_FIXING_SECTION,
         )
         exit_code = run_copilot(agent_name, prompt)
         if exit_code != 0:
             log(agent_name, "Builder failed! Check errors above.", style="bold red")
         write_builder_done(builder_id)
         return
+
+    # Milestone builders with a dedicated issue builder skip inline issue fixing.
+    # When num_builders <= 1 (solo mode), the milestone builder fixes issues itself.
+    has_issue_builder = num_builders > 1
+    issue_section = "" if has_issue_builder else BUILDER_ISSUE_FIXING_SECTION
 
     # Loop mode: claim-and-build pattern
     while True:
@@ -668,6 +748,7 @@ def build(
 
             prompt = BUILDER_PROMPT.format(
                 milestone_file=milestone_file,
+                issue_fixing_section=issue_section,
             )
             exit_code = run_copilot(agent_name, prompt)
 

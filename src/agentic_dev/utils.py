@@ -105,6 +105,7 @@ MODEL_NAME_MAP = {
     "Claude Opus 4.6": "claude-opus-4.6",
     "Claude Opus 4.6 Fast": "claude-opus-4.6-fast",
     "Claude Sonnet 4.6": "claude-sonnet-4.6",
+    "Claude Haiku 4.5": "claude-haiku-4.5",
 }
 
 # Set of all accepted inputs (friendly names + CLI names).

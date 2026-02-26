@@ -11,7 +11,7 @@ import os
 import pytest
 
 from agentic_dev.builder import _cleanup_orphaned_milestones
-from agentic_dev.prompts import BUILDER_PROMPT
+from agentic_dev.prompts import BUILDER_PROMPT, BUILDER_ISSUE_FIXING_SECTION
 
 
 # ============================================
@@ -24,6 +24,7 @@ def test_builder_prompt_does_not_contain_git_pull_rebase():
     main, contaminating the branch and causing merge conflicts."""
     rendered = BUILDER_PROMPT.format(
         milestone_file="milestones/milestone-01.md",
+        issue_fixing_section=BUILDER_ISSUE_FIXING_SECTION,
     )
     # The prompt should not instruct the builder to run git pull --rebase.
     # The warning text ("Do NOT run 'git pull'") is allowed — it's a prohibition.
@@ -35,6 +36,7 @@ def test_builder_prompt_warns_against_git_pull():
     """The prompt should explicitly tell the LLM not to run git pull."""
     rendered = BUILDER_PROMPT.format(
         milestone_file="milestones/milestone-01.md",
+        issue_fixing_section=BUILDER_ISSUE_FIXING_SECTION,
     )
     assert "Do NOT run 'git pull'" in rendered
 
@@ -43,6 +45,7 @@ def test_builder_prompt_instructs_git_push_after_commit():
     """After each commit, the builder should push without pulling first."""
     rendered = BUILDER_PROMPT.format(
         milestone_file="milestones/milestone-01.md",
+        issue_fixing_section=BUILDER_ISSUE_FIXING_SECTION,
     )
     assert "After each commit, run git push." in rendered
 

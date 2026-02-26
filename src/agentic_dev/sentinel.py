@@ -27,6 +27,47 @@ def write_builder_done(builder_id: int = 1) -> None:
         pass
 
 
+def are_other_builders_done(exclude_builder_id: int) -> bool:
+    """Check if all builders EXCEPT exclude_builder_id have finished.
+
+    Used by the issue builder to detect when all milestone builders are done
+    without waiting for its own sentinel (which hasn't been written yet).
+    Returns True only when at least one other builder log exists and all
+    other builder logs have matching done sentinels or are stale.
+    """
+    try:
+        logs_dir = resolve_logs_dir()
+        now = datetime.now().timestamp()
+        all_files = os.listdir(logs_dir)
+        builder_logs = []
+        builder_dones: set[str] = set()
+        log_ages: dict[str, float] = {}
+
+        for fname in all_files:
+            m = _BUILDER_ID_RE.match(fname)
+            if m:
+                bid = int(m.group(1))
+                if bid == exclude_builder_id:
+                    continue
+                if m.group(2) == "log":
+                    builder_logs.append(fname)
+                    path = os.path.join(logs_dir, fname)
+                    mtime = os.path.getmtime(path)
+                    log_ages[fname] = (now - mtime) / 60
+                elif m.group(2) == "done":
+                    builder_dones.add(fname)
+
+        if not builder_logs:
+            return False
+
+        return check_all_builders_done_status(
+            builder_logs, builder_dones, log_ages, _STALE_LOG_TIMEOUT_MINUTES
+        )
+    except Exception:
+        pass
+    return False
+
+
 def clear_builder_done(num_builders: int = 1) -> None:
     """Remove all builder-N.done sentinels for N in 1..num_builders.
 
