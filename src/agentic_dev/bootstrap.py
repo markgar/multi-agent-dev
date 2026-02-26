@@ -146,7 +146,7 @@ They coordinate through git push/pull and shared markdown files.
 | `BACKLOG.md` | Ordered story queue with dependency tracking (planner-managed) |
 | `milestones/` | Per-story milestone files — one file per story, owned by one builder |
 | `REQUIREMENTS.md` | Original user requirements (may be updated between sessions) |
-| `reviews/` | Directory-based review findings (one file per finding, never edited) |
+| `reviews/` | (Legacy) Directory-based review findings — replaced by GitHub Issues |
 | `DEPLOY.md` | Deployment knowledge accumulated by the validator |
 | `.github/copilot-instructions.md` | Coding guidelines and project conventions for the builder |
 
@@ -205,38 +205,38 @@ def _write_requirements_file(builder_dir: str, description: str) -> None:
 
 
 def _create_tracking_directories(builder_dir: str) -> None:
-    """Create reviews/ directory with .gitkeep file for directory-based tracking."""
-    for dirname in ("reviews",):
-        dirpath = os.path.join(builder_dir, dirname)
-        os.makedirs(dirpath, exist_ok=True)
-        gitkeep = os.path.join(dirpath, ".gitkeep")
-        if not os.path.exists(gitkeep):
-            with open(gitkeep, "w", encoding="utf-8") as f:
-                f.write("")
+    """Create tracking directories. Reviews are now tracked via GitHub Issues."""
+    # The reviews/ directory is no longer needed — findings and notes are GitHub Issues.
+    # Keeping this function for forward compatibility in case new directories are added.
     console.print("✓ Saved original requirements to REQUIREMENTS.md", style="green")
 
 
-def _clone_agent_copies(gh_user: str, name: str) -> None:
-    """Clone reviewer, tester, and validator copies from the repo."""
-    clone_source = f"https://github.com/{gh_user}/{name}"
+def _clone_agent_copies(owner: str, name: str) -> None:
+    """Clone reviewer, tester, and validator copies from the repo.
+
+    owner: GitHub username or org that owns the repo.
+    """
+    clone_source = f"https://github.com/{owner}/{name}"
     log("bootstrap", "")
     for agent_name in ("reviewer", "milestone-reviewer", "tester", "validator"):
         log("bootstrap", f"Cloning {agent_name} copy...", style="cyan")
         run_cmd(["git", "clone", clone_source, agent_name])
 
 
-def _scaffold_project(directory, name, description, gh_user):
+def _scaffold_project(directory, name, description, gh_user, org=""):
     """Create repo, write REQUIREMENTS.md, run Copilot bootstrap, clone reviewer/tester.
 
     directory: absolute path to the project parent directory.
     name: project name (used for GitHub repo name).
+    org: GitHub org to create the repo in (empty = personal account).
     Returns True on success.
     """
-    repo_check = run_cmd(["gh", "repo", "view", f"{gh_user}/{name}"], quiet=True)
+    owner = org or gh_user
+    repo_check = run_cmd(["gh", "repo", "view", f"{owner}/{name}"], quiet=True)
     if repo_check.returncode == 0:
-        console.print(f"ERROR: Repository {gh_user}/{name} already exists on GitHub.", style="bold red")
+        console.print(f"ERROR: Repository {owner}/{name} already exists on GitHub.", style="bold red")
         console.print(
-            f"Delete it first (gh repo delete {gh_user}/{name}) or choose a different name.",
+            f"Delete it first (gh repo delete {owner}/{name}) or choose a different name.",
             style="yellow",
         )
         return False
@@ -252,7 +252,7 @@ def _scaffold_project(directory, name, description, gh_user):
     _write_requirements_file(builder_dir, description)
     _create_tracking_directories(builder_dir)
 
-    prompt = BOOTSTRAP_PROMPT.format(description=description, gh_user=gh_user, name=name)
+    prompt = BOOTSTRAP_PROMPT.format(description=description, gh_user=owner, name=name)
     exit_code = run_copilot("bootstrap", prompt)
 
     if exit_code != 0:
@@ -262,7 +262,7 @@ def _scaffold_project(directory, name, description, gh_user):
         log("bootstrap", "======================================", style="bold red")
         return False
 
-    _clone_agent_copies(gh_user, name)
+    _clone_agent_copies(owner, name)
 
     write_workspace_readme(os.getcwd())
 
@@ -278,11 +278,13 @@ def run_bootstrap(
     name: str,
     description: str = None,
     spec_file: str = None,
+    org: str = "",
 ) -> None:
     """Internal: scaffold a new project — git repo, GitHub remote, clone reviewer/tester copies.
 
     directory: absolute path to the project parent directory.
     name: project name (used for GitHub repo name, display labels).
+    org: GitHub org to create the repo in (empty = personal account).
     """
     description = _resolve_description(description, spec_file)
 
@@ -309,5 +311,5 @@ def run_bootstrap(
     console.print(f"Bootstrapping {name}...", style="cyan")
     console.print()
 
-    if not _scaffold_project(directory, name, description, gh_user):
+    if not _scaffold_project(directory, name, description, gh_user, org=org):
         return

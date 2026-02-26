@@ -274,26 +274,25 @@ def test_partition_filter_single_builder_returns_empty():
     assert _build_partition_filter(1, 1) == ""
 
 
-def test_partition_filter_two_builders_has_modulo_bugs_and_digit_reviews():
+def test_partition_filter_two_builders_has_modulo_for_bugs_and_findings():
     result = _build_partition_filter(1, 2)
-    # Bug partitioning uses issue-number modulo
-    assert "number %" in result or "issue number" in result.lower()
+    # Both bug and finding partitioning use issue-number modulo
     assert "builder 1 of 2" in result
-    # Review partitioning still uses last-digit
-    assert "0, 2, 4, 6, 8" in result
+    assert "number %" in result or "issue number" in result.lower()
+    # Findings now also use issue-number modulo, not digit-based
+    assert "finding issues" in result.lower()
 
     result = _build_partition_filter(2, 2)
     assert "builder 2 of 2" in result
-    assert "1, 3, 5, 7, 9" in result
 
 
 def test_partition_filter_three_builders():
     result = _build_partition_filter(1, 3)
-    # Reviews still use digit-based partitioning
-    assert "0, 3, 6, 9" in result
+    # Should reference modulo rule for both bugs and findings
+    assert "number % 3 == 0" in result
 
     result = _build_partition_filter(2, 3)
-    assert "1, 4, 7" in result
+    assert "number % 3 == 1" in result
 
     result = _build_partition_filter(3, 3)
-    assert "2, 5, 8" in result
+    assert "number % 3 == 2" in result

@@ -112,8 +112,28 @@ def status() -> None:
             console.print(f.read().rstrip())
 
     if os.path.isdir("reviews"):
-        console.print("=== REVIEWS ===", style="bold yellow")
+        console.print("=== REVIEWS (legacy files) ===", style="bold yellow")
         _print_dir_status("reviews", "finding-", "resolved-")
+
+    console.print("=== FINDINGS (GitHub Issues) ===", style="bold yellow")
+    finding_output = run_cmd(
+        ["gh", "issue", "list", "--label", "finding", "--state", "all",
+         "--json", "number,title,state", "--limit", "50"],
+        capture=True,
+    )
+    if finding_output.returncode == 0 and finding_output.stdout.strip():
+        import json as _json_findings
+        try:
+            finding_issues = _json_findings.loads(finding_output.stdout)
+            open_findings = [i for i in finding_issues if i.get("state") == "OPEN"]
+            closed_findings = [i for i in finding_issues if i.get("state") == "CLOSED"]
+            console.print(f"  Open: {len(open_findings)}  Closed: {len(closed_findings)}")
+            for issue in open_findings:
+                console.print(f"  [ ] #{issue['number']}: {issue['title']}", style="yellow")
+        except (ValueError, KeyError):
+            console.print("  (could not parse gh issue list output)", style="yellow")
+    else:
+        console.print("  No finding issues found (or gh CLI not available).", style="yellow")
 
     console.print()
 

@@ -17,7 +17,7 @@ from agentic_dev.prompts import (
 )
 from agentic_dev.sentinel import clear_builder_done, is_builder_done
 from agentic_dev.terminal import spawn_agent_in_terminal
-from agentic_dev.utils import console, ensure_bug_label_exists, log, pushd, run_cmd, run_copilot, validate_model
+from agentic_dev.utils import console, ensure_bug_label_exists, ensure_review_labels_exist, log, pushd, run_cmd, run_copilot, validate_model
 
 
 # Per-agent model map. Keys are agent roles, values are Copilot CLI model names.
@@ -85,18 +85,22 @@ def _detect_clone_source(parent_dir: str) -> str:
     return ""
 
 
-def _find_existing_repo(parent_dir: str, name: str) -> str:
+def _find_existing_repo(parent_dir: str, name: str, org: str = "") -> str:
     """Check if the project repo already exists. Returns the clone URL/path, or empty string.
 
     Checks for the repo on GitHub via gh repo view.
+    When org is provided, checks under the org instead of the authenticated user.
     """
-    result = run_cmd(["gh", "api", "user", "--jq", ".login"], capture=True)
-    gh_user = result.stdout.strip() if result.returncode == 0 else ""
-    if not gh_user:
+    if org:
+        owner = org
+    else:
+        result = run_cmd(["gh", "api", "user", "--jq", ".login"], capture=True)
+        owner = result.stdout.strip() if result.returncode == 0 else ""
+    if not owner:
         return ""
-    repo_check = run_cmd(["gh", "repo", "view", f"{gh_user}/{name}"], quiet=True)
+    repo_check = run_cmd(["gh", "repo", "view", f"{owner}/{name}"], quiet=True)
     if repo_check.returncode == 0:
-        return f"https://github.com/{gh_user}/{name}"
+        return f"https://github.com/{owner}/{name}"
     return ""
 
 
@@ -236,6 +240,7 @@ def _launch_agents_and_build(
         agent_models = {}
     clear_builder_done(num_builders)
     ensure_bug_label_exists()
+    ensure_review_labels_exist()
 
     log("orchestrator", "")
     log("orchestrator", "======================================", style="bold magenta")
@@ -343,14 +348,14 @@ def _resolve_directory(directory: str) -> str | None:
 def _bootstrap_new_project(
     parent_dir: str, project_name: str, description: str, spec_file: str,
     start_dir: str, num_builders: int = 1,
-    agent_models: AgentModels | None = None,
+    agent_models: AgentModels | None = None, org: str = "",
 ) -> None:
     """Bootstrap a brand-new project: create repo, plan, and launch agents."""
     if not description and not spec_file:
         console.print("ERROR: New project requires --description or --spec-file.", style="bold red")
         return
 
-    run_bootstrap(directory=parent_dir, name=project_name, description=description, spec_file=spec_file)
+    run_bootstrap(directory=parent_dir, name=project_name, description=description, spec_file=spec_file, org=org)
     if not os.path.exists(os.path.join(parent_dir, "builder")):
         log("orchestrator", "ERROR: Bootstrap did not create the expected directory structure.", style="bold red")
         os.chdir(start_dir)
@@ -382,7 +387,7 @@ def _bootstrap_new_project(
 
 def _resume_existing_project(
     parent_dir: str, project_name: str, repo_source: str, description: str, spec_file: str,
-    num_builders: int = 1, agent_models: AgentModels | None = None,
+    num_builders: int = 1, agent_models: AgentModels | None = None, org: str = "",
 ) -> None:
     """Resume an existing project: clone agents, update requirements if needed, and build."""
     new_description = _resolve_description_optional(description, spec_file)
@@ -419,6 +424,7 @@ def go(
     description: Annotated[str, typer.Option(help="What the project should do")] = None,
     spec_file: Annotated[str, typer.Option(help="Path to a markdown file containing the project requirements")] = None,
     name: Annotated[str, typer.Option(help="GitHub repo name (defaults to directory basename)")] = None,
+    org: Annotated[str, typer.Option(help="GitHub org to create the repo in (defaults to personal account)")] = None,
     builders: Annotated[int, typer.Option(help="Number of parallel builders (default 1)")] = 1,
     builder_model: Annotated[str, typer.Option(help="Model override for builder agents")] = None,
     reviewer_model: Annotated[str, typer.Option(help="Model override for commit-watcher reviewers")] = None,
@@ -472,18 +478,20 @@ def go(
 
     project_name = name or os.path.basename(parent_dir)
 
+    gh_org = org or ""
+
     # --- Check if the repo already exists (on GitHub) ---
-    repo_source = _find_existing_repo(parent_dir, project_name)
+    repo_source = _find_existing_repo(parent_dir, project_name, org=gh_org)
 
     if not repo_source:
         _bootstrap_new_project(
             parent_dir, project_name, description, spec_file, start_dir,
-            num_builders=builders, agent_models=agent_models,
+            num_builders=builders, agent_models=agent_models, org=gh_org,
         )
     else:
         _resume_existing_project(
             parent_dir, project_name, repo_source, description, spec_file,
-            num_builders=builders, agent_models=agent_models,
+            num_builders=builders, agent_models=agent_models, org=gh_org,
         )
 
     os.chdir(start_dir)

@@ -12,7 +12,7 @@ Key distinctions:
 
 - **`copilot-instructions.md` in the source code** — `_generate_copilot_instructions()`, `COPILOT_INSTRUCTIONS_TEMPLATE`, and prompt references to `.github/copilot-instructions.md` all deal with a file generated *inside target project repos* for the builder agent to follow. They are not self-referential to this file.
 - **`SPEC.md`, `BACKLOG.md`, `milestones/`, `DEPLOY.md`, `REVIEW-THEMES.md`** — planning and coordination artifacts that exist *inside target project repos*. This project does not have these files itself.
-- **`bugs/`, `reviews/`** — append-only directories created *inside target project clones* for cross-agent communication. They are not part of this project's directory structure.
+- **`bugs/`** — append-only directory created *inside target project clones* for cross-agent bug communication. Review findings and notes are tracked as GitHub Issues (with `finding` and `note` labels) instead of files. Neither `bugs/` nor the issue labels are part of this project's directory structure.
 - **`builder/`, `reviewer/`, `milestone-reviewer/`, `tester/`, `validator/`** — separate git clone directories of the *target project*, one per agent. These are working copies created at runtime, not subdirectories of this project.
 - **Prompt templates in `src/agentic_dev/prompts/`** — instructions sent to Copilot CLI agents operating *on the target project*. They reference target-project files and conventions, not this project's internals.
 
@@ -67,7 +67,8 @@ When editing this codebase, keep this two-level structure in mind: the Python co
 
 This is a multi-agent orchestrator that uses GitHub Copilot CLI (`copilot --yolo`) as the execution engine. Agents (builder, planner, commit watcher, milestone reviewer, tester, validator) run as separate processes in separate git clones of the same repo. They coordinate through:
 
-- **Markdown files** (`BACKLOG.md`, `milestones/`, `bugs/`, `reviews/`, `DEPLOY.md`, `REVIEW-THEMES.md`) — shared state via git push/pull.
+- **Markdown files** (`BACKLOG.md`, `milestones/`, `bugs/`, `DEPLOY.md`, `REVIEW-THEMES.md`) — shared state via git push/pull.
+- **GitHub Issues** (labels `finding`, `note`, `bug`) — review findings and bugs tracked via `gh` CLI.
 - **Log files** (`logs/`) — local coordination signals like `builder.done`, `reviewer.checkpoint`, `milestone-reviewer.log`, `milestones.log`, `validator.milestone`.
 
 The build loop (Python code in `builder.py`) handles deterministic orchestration — milestone boundary tracking, SHA recording, shutdown signals. The LLM agents handle creative work — writing code, reviewing diffs, writing tests.

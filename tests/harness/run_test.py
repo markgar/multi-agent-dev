@@ -95,10 +95,12 @@ def run_harness() -> int:
 
     parser = argparse.ArgumentParser(description="Run local test harness")
     parser.add_argument("--spec-file", default=None)
-    parser.add_argument("--name", default="test-run")
+    parser.add_argument("--name", default="test-run",
+                        help="Base project name (timestamp appended for new runs, exact match for --resume)")
     parser.add_argument("--model", required=True, help="Copilot model to use (e.g. gpt-5.3-codex, claude-opus-4.6)")
     parser.add_argument("--resume", action="store_true")
     parser.add_argument("--builders", type=int, default=1, help="Number of parallel builders (default 1)")
+    parser.add_argument("--org", default=None, help="GitHub org to create repos in (default: personal account)")
     args = parser.parse_args()
 
     python_exe = ensure_python()
@@ -123,13 +125,18 @@ def run_harness() -> int:
         project_dir = find_resume_target(runs_dir, args.name)
         if not project_dir:
             print(f"ERROR: No existing run found for project '{args.name}'.")
+            print("  For --resume, provide the exact project name including timestamp,")
+            print("  e.g. --name bookstore-20260225-152411")
             return 1
+
+        # Derive the repo name from the directory name (includes timestamp)
+        repo_name = project_dir.name
 
         print("============================================")
         print(" Resuming existing run")
         print("============================================")
         print(f"  Directory:  {project_dir}")
-        print(f"  Project:    {args.name}")
+        print(f"  Repo name:  {repo_name}")
         if spec_file_for_resume:
             print(f"  New spec:   {spec_file_for_resume}")
         print("============================================")
@@ -144,16 +151,24 @@ def run_harness() -> int:
             if path.exists():
                 print(f"  Removing {agent_dir}/...")
                 shutil.rmtree(path)
-        # Also remove numbered builder directories (builder-1, builder-2, ...)
-        for builder_path in sorted(project_dir.glob("builder-*")):
-            if builder_path.is_dir():
-                print(f"  Removing {builder_path.name}/...")
-                shutil.rmtree(builder_path)
+        # Also remove numbered builder/reviewer directories
+        for agent_path in sorted(project_dir.glob("builder-*")) + sorted(project_dir.glob("reviewer-*")):
+            if agent_path.is_dir():
+                print(f"  Removing {agent_path.name}/...")
+                shutil.rmtree(agent_path)
+        for agent_name in ("milestone-reviewer", "tester", "validator"):
+            path = project_dir / agent_name
+            if path.exists():
+                print(f"  Removing {agent_name}/...")
+                shutil.rmtree(path)
 
-        command = [agentic_dev, "go", "--directory", str(project_dir), "--model", args.model,
+        command = [agentic_dev, "go", "--directory", str(project_dir),
+                   "--name", repo_name, "--model", args.model,
                    "--builders", str(args.builders)]
         if spec_file_for_resume:
             command.extend(["--spec-file", str(spec_file_for_resume)])
+        if args.org:
+            command.extend(["--org", args.org])
         exit_code = run_command(command)
     else:
         spec_arg = args.spec_file or str(harness_dir / "sample_spec_cli_calculator.md")
@@ -163,15 +178,18 @@ def run_harness() -> int:
             return 1
 
         timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+        repo_name = f"{args.name}-{timestamp}"
         run_dir = runs_dir / timestamp
-        project_dir = run_dir / args.name
+        project_dir = run_dir / repo_name
 
         print("============================================")
         print(" Test Harness Run")
         print("============================================")
         print(f"  Run dir:    {run_dir}")
         print(f"  Spec file:  {spec_file}")
-        print(f"  Project:    {args.name}")
+        print(f"  Repo name:  {repo_name}")
+        if args.org:
+            print(f"  Org:        {args.org}")
         print("============================================")
         print("")
 
@@ -180,30 +198,31 @@ def run_harness() -> int:
             return 0
 
         run_dir.mkdir(parents=True, exist_ok=True)
-        exit_code = run_command(
-            [
-                agentic_dev,
-                "go",
-                "--directory",
-                str(project_dir),
-                "--model",
-                args.model,
-                "--spec-file",
-                str(spec_file),
-                "--builders",
-                str(args.builders),
-            ]
-        )
+        command = [
+            agentic_dev,
+            "go",
+            "--directory",
+            str(project_dir),
+            "--name",
+            repo_name,
+            "--model",
+            args.model,
+            "--spec-file",
+            str(spec_file),
+            "--builders",
+            str(args.builders),
+        ]
+        if args.org:
+            command.extend(["--org", args.org])
+        exit_code = run_command(command)
 
     print("")
     print("============================================")
     print(f" Run complete (exit code: {exit_code})")
     print("============================================")
     print(f"  Logs:       {project_dir / 'logs'}")
-    print(f"  Builder:    {project_dir / 'builder'}")
-    print(f"  Reviewer:   {project_dir / 'reviewer'}")
-    print(f"  Tester:     {project_dir / 'tester'}")
-    print(f"  Validator:  {project_dir / 'validator'}")
+    print(f"  Project:    {project_dir}")
+    print(f"  Resume:     --resume --name {project_dir.name}")
     print("============================================")
 
     return exit_code

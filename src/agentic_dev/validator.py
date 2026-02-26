@@ -348,7 +348,9 @@ def _build_validation_scope(boundary: dict) -> tuple[str, str]:
         journey_list = format_journey_prompt_block(selected)
         journey_ids = ", ".join(j.id for j in selected)
         log("validator", f"Journey-based validation: running {journey_ids}", style="cyan")
-        scope = VALIDATOR_JOURNEY_SECTION.format(journey_list=journey_list)
+        scope = VALIDATOR_JOURNEY_SECTION.format(
+            journey_list=journey_list, milestone_name=boundary["name"]
+        )
         return scope, VALIDATOR_JOURNEY_RESULTS_TAGS
 
     log("validator", "No eligible journeys found — using legacy A/B/C scope", style="dim")

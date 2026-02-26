@@ -55,50 +55,53 @@ _DOC_RULES = (
     "of filing a finding. Make the edit, then commit with a descriptive message prefixed "
     "with '[reviewer]'. Non-code fixes do not need to go through the builder. "
     "IMPORTANT: Do NOT directly edit DEPLOY.md. If you find stale or inaccurate content "
-    "in DEPLOY.md, file it as a finding in `reviews/` so the builder or validator can "
-    "address it. "
+    "in DEPLOY.md, file it as a finding issue: "
+    "`gh issue create --title '[finding] DEPLOY.md: <summary>' --body '<details>' --label finding` "
+    "so the builder or validator can address it. "
 )
 
 _FILING_RULES = (
-    "FILING FINDINGS: For each code issue, create a new file in the `reviews/` directory "
-    "named `finding-<timestamp>.md` where `<timestamp>` comes from running "
-    "`date +%Y%m%d-%H%M%S`. If you create multiple findings in the same second, append "
-    "-2, -3, etc. "
-    "Do NOT edit or delete any existing files in `reviews/`. Do not create duplicate "
-    "findings for issues already covered by existing `finding-*.md` files (check first "
-    "with `ls reviews/finding-*.md` and read recent ones). "
+    "FILING FINDINGS: For each code issue, file a GitHub Issue with the 'finding' label. "
+    "Run: `gh issue create --title '[finding] <severity>: <one-line summary>' "
+    "--body '<detailed description>' --label finding`. "
+    "DEDUP: Before creating a new issue, check for existing open findings: "
+    "`gh issue list --label finding --state open --json number,title --limit 50`. "
+    "Do not create duplicate issues for problems already covered. "
 )
 
 _COMMIT_FILING_RULES = (
-    "FILING BY SEVERITY: For [bug] and [security] issues, create a `finding-<timestamp>.md` "
-    "file in `reviews/` (the builder will see and fix these immediately). For [cleanup] and "
-    "[robustness] issues, create a `note-<timestamp>.md` file in `reviews/` instead — these "
-    "are per-commit observations that the milestone review will evaluate for recurring "
-    "patterns. Only patterns that recur across 2+ locations get promoted to findings for "
-    "the builder. Use `date +%Y%m%d-%H%M%S` for the timestamp. If you create multiple "
-    "files in the same second, append -2, -3, etc. "
-    "Do NOT edit or delete any existing files in `reviews/`. Do not create duplicates "
-    "for issues already covered by existing files (check first with "
-    "`ls reviews/finding-*.md reviews/note-*.md` and read recent ones). "
+    "FILING BY SEVERITY: For [bug] and [security] issues, create a GitHub Issue with the "
+    "'finding' label — the builder will see and fix these immediately. Run: "
+    "`gh issue create --title '[finding] <severity>: <summary>' --body '<details>' --label finding`. "
+    "For [cleanup] and [robustness] issues, create a GitHub Issue with the 'note' label "
+    "instead — these are per-commit observations that the milestone review will evaluate "
+    "for recurring patterns. Only patterns that recur across 2+ locations get promoted "
+    "to findings for the builder. Run: "
+    "`gh issue create --title '[note] <severity>: <summary>' --body '<details>' --label note`. "
+    "DEDUP: Before creating issues, check for existing open ones: "
+    "`gh issue list --label finding,note --state open --json number,title --limit 50`. "
+    "Do not create duplicate issues for problems already covered. "
 )
 
 _MILESTONE_FILING_RULES = (
     "FILING WITH FREQUENCY FILTER: The milestone review applies a frequency filter to "
     "reduce noise for the builder. "
-    "(1) Read all `note-*.md` files in `reviews/` — these are per-commit observations "
-    "from earlier reviews that were not yet promoted to findings. "
-    "(2) For [bug] and [security] issues: ALWAYS file as `finding-<timestamp>.md` "
+    "(1) List open note issues: `gh issue list --label note --state open "
+    "--json number,title,body --limit 100`. Read these — they are per-commit "
+    "observations from earlier reviews that were not yet promoted to findings. "
+    "(2) For [bug] and [security] issues: ALWAYS file as a finding issue "
+    "(`gh issue create --title '[finding] ...' --body '...' --label finding`) "
     "regardless of how many times they appear. These are too important to wait. "
-    "(3) For [cleanup] and [robustness] issues: only file as `finding-<timestamp>.md` "
-    "if the same class of problem appears in 2+ locations or files across the milestone. "
-    "One-off cleanup or robustness issues that appear only once should NOT be promoted — "
-    "they stay as notes. "
-    "(4) When you promote a pattern from notes to a finding, reference the note files "
-    "that demonstrated the pattern and consolidate into a single finding describing "
-    "the recurring pattern and all affected locations. "
-    "Use `date +%Y%m%d-%H%M%S` for timestamps. If you create multiple files in the "
-    "same second, append -2, -3, etc. "
-    "Do NOT edit or delete any existing files in `reviews/`. "
+    "(3) For [cleanup] and [robustness] issues: only promote to a finding issue "
+    "if the same class of problem appears in 2+ locations or files across the "
+    "milestone. One-off cleanup or robustness issues that appear only once should "
+    "NOT be promoted — they stay as note issues. "
+    "(4) When you promote a note to a finding, use `gh issue edit <number> "
+    "--remove-label note --add-label finding` to relabel it — this preserves the "
+    "original context. If multiple notes show the same pattern, pick the most "
+    "representative one to promote and close the others with "
+    "`gh issue close <number> --comment 'Consolidated into #<promoted_number>'`. "
+    "Do NOT edit or close issues that belong to other labels (e.g. 'bug'). "
 )
 
 _CONFLICT_RECOVERY = (
@@ -132,19 +135,19 @@ REVIEWER_MILESTONE_PROMPT = (
     "together, dead code — functions, methods, or classes that were added or modified "
     "during the milestone but are never called from any endpoint or entry point, and "
     "missing edge case handling that would cause runtime failures in production. "
-    "Do NOT re-flag issues already covered by existing `finding-*.md` files in "
-    "`reviews/`. "
+    "Do NOT re-flag issues already covered by existing open finding issues "
+    "(check with `gh issue list --label finding --state open --json number,title --limit 50`). "
     + _REVIEW_CHECKLIST
     + _SEVERITY_RULES
     + _DOC_RULES
-    + "STALE FINDING CLEANUP: Before filing new findings, list all `finding-*.md` files "
-    "in `reviews/` that do NOT have a matching `resolved-*.md` file (match by stripping "
-    "the `finding-`/`resolved-` prefix). For each unresolved finding, check whether the "
-    "issue it describes has already been fixed in the current code. If it has, create a "
-    "`resolved-<same-id>.md` file noting it was resolved and by which commit. This "
-    "prevents the builder from chasing already-fixed issues. "
+    + "STALE FINDING CLEANUP: Before filing new findings, list all open finding issues: "
+    "`gh issue list --label finding --state open --json number,title,body --limit 100`. "
+    "For each open finding, check whether the issue it describes has already been fixed "
+    "in the current code. If it has, close it: "
+    "`gh issue close <number> --comment 'Already fixed in current code'`. "
+    "This prevents the builder from chasing already-fixed issues. "
     + _MILESTONE_FILING_RULES
-    + "Each finding file must contain: '[Milestone: {milestone_name}]' on "
+    + "Each finding issue must contain in its body: '[Milestone: {milestone_name}]' on "
     "the first line, the severity tag, the file(s) involved, a clear description "
     "explaining WHY it matters for production, and a concrete suggested fix with "
     "example code when possible. "
@@ -165,10 +168,11 @@ REVIEWER_MILESTONE_PROMPT = (
     "(4) Rewrite the file with all old themes plus any new ones. "
     "Format: a '# Review Themes' heading, a 'Last updated: {milestone_name}' "
     "subline, then a numbered list of all entries (old and new). "
-    "If you created any files in `reviews/`, updated REVIEW-THEMES.md, or fixed doc issues, "
+    "If you created any finding or note issues, updated REVIEW-THEMES.md, or fixed doc issues, "
     "commit with message '[reviewer] Milestone review: {milestone_name}', run "
     "git pull --rebase, and push. If the push fails, run git pull --rebase and push "
-    "again (retry up to 3 times). "
+    "again (retry up to 3 times). If you only created/closed GitHub Issues (no file "
+    "changes), no commit is needed. "
     + _CONFLICT_RECOVERY
 )
 
@@ -180,8 +184,9 @@ REVIEWER_MILESTONE_PROMPT = (
 _BRANCH_CONTEXT = (
     "You are reviewing code from feature branch '{branch_name}'. You are currently "
     "on the main branch — do NOT checkout the feature branch. The diffs you review "
-    "use explicit commit SHAs so you can review from main. All your commits "
-    "(finding and note files in reviews/) go on main and are pushed to main. "
+    "use explicit commit SHAs so you can review from main. Your finding and note "
+    "issues are filed via `gh issue create` (no files to commit for reviews). "
+    "Any [doc] fixes you make are committed and pushed to main. "
 )
 
 REVIEWER_BRANCH_COMMIT_PROMPT = (
@@ -200,14 +205,16 @@ REVIEWER_BRANCH_COMMIT_PROMPT = (
     + _SEVERITY_RULES
     + _DOC_RULES
     + _COMMIT_FILING_RULES
-    + "Each finding or note file must contain: the commit SHA {commit_sha:.8}, the "
+    + "Each finding or note issue must contain in its body: the commit SHA {commit_sha:.8}, the "
     "severity tag, the file path and line(s), a clear description of the problem "
     "explaining WHY it matters (not just what is wrong), and a concrete suggested fix "
     "with example code when possible. "
     "If there are genuinely no issues, do nothing — but be skeptical. In production "
     "codebases, most commits have at least one improvable aspect. If you created any "
-    "files, commit with message '[reviewer] Code review: {commit_sha:.8}', run "
-    "git pull --rebase, and push. If the push fails, run git pull --rebase and push "
+    "issues or made [doc] fixes, commit doc changes with message "
+    "'[reviewer] Code review: {commit_sha:.8}', run "
+    "git pull --rebase, and push. If you only created GitHub Issues (no file "
+    "changes), no commit is needed. If the push fails, run git pull --rebase and push "
     "again (retry up to 3 times). "
     + _CONFLICT_RECOVERY
 )
@@ -228,14 +235,16 @@ REVIEWER_BRANCH_BATCH_PROMPT = (
     + _SEVERITY_RULES
     + _DOC_RULES
     + _COMMIT_FILING_RULES
-    + "Each finding or note file must contain: the relevant commit SHA(s), the "
+    + "Each finding or note issue must contain in its body: the relevant commit SHA(s), the "
     "severity tag, the file path and line(s), a clear description of the problem "
     "explaining WHY it matters, and a concrete suggested fix with example code when "
     "possible. "
     "If there are genuinely no issues, do nothing — but be skeptical. Multiple commits "
     "in a batch almost always contain at least one issue. If you created any "
-    "files, commit with message '[reviewer] Code review: {base_sha:.8}..{head_sha:.8}', "
-    "run git pull --rebase, and push. If the push fails, run git pull --rebase and push "
+    "issues or made [doc] fixes, commit doc changes with message "
+    "'[reviewer] Code review: {base_sha:.8}..{head_sha:.8}', "
+    "run git pull --rebase, and push. If you only created GitHub Issues (no file "
+    "changes), no commit is needed. If the push fails, run git pull --rebase and push "
     "again (retry up to 3 times). "
     + _CONFLICT_RECOVERY
 )

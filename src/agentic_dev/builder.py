@@ -31,7 +31,7 @@ from agentic_dev.sentinel import (
     load_branch_review_head,
     write_builder_done,
 )
-from agentic_dev.utils import count_open_bug_issues, count_partitioned_open_items, log, run_cmd, run_copilot
+from agentic_dev.utils import count_open_bug_issues, count_open_finding_issues, log, run_cmd, run_copilot
 
 
 def register(app: typer.Typer) -> None:
@@ -284,8 +284,8 @@ def _build_partition_filter(builder_id: int, num_builders: int) -> str:
     """Build the prompt text that tells this builder which bugs/findings to fix.
 
     When num_builders is 1, returns empty string (no filtering).
-    Otherwise returns a sentence describing the issue-number modulo rule for bugs
-    and the filename last-digit rule for review findings.
+    Otherwise returns a sentence describing the issue-number modulo rule for both
+    bug issues and finding issues.
     """
     if num_builders <= 1:
         return ""
@@ -293,9 +293,8 @@ def _build_partition_filter(builder_id: int, num_builders: int) -> str:
         f"You are builder {builder_id} of {num_builders}. "
         f"For bug issues: only fix issues whose issue number satisfies "
         f"`number % {num_builders} == {builder_id - 1}`. "
-        f"For review findings: only fix findings whose filename ends in one of these "
-        f"digits (before `.md`): "
-        f"{', '.join(str(d) for d in range(10) if d % num_builders == (builder_id - 1))}. "
+        f"For finding issues: only fix issues whose issue number satisfies "
+        f"`number % {num_builders} == {builder_id - 1}`. "
         "Skip all others — another builder will handle them. "
     )
 
@@ -479,9 +478,7 @@ def _check_remaining_work(
         run_cmd(["git", "pull", "--rebase", "-q"], quiet=True)
 
         remaining_bugs = count_open_bug_issues(builder_id, num_builders)
-        remaining_reviews = count_partitioned_open_items(
-            "reviews", "finding-", "resolved-", builder_id, num_builders,
-        )
+        remaining_reviews = count_open_finding_issues(builder_id, num_builders)
         # Check the builder's own milestone file for unchecked tasks
         progress = get_milestone_progress_from_file(milestone_file)
         remaining_tasks = 0 if progress is None else (progress["total"] - progress["done"])
