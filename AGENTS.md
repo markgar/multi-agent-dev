@@ -19,10 +19,10 @@ When no repo exists (requires `--spec-file` or `--description`):
 
 ### Existing project flow
 
-When the repo already exists (detected via `remote.git/` locally or `gh repo view` on GitHub):
+When the repo already exists (detected on GitHub via `gh repo view`):
 
 1. **Migrate legacy builder** — renames `builder/` to `builder-1/` if needed
-2. **Clone all agents** — creates any missing agent directories (`builder-N/`, `reviewer/`, `milestone-reviewer/`, `tester/`, `validator/`) from the repo
+2. **Clone all agents** — creates any missing agent directories (`builder-N/`, `reviewer-N/`, `milestone-reviewer/`, `tester/`, `validator/`) from the repo
 3. **Pull all clones** — `git pull --rebase` on every agent directory
 4. **Update requirements** — if `--spec-file` or `--description` provided, overwrites `REQUIREMENTS.md`, commits, and pushes
 5. **Launch agents and build** — see launch sequence below
@@ -36,17 +36,20 @@ When the repo already exists (detected via `remote.git/` locally or `gh repo vie
 3. **Check milestone sizes** — splits any milestone exceeding 8 tasks
 4. **Generate copilot-instructions** — creates `.github/copilot-instructions.md` if it doesn't exist (skipped on resume)
 5. **Spawn agents in terminal windows** — one terminal per agent, in this order:
-   - Reviewer-1 through Reviewer-N (`reviewer-N/` clone → `commitwatch --builder-id N`) — one branch-attached reviewer per builder
+   - Reviewer-1 through Reviewer-M (`reviewer-N/` clone → `commitwatch --builder-id N`) — one branch-attached reviewer per milestone builder (M = N−1 when N > 1, since the issue builder has no reviewer)
    - Milestone reviewer (`milestone-reviewer/` clone → `milestonewatch`)
    - Tester (`tester/` clone → `testloop`)
    - Validator (`validator/` clone → `validateloop --project-name <name>`)
-   - Builder-1 through Builder-N (`builder-N/` clone → `build --loop --builder-id N`)
-6. **Stagger builders** — 30-second delay between each builder launch so builder-1 reliably claims story #1 before builder-2 starts
-7. **Wait for completion** — polls `is_builder_done()` every 15 seconds until all builders have written their sentinel files
+   - Builder-1 through Builder-N (`builder-N/` clone → `build --loop --builder-id N`), where the last builder gets `--role issue` when N > 1
+6. **Wait for completion** — polls `is_builder_done()` every 15 seconds until all builders have written their sentinel files
+
+**Issue builder (multi-builder):** When `--builders N` with N > 1, builder-N is launched as a dedicated issue builder (`--role issue`). It never claims stories — it exclusively polls for open bugs and findings from merged milestones and fixes them. This eliminates races where milestone builders and issue fixing compete for the same Copilot session. The issue builder does not get a branch-attached reviewer. With a single builder (`--builders 1`), the builder handles issues inline between milestone tasks.
 
 ### Model and environment
 
-The `--model` flag is validated against allowed models (`gpt-5.3-codex`, `claude-opus-4.6`, `claude-opus-4.6-fast`) and exported as `COPILOT_MODEL` for all agent subprocesses to use.
+The `--model` flag is validated against allowed models (`gpt-5.3-codex`, `claude-opus-4.6`, `claude-opus-4.6-fast`, `claude-sonnet-4.6`, `claude-haiku-4.5`) and exported as `COPILOT_MODEL` for all agent subprocesses to use.
+
+**Per-agent model overrides:** Individual agents can use different models via `--builder-model`, `--reviewer-model`, `--milestone-reviewer-model`, `--tester-model`, `--validator-model`, `--planner-model`, and `--backlog-model`. These override the base `--model` for the specified agent only.
 
 **Implements:** `src/agentic_dev/orchestrator.py`  
 **Delegates to:** `bootstrap.py`, `planner.py`, `sentinel.py`, `terminal.py`  
@@ -62,8 +65,6 @@ Runs once internally when you call `go`. Do not run `bootstrap` directly — it 
 
 **Creates:** README.md, SPEC.md, REQUIREMENTS.md, git repo, GitHub remote  
 **Writes code:** No
-
-**Local mode (`--local`):** When `go` is called with `--local`, the bootstrap prompt replaces `gh repo create` with `git remote add origin {remote_path}` pointing to a local bare git repo. No GitHub CLI calls are made. The `--local` flag also skips the `gh` prerequisite checks and clones reviewer/tester/validator copies from the local bare repo instead of GitHub.
 
 **Note:** Before Copilot runs, the CLI pre-creates `builder/REQUIREMENTS.md` containing the prompt or spec-file content verbatim. This is committed with the rest of the bootstrap. In later sessions, `go` may overwrite REQUIREMENTS.md with new requirements before re-planning.
 
@@ -146,7 +147,9 @@ If structural checks fail, the initial planner is re-invoked. After re-plan, che
 
 **Between-milestone re-planning:** After each milestone completes, the build loop calls the milestone planner again to expand the next backlog story. If no eligible story exists (all remaining stories have unmet dependencies), a dependency deadlock warning is logged. If the backlog is empty, the build is done.
 
-**Creates:** BACKLOG.md (first run)  
+**User journeys (JOURNEYS.md):** During the initial backlog planning pass, the planner creates `JOURNEYS.md` — a file of multi-step user flows that exercise the application the way a real user would. Each journey has an `after` annotation indicating which backlog story must be completed before the journey is eligible, and `covers` tags describing which features it exercises. The validator uses JOURNEYS.md to select a minimal set of journeys that cover all features delivered by the current milestone. If JOURNEYS.md doesn't exist or no journeys are eligible, the validator falls back to legacy A/B/C scope (milestone validation, requirements coverage, fixed bug verification). JOURNEYS.md is created once during backlog planning and is not regenerated between milestones.
+
+**Creates:** BACKLOG.md, JOURNEYS.md (first run)  
 **Updates:** BACKLOG.md (checks off stories), `milestones/` (writes new milestone files), SPEC.md (when new requirements are detected — case C)  
 **Reads:** SPEC.md, REQUIREMENTS.md, BACKLOG.md, `milestones/`, codebase  
 **Writes code:** No
@@ -184,7 +187,7 @@ Runs via `build --loop --builder-id N --num-builders M`. Multiple builders can r
 
 **Branch isolation:** Each milestone is built on a feature branch (`builder-N/milestone-NN`). The builder creates the branch after planning (so milestone files land on main where all agents see them), pushes per-task commits to the branch, and merges to main with `--no-ff` when complete. The merge commit is tagged `milestone-NN` and recorded in `logs/milestones.log`. All other agents only see main, which contains only completed milestones. This eliminates dirty-main problems where downstream agents (validator, tester) see half-built milestones.
 
-**Bug/finding partitioning (multi-builder):** When multiple builders run in parallel (`--num-builders M` with M > 1), bugs and findings are partitioned by issue number. Each builder only fixes items where `issue_number % num_builders == (builder_id - 1)`. For example, with 2 builders: builder-1 fixes even-numbered issues; builder-2 fixes odd-numbered issues. This prevents two builders from racing to fix the same bug or finding. With a single builder, no filtering is applied. The partitioning is enforced both in the builder's LLM prompt and in the Python shutdown logic that counts remaining work.
+**Issue builder (multi-builder):** When multiple builders run in parallel (`--num-builders M` with M > 1), the last builder (builder-M) is launched as a dedicated issue builder (`--role issue`). It never claims stories or runs on feature branches — it works on main and exclusively fixes bugs and findings from milestones that have already been merged. Milestone builders (builder-1 through builder-{M−1}) skip issue fixing entirely when an issue builder is present. With a single builder, the builder handles issues inline between milestones — fixing all bugs before starting the next milestone's tasks.
 
 > Before starting, read the milestone file to understand the tasks and reference files. Read README.md, SPEC.md, and .github/copilot-instructions.md for project context and coding conventions. Read ONLY the files listed in the milestone's `> **Reference files:**` section to learn the project's patterns — do NOT read every file in the project. One example controller teaches the same conventions as ten. Beyond reference files, only read files you are directly editing, shared infrastructure you must modify (DI, DbContext, routing), and files mentioned in bugs or review findings. Read DEPLOY.md if it exists — it contains deployment configuration and lessons learned from the validator agent. If it mentions required env vars, ports, or startup requirements, ensure your code is compatible. Do NOT modify DEPLOY.md — only the validator agent manages that file. Only build, fix, or keep code that serves that purpose. Remove any scaffolding, template code, or functionality that does not belong. After any refactoring — including review fixes — check for dead code left behind and remove it. Before your first commit in each session, review .gitignore and ensure it covers the project's current tech stack; update it when you introduce a new framework or build tool. When completing a task that changes the project structure, key files, architecture, or conventions, update .github/copilot-instructions.md to reflect the change (it is a style guide — describe file roles and coding patterns, not implementation details). Check GitHub Issues for open bugs and findings: run `gh issue list --label bug --state open` and `gh issue list --label finding --state open` to see actionable items. Fix ALL open bugs before anything else, then address findings one at a time, closing each issue when fixed. Once all bugs and findings are resolved, move to the milestone file. Complete every task in the milestone, then STOP. For each task: write the code AND mark it complete in the milestone file, then commit BOTH together in a single commit with a meaningful message. After each commit, run git pull --rebase and push. When every task in the current milestone is checked, verify the application still builds and runs.
 
@@ -303,7 +306,9 @@ For each newly completed milestone:
 
 **Validation results log:** After each milestone, the validator writes `validation-results.txt` in the repo root (not committed). The Python orchestration copies it to `logs/validation-<milestone-name>.txt` for post-run analysis. Each line is `PASS` or `FAIL` with a description of what was tested (container build, startup, endpoints, error cases).
 
-**Validation summary:** After copying the results file, the orchestration always prints a pass/fail summary to the terminal log. The summary counts PASS and FAIL lines per category tag — `[A]` milestone tests, `[B]` requirements coverage, `[C]` fixed bug verification, `[UI]` Playwright — and logs up to 10 individual failure lines. This runs unconditionally so operators always see validation outcomes without opening log files.
+**Validation summary:** After copying the results file, the orchestration always prints a pass/fail summary to the terminal log. The summary counts PASS and FAIL lines per category tag — `[A]` milestone tests, `[B]` requirements coverage, `[C]` fixed bug verification, `[J-N]` journey tests, `[UI]` Playwright — and logs up to 10 individual failure lines. This runs unconditionally so operators always see validation outcomes without opening log files.
+
+**Journey-based validation:** When JOURNEYS.md exists and has eligible journeys (based on completed stories in BACKLOG.md), the validator replaces the legacy A/B/C scope with journey-based tests. The `select_journeys_for_milestone()` function picks the smallest set of journeys that covers all feature tags reachable at the current milestone. Each journey runs as a multi-step user flow with results tagged `[J-N]` in `validation-results.txt`. When no eligible journeys exist, the validator silently falls back to legacy scope.
 
 **Playwright trace saving (`--save-traces`):** When `validateloop` is called with `--save-traces`, the orchestration appends extra instructions to the Playwright prompt telling Copilot to run tests with `--trace on` and `--reporter=html`. After the Copilot run, it copies `e2e/playwright-report/` and `e2e/test-results/` to `logs/playwright-<milestone>/report/` and `logs/playwright-<milestone>/traces/` respectively. These artifacts are not committed to the repo. Without `--save-traces`, no extra prompt text is added and no artifacts are copied — the default keeps `logs/` lean.
 
@@ -365,7 +370,7 @@ The builder updates the project's copilot-instructions.md whenever project struc
 - The **Milestone Reviewer** runs cross-cutting reviews when a milestone completes. It reads accumulated `note`-labeled GitHub Issues, promotes recurring patterns to `finding` (via `gh issue edit --remove-label note --add-label finding`), and closes stale finding issues. It also updates REVIEW-THEMES.md.
 - The **Tester** runs scoped tests when a milestone completes, focusing on changed files. It runs the test suite only — it does not start the app or test live endpoints. Files bugs as GitHub Issues with `--label bug`. Exits when the builder finishes.
 - The **Validator** builds the app in a Docker container after each milestone, starts it, and tests it against SPEC.md acceptance criteria. Files bugs as GitHub Issues with `--label bug`. Persists deployment knowledge in DEPLOY.md. Exits when the builder finishes.
-- **Bug/finding partitioning:** When multiple builders run concurrently, each builder is assigned a subset of bugs and findings based on issue number. The rule is `issue_number % num_builders == (builder_id - 1)`. This partitioning is enforced both in the builder's LLM prompt (which tells Copilot which items to fix) and in the Python shutdown logic (which counts only assigned items as remaining work). This eliminates races where two builders attempt to fix the same bug or review finding simultaneously.
+- **Issue builder (multi-builder):** When multiple builders run concurrently (`--builders N` with N > 1), the last builder (builder-N) is a dedicated issue builder. It runs on main and exclusively fixes bugs and findings from merged milestones — it never claims stories. Milestone builders (builder-1 through builder-{N−1}) skip issue fixing entirely. With a single builder, the builder fixes issues inline between milestones.
 - **Branch model:** Builders push code to per-milestone feature branches (`builder-N/milestone-NN`), never directly to main. Coordination artifacts (BACKLOG.md claims/completions, milestone files from the planner) are committed on main before branching. Main receives completed milestones via `--no-ff` merge commits, each tagged `milestone-NN`. Each builder's branch-attached reviewer (`reviewer-N/`) reviews commits on the feature branch before the merge.
 - All agents run `git pull --rebase` before pushing to avoid merge conflicts.
 - `SPEC.md` is the source of truth for technical decisions. `BACKLOG.md` is the story queue. Edit either anytime to steer the project — run `plan` to adapt.
@@ -378,29 +383,23 @@ The builder updates the project's copilot-instructions.md whenever project struc
 
 `go` supports iterative sessions. You can build a project in phases:
 
-1. **Session 1:** `go --directory my-app --model gpt-5.3-codex --spec-file api-spec.md --local` — bootstraps project, builds API
-2. **Session 2:** `go --directory my-app --model gpt-5.3-codex --spec-file frontend-spec.md --local` — detects existing repo, clones agent directories, overwrites REQUIREMENTS.md with frontend spec, planner updates SPEC.md and creates new milestones, builder implements frontend
-3. **Session 3:** `go --directory my-app --model gpt-5.3-codex --local` — continues where it left off (no new requirements)
-4. **Parallel build:** `go --directory my-app --model gpt-5.3-codex --builders 3 --local` — launches 3 builders that claim and build stories in parallel
+1. **Session 1:** `go --directory my-app --model gpt-5.3-codex --spec-file api-spec.md` — bootstraps project, builds API
+2. **Session 2:** `go --directory my-app --model gpt-5.3-codex --spec-file frontend-spec.md` — detects existing repo, clones agent directories, overwrites REQUIREMENTS.md with frontend spec, planner updates SPEC.md and creates new milestones, builder implements frontend
+3. **Session 3:** `go --directory my-app --model gpt-5.3-codex` — continues where it left off (no new requirements)
+4. **Parallel build:** `go --directory my-app --model gpt-5.3-codex --builders 3` — launches 3 builders that claim and build stories in parallel (builder-3 is the dedicated issue builder)
 
-`go` uses repo-first detection: it checks whether the repo already exists (locally via `remote.git/`, or on GitHub via `gh repo view`) rather than checking for local clone directories. This means:
+`go` uses repo-first detection: it checks whether the repo already exists on GitHub via `gh repo view` rather than checking for local clone directories. This means:
 
 - **Repo exists, agent dirs exist:** pulls all clones, plans, builds (standard resume)
 - **Repo exists, agent dirs missing:** clones all agents from the repo, then continues (fresh-machine resume)
 - **No repo:** bootstraps from scratch (requires `--spec-file` or `--description`)
 - **Legacy `builder/` directory:** automatically migrated to `builder-1/` on resume
 
-Agent directories (`builder-1/`, `builder-N/`, `reviewer-1/`, `reviewer-N/`, `milestone-reviewer/`, `tester/`, `validator/`) are treated as disposable working copies — they can be deleted and re-cloned from the repo at any time. The repo (GitHub or `remote.git/`) and `logs/` directory (checkpoints) are the persistent state.
+Agent directories (`builder-1/`, `builder-N/`, `reviewer-1/`, `reviewer-N/`, `milestone-reviewer/`, `tester/`, `validator/`) are treated as disposable working copies — they can be deleted and re-cloned from the repo at any time. The repo on GitHub and `logs/` directory (checkpoints) are the persistent state.
 
 - **Legacy `reviewer/` directory:** automatically migrated to `reviewer-1/` on resume
 
 The `--spec-file` for session 2 can contain just new requirements ("Add a React frontend") or a complete updated requirements doc (old API spec + new frontend spec). The planner compares REQUIREMENTS.md against SPEC.md and the codebase to determine what's new.
-
----
-
-## Legacy Commands
-
-The original `reviewoncommit` and `testoncommit` commands still exist for manual/standalone use. They use the old `_watch_loop` polling mechanism and are not launched by `go`.
 
 ---
 

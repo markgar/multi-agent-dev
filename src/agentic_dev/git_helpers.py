@@ -2,7 +2,7 @@
 
 import time
 
-from agentic_dev.utils import log, run_cmd
+from agentic_dev.utils import log, run_cmd, run_copilot
 
 
 def git_push_with_retry(agent_name: str = "", max_attempts: int = 3, backoff: int = 5) -> bool:
@@ -183,6 +183,66 @@ def create_milestone_branch(builder_id: int, milestone_name: str, agent_name: st
     return branch_name
 
 
+MERGE_CONFLICT_RESOLUTION_PROMPT = (
+    "The working tree has git merge conflict markers in the following files:\n"
+    "{conflicted_files}\n\n"
+    "For EACH file, open it, find the conflict markers (<<<<<<< ======= >>>>>>>), "
+    "and resolve the conflict by keeping the intent of BOTH sides. In most cases "
+    "both branches are adding new code (new service registrations, new test methods, "
+    "new using statements) and the correct resolution is to keep ALL additions from "
+    "both sides, removing only the marker lines themselves.\n\n"
+    "After resolving each file, run `git add <file>` on it.\n"
+    "After all files are resolved, verify no conflict markers remain by running: "
+    "grep -r '<<<<<<< ' . --include='*.cs' --include='*.ts' --include='*.tsx' "
+    "--include='*.py' --include='*.json' --include='*.md' | head -5\n"
+    "If any markers remain, resolve those files too.\n"
+    "Do NOT run git commit — the caller will handle that."
+)
+
+
+def _resolve_merge_conflicts_with_copilot(agent_name: str) -> bool:
+    """Invoke Copilot to resolve merge conflict markers in the working tree.
+
+    Call this AFTER a failed `git merge` (do NOT abort the merge first).
+    Returns True if all conflicts were resolved, False otherwise.
+    """
+    result = run_cmd(
+        ["git", "diff", "--name-only", "--diff-filter=U"],
+        capture=True,
+    )
+    if result.returncode != 0 or not result.stdout.strip():
+        return False
+
+    conflicted = result.stdout.strip()
+    log(agent_name, f"Attempting Copilot conflict resolution for: {conflicted}", style="cyan")
+
+    prompt = MERGE_CONFLICT_RESOLUTION_PROMPT.format(conflicted_files=conflicted)
+    exit_code = run_copilot(agent_name, prompt)
+
+    if exit_code != 0:
+        log(agent_name, "Copilot conflict resolution session failed.", style="red")
+        return False
+
+    # Verify no conflict markers remain
+    check = run_cmd(
+        ["grep", "-r", "<<<<<<< ", ".", "--include=*.cs", "--include=*.ts",
+         "--include=*.tsx", "--include=*.py", "--include=*.json", "--include=*.md"],
+        capture=True,
+    )
+    if check.returncode == 0 and check.stdout.strip():
+        log(agent_name, "Conflict markers still present after Copilot resolution.", style="red")
+        return False
+
+    # Verify no unmerged files remain
+    unmerged = run_cmd(["git", "diff", "--name-only", "--diff-filter=U"], capture=True)
+    if unmerged.stdout.strip():
+        log(agent_name, "Unmerged files still present after Copilot resolution.", style="red")
+        return False
+
+    log(agent_name, "Copilot resolved all merge conflicts.", style="green")
+    return True
+
+
 def merge_milestone_to_main(
     branch_name: str, milestone_name: str, agent_name: str, max_attempts: int = 5,
 ) -> str:
@@ -200,6 +260,7 @@ def merge_milestone_to_main(
     Returns the merge commit SHA on success, empty string on failure.
     """
     rebase_attempted = False
+    copilot_resolution_attempted = False
 
     for attempt in range(1, max_attempts + 1):
         run_cmd(["git", "checkout", "main"], quiet=True)
@@ -221,29 +282,52 @@ def merge_milestone_to_main(
                 f"Merge conflict (attempt {attempt}/{max_attempts}): {conflict_info[:200]}",
                 style="yellow",
             )
-            run_cmd(["git", "merge", "--abort"], quiet=True)
 
-            # Try rebase recovery once: replay feature branch commits onto updated main
-            if not rebase_attempted:
-                rebase_attempted = True
-                log(agent_name, "Attempting rebase recovery: rebasing feature branch onto main...", style="cyan")
-                run_cmd(["git", "checkout", branch_name], quiet=True)
-                rebase_result = run_cmd(["git", "rebase", "main"], capture=True)
-                if rebase_result.returncode == 0:
-                    # Force-push the rebased branch so remote matches
-                    run_cmd(["git", "push", "--force-with-lease", "origin", branch_name], quiet=True)
-                    log(agent_name, "Rebase succeeded. Retrying merge...", style="green")
-                    run_cmd(["git", "checkout", "main"], quiet=True)
-                    continue
+            # Try Copilot-assisted conflict resolution before aborting
+            if not copilot_resolution_attempted:
+                copilot_resolution_attempted = True
+                if _resolve_merge_conflicts_with_copilot(agent_name):
+                    # Copilot resolved it — complete the merge commit
+                    commit_result = run_cmd(
+                        ["git", "commit", "--no-edit"],
+                        capture=True,
+                    )
+                    if commit_result.returncode == 0:
+                        log(agent_name, "Merge commit completed after Copilot conflict resolution.", style="green")
+                        # Fall through to tag + push below
+                    else:
+                        log(agent_name, "Merge commit failed after Copilot resolution.", style="red")
+                        run_cmd(["git", "merge", "--abort"], quiet=True)
+                        if attempt < max_attempts:
+                            time.sleep(5)
+                        continue
                 else:
-                    rebase_info = rebase_result.stdout.strip() or rebase_result.stderr.strip()
-                    log(agent_name, f"Rebase failed: {rebase_info[:200]}", style="red")
-                    run_cmd(["git", "rebase", "--abort"], quiet=True)
-                    run_cmd(["git", "checkout", "main"], quiet=True)
-
-            if attempt < max_attempts:
-                time.sleep(5)
-            continue
+                    # Copilot couldn't resolve — abort and try rebase
+                    run_cmd(["git", "merge", "--abort"], quiet=True)
+                    if not rebase_attempted:
+                        rebase_attempted = True
+                        log(agent_name, "Attempting rebase recovery: rebasing feature branch onto main...", style="cyan")
+                        run_cmd(["git", "checkout", branch_name], quiet=True)
+                        rebase_result = run_cmd(["git", "rebase", "main"], capture=True)
+                        if rebase_result.returncode == 0:
+                            run_cmd(["git", "push", "--force-with-lease", "origin", branch_name], quiet=True)
+                            log(agent_name, "Rebase succeeded. Retrying merge...", style="green")
+                            run_cmd(["git", "checkout", "main"], quiet=True)
+                            continue
+                        else:
+                            rebase_info = rebase_result.stdout.strip() or rebase_result.stderr.strip()
+                            log(agent_name, f"Rebase failed: {rebase_info[:200]}", style="red")
+                            run_cmd(["git", "rebase", "--abort"], quiet=True)
+                            run_cmd(["git", "checkout", "main"], quiet=True)
+                    if attempt < max_attempts:
+                        time.sleep(5)
+                    continue
+            else:
+                # Already tried Copilot — just abort and retry
+                run_cmd(["git", "merge", "--abort"], quiet=True)
+                if attempt < max_attempts:
+                    time.sleep(5)
+                continue
 
         # Tag the merge commit
         run_cmd(["git", "tag", milestone_name, "HEAD"], quiet=True)
@@ -271,6 +355,7 @@ def merge_milestone_to_main(
         run_cmd(["git", "tag", "-d", milestone_name], quiet=True)
         run_cmd(["git", "reset", "--hard", "origin/main"], quiet=True)
         rebase_attempted = False  # allow rebase on fresh main state
+        copilot_resolution_attempted = False  # allow Copilot resolution on fresh main state
         if attempt < max_attempts:
             time.sleep(5)
 

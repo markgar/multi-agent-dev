@@ -98,13 +98,13 @@ style: |
 | **Mission** | Single entry point (`go`) — detects project state, bootstraps or resumes, launches all agents, waits for completion |
 | **Triggered by** | User runs `agentic-dev go --spec-file spec.md` |
 | **Runs from** | Parent directory (creates/manages all agent clone directories) |
-| **Reads** | CLI flags, repo state (local `remote.git/` or GitHub) |
+| **Reads** | CLI flags, repo state (GitHub via `gh repo view`) |
 | **Writes** | Agent clone directories, `logs/` directory, stale sentinel cleanup |
 | **Talks to** | **Planner** (invokes directly before launching agents) · **All agents** (spawns each in its own terminal window) |
 | **Writes code** | No — pure coordination |
 | **Shutdown** | Polls `logs/builder-N.done` every 15s; exits when all builders report done |
 
-**Launch order:** Reviewers → Milestone Reviewer → Tester → Validator → Builders (staggered 30s apart)
+**Launch order:** Reviewers → Milestone Reviewer → Tester → Validator → Builders
 
 ---
 
@@ -134,7 +134,7 @@ style: |
 | **Writes** | Application code, `.github/copilot-instructions.md` updates, `.gitignore` updates |
 | **Talks to** | **Planner** (calls it to expand next story) · **Commit Watcher** (reads its findings) · **Milestone Reviewer** (reads its findings + themes) · **Tester** (reads its bugs) · **Validator** (reads its bugs + DEPLOY.md) |
 | **Writes code** | Yes — the **only** agent that writes production code |
-| **Key detail** | Builds on feature branches (`builder-N/milestone-NN`), merges to main with `--no-ff`. Fixes all bugs and findings **before** starting milestone tasks. Multi-builder: work is partitioned by timestamp digit. |
+| **Key detail** | Builds on feature branches (`builder-N/milestone-NN`), merges to main with `--no-ff`. Multi-builder: last builder is a dedicated issue fixer (`--role issue`); milestone builders skip issue fixing entirely. Single builder fixes issues inline between milestones. |
 
 ---
 
@@ -149,7 +149,7 @@ style: |
 | **Writes** | GitHub Issues with `--label finding` for [bug]/[security] issues · GitHub Issues with `--label note` for [cleanup]/[robustness] issues |
 | **Talks to** | **Builder** (files findings the builder must fix) · **Milestone Reviewer** (notes feed the frequency filter) |
 | **Writes code** | No — [doc] fixes only (comments, README). Never changes application logic. |
-| **Key detail** | Severity split: critical issues → `finding-*.md` (builder acts immediately), minor issues → `note-*.md` (milestone reviewer evaluates later). Signals merge readiness via `logs/reviewer-N.branch-head`. |
+| **Key detail** | Severity split: critical issues → GitHub Issues with `finding` label (builder acts immediately), minor issues → GitHub Issues with `note` label (milestone reviewer evaluates later). Checkpoints saved to `logs/reviewer-N.branch-checkpoint`. |
 
 ---
 

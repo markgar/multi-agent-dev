@@ -4,7 +4,7 @@ An autonomous development workflow using GitHub Copilot CLI. Six agents collabor
 
 - **Planner** — creates a backlog of stories and expands them into milestones one at a time
 - **Builder** — fixes bugs, addresses review items, completes one milestone per cycle
-- **Commit Watcher** — reviews each commit for quality, fixes doc issues directly, files code issues to `reviews/`
+- **Commit Watcher** — reviews each commit for quality, fixes doc issues directly, files code issues as GitHub Issues
 - **Milestone Reviewer** — cross-cutting milestone reviews with frequency-filtered findings and stale-item cleanup
 - **Tester** — runs scoped tests when milestones complete, files bugs
 - **Validator** — builds the app in a Docker container, runs it, and validates it against the spec
@@ -21,7 +21,7 @@ Install these one time. After each install, **close and reopen your terminal** s
 | GitHub CLI | `winget install GitHub.cli` | `brew install gh` | `gh auth status` |
 | Python 3 | `winget install Python.Python.3.12` | `brew install python` | `python3 --version` |
 | Docker | `winget install Docker.DockerDesktop` | `brew install --cask docker` | `docker --version` |
-| GitHub Copilot CLI | See GitHub Copilot CLI docs | See GitHub Copilot CLI docs | `copilot --version` |
+| Copilot CLI (coding agent) | See [Copilot coding agent on CLI](https://docs.github.com/en/copilot/using-github-copilot/using-the-github-copilot-agent-for-the-cli) | Same | `copilot --version` |
 
 **Install for your target language:**
 
@@ -52,7 +52,7 @@ agentic-dev go --directory hello-world --model gpt-5.3-codex \
 ```
 
 That's it. `go` will:
-1. **Bootstrap** — create the project, SPEC.md, git repo, GitHub remote, and agent clones (builder-1/, reviewer/, milestone-reviewer/, tester/, validator/)
+1. **Bootstrap** — create the project, SPEC.md, git repo, GitHub remote, and agent clones (builder-1/, reviewer-1/, milestone-reviewer/, tester/, validator/)
 2. **Plan** — generate BACKLOG.md (story queue)
 3. **Launch commit watcher** — in a new terminal window, reviewing each commit
 4. **Launch milestone reviewer** — in a new terminal window, cross-cutting reviews when milestones complete
@@ -85,20 +85,31 @@ No spec needed — just re-evaluates the plan and continues building.
 Point `--directory` at any existing project directory, even from a test harness run:
 
 ```bash
-agentic-dev go --directory /path/to/runs/20260213/my-app --model gpt-5.3-codex --local
+agentic-dev go --directory /path/to/runs/20260213/my-app --model gpt-5.3-codex
 ```
 
-`go` detects the existing repo (locally via `remote.git/`, or on GitHub via `gh repo view`) and automatically clones any missing agent directories. You can resume on a fresh machine with nothing but the repo — no pre-existing `builder-1/`, `reviewer/`, `tester/`, or `validator/` directories needed.
+`go` detects the existing repo on GitHub via `gh repo view` and automatically clones any missing agent directories. You can resume on a fresh machine with nothing but the repo — no pre-existing `builder-1/`, `reviewer-1/`, `tester/`, or `validator/` directories needed.
 
-### Local Mode (no GitHub)
+### GitHub Org
 
-Add `--local` to run entirely offline with a local bare git repo instead of GitHub:
+Create the repo under a GitHub organization instead of your personal account:
 
 ```bash
-agentic-dev go --directory my-project --model gpt-5.3-codex --description "..." --local
+agentic-dev go --directory my-project --model gpt-5.3-codex --org my-org --description "..."
 ```
 
-This skips all `gh` CLI calls and creates a bare repo at `remote.git/` inside the project directory. All git operations (push, pull, clone) work identically against it. Useful for testing, offline development, or environments without GitHub access.
+### Per-Agent Model Overrides
+
+Use different models for different agents:
+
+```bash
+agentic-dev go --directory my-project --model claude-opus-4.6 \
+  --builder-model gpt-5.3-codex \
+  --planner-model claude-sonnet-4.6 \
+  --description "..."
+```
+
+Available overrides: `--builder-model`, `--reviewer-model`, `--milestone-reviewer-model`, `--tester-model`, `--validator-model`, `--planner-model`, `--backlog-model`. Each defaults to `--model` when not specified.
 
 ---
 
@@ -127,7 +138,8 @@ Planner ──milestones/──→ Builder ──git push──→ Reviewer ─�
 | Builder | Reviewer | `git push` | I finished a commit or milestone, review it |
 | Builder | Tester | `milestones.log` | A milestone is complete, test it |
 | Builder | Validator | `milestones.log` | A milestone is complete, validate it in a container |
-| Reviewer | Builder | GitHub Issues | I found code-level issues, address these |
+| Reviewer | Builder | GitHub Issues (`finding`) | I found code-level issues, address these |
+| Milestone Reviewer | Builder | GitHub Issues (`finding`) | Recurring patterns promoted from notes |
 | Reviewer | (self) | direct commit | I found a doc issue (stale comment, inaccurate README), fixed it myself |
 | Tester | Builder | GitHub Issues | I found test failures, fix these |
 | Validator | Builder | GitHub Issues | The app failed validation in a container, fix these |

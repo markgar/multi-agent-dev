@@ -4,13 +4,19 @@ Covers:
 - Builder prompt no longer instructs git pull --rebase on feature branches
 - Orphaned milestone cleanup after build failure
 - Builder continues claim loop after merge failure (not terminating)
+- Copilot-assisted merge conflict resolution
 """
 
 import os
+import types
 
 import pytest
 
 from agentic_dev.builder import _cleanup_orphaned_milestones
+from agentic_dev.git_helpers import (
+    MERGE_CONFLICT_RESOLUTION_PROMPT,
+    _resolve_merge_conflicts_with_copilot,
+)
 from agentic_dev.prompts import BUILDER_PROMPT, BUILDER_ISSUE_FIXING_SECTION
 
 
@@ -148,3 +154,141 @@ def test_cleanup_removes_multiple_orphaned_parts(tmp_path, monkeypatch):
     assert part_a.exists(), "Completed part should not be deleted"
     assert not part_b.exists(), "Incomplete part b should be deleted"
     assert not part_c.exists(), "Incomplete part c should be deleted"
+
+
+# ============================================
+# Copilot-assisted merge conflict resolution
+# ============================================
+
+
+def test_conflict_resolution_prompt_has_placeholder():
+    """The prompt template must contain the {conflicted_files} placeholder."""
+    assert "{conflicted_files}" in MERGE_CONFLICT_RESOLUTION_PROMPT
+
+
+def test_conflict_resolution_prompt_instructs_git_add():
+    """The prompt must tell Copilot to git add resolved files."""
+    assert "git add" in MERGE_CONFLICT_RESOLUTION_PROMPT
+
+
+def test_conflict_resolution_prompt_checks_for_remaining_markers():
+    """The prompt must instruct verification that no markers remain."""
+    assert "<<<<<<< " in MERGE_CONFLICT_RESOLUTION_PROMPT
+
+
+def test_conflict_resolution_prompt_does_not_commit():
+    """The prompt must tell Copilot NOT to run git commit."""
+    assert "Do NOT run git commit" in MERGE_CONFLICT_RESOLUTION_PROMPT
+
+
+def test_resolve_returns_false_when_no_conflicted_files(monkeypatch):
+    """When git reports no unmerged files, resolution should return False."""
+    import agentic_dev.git_helpers as gh
+
+    def fake_run_cmd(cmd, capture=False, quiet=False, cwd=None):
+        result = types.SimpleNamespace()
+        result.returncode = 0
+        result.stdout = ""
+        result.stderr = ""
+        return result
+
+    monkeypatch.setattr(gh, "run_cmd", fake_run_cmd)
+
+    assert _resolve_merge_conflicts_with_copilot("test") is False
+
+
+def test_resolve_returns_false_when_copilot_fails(monkeypatch):
+    """When Copilot exits non-zero, resolution should return False."""
+    import agentic_dev.git_helpers as gh
+
+    call_log = []
+
+    def fake_run_cmd(cmd, capture=False, quiet=False, cwd=None):
+        call_log.append(cmd)
+        result = types.SimpleNamespace()
+        if cmd[:3] == ["git", "diff", "--name-only"]:
+            result.returncode = 0
+            result.stdout = "src/Program.cs\nsrc/Startup.cs"
+        else:
+            result.returncode = 0
+            result.stdout = ""
+        result.stderr = ""
+        return result
+
+    def fake_run_copilot(agent_name, prompt):
+        return 1  # non-zero = failure
+
+    monkeypatch.setattr(gh, "run_cmd", fake_run_cmd)
+    monkeypatch.setattr(gh, "run_copilot", fake_run_copilot)
+
+    assert _resolve_merge_conflicts_with_copilot("test") is False
+
+
+def test_resolve_returns_false_when_markers_remain(monkeypatch):
+    """When conflict markers remain after Copilot runs, returns False."""
+    import agentic_dev.git_helpers as gh
+
+    def fake_run_cmd(cmd, capture=False, quiet=False, cwd=None):
+        result = types.SimpleNamespace()
+        result.stderr = ""
+        if cmd[:3] == ["git", "diff", "--name-only"]:
+            if "--diff-filter=U" in cmd:
+                # First call: report conflicts; second call: report resolved
+                result.returncode = 0
+                result.stdout = "src/Program.cs"
+            else:
+                result.returncode = 0
+                result.stdout = ""
+        elif cmd[0] == "grep":
+            # Conflict markers still found
+            result.returncode = 0
+            result.stdout = "src/Program.cs:<<<<<<< HEAD"
+        else:
+            result.returncode = 0
+            result.stdout = ""
+        return result
+
+    def fake_run_copilot(agent_name, prompt):
+        return 0  # Copilot "succeeded" but didn't actually resolve
+
+    monkeypatch.setattr(gh, "run_cmd", fake_run_cmd)
+    monkeypatch.setattr(gh, "run_copilot", fake_run_copilot)
+
+    assert _resolve_merge_conflicts_with_copilot("test") is False
+
+
+def test_resolve_returns_true_when_all_conflicts_resolved(monkeypatch):
+    """When Copilot resolves all conflicts and no markers remain, returns True."""
+    import agentic_dev.git_helpers as gh
+
+    diff_call_count = {"n": 0}
+
+    def fake_run_cmd(cmd, capture=False, quiet=False, cwd=None):
+        result = types.SimpleNamespace()
+        result.stderr = ""
+        if cmd[:3] == ["git", "diff", "--name-only"]:
+            diff_call_count["n"] += 1
+            if diff_call_count["n"] == 1:
+                # First call: report conflicts
+                result.returncode = 0
+                result.stdout = "src/Program.cs"
+            else:
+                # Second call: no more unmerged files
+                result.returncode = 0
+                result.stdout = ""
+        elif cmd[0] == "grep":
+            # No conflict markers found (grep returns 1 = no match)
+            result.returncode = 1
+            result.stdout = ""
+        else:
+            result.returncode = 0
+            result.stdout = ""
+        return result
+
+    def fake_run_copilot(agent_name, prompt):
+        return 0
+
+    monkeypatch.setattr(gh, "run_cmd", fake_run_cmd)
+    monkeypatch.setattr(gh, "run_copilot", fake_run_copilot)
+
+    assert _resolve_merge_conflicts_with_copilot("test") is True

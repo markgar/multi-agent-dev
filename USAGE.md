@@ -13,12 +13,6 @@ Or use a requirements file:
 agentic-dev go --directory my-project --model gpt-5.3-codex --spec-file requirements.md
 ```
 
-Or run without GitHub (local bare git repo):
-
-```bash
-agentic-dev go --directory my-project --model gpt-5.3-codex --description "..." --local
-```
-
 ## Continuing with New Requirements
 
 Come back later and add new features to the same project:
@@ -42,10 +36,10 @@ No spec needed — just re-evaluates the plan and continues building.
 Point `--directory` at any existing project directory:
 
 ```bash
-agentic-dev go --directory /path/to/runs/20260213/my-app --model gpt-5.3-codex --local
+agentic-dev go --directory /path/to/runs/20260213/my-app --model gpt-5.3-codex
 ```
 
-`go` detects the existing repo (locally via `remote.git/`, or on GitHub via `gh repo view`) and automatically clones any missing agent directories. You can resume on a fresh machine with nothing but the repo.
+`go` detects the existing repo on GitHub via `gh repo view` and automatically clones any missing agent directories. You can resume on a fresh machine with nothing but the repo.
 
 ## Parallel Builders
 
@@ -67,7 +61,7 @@ agentic-dev plan
 agentic-dev build
 agentic-dev build --loop
 
-cd ../reviewer
+cd ../reviewer-1
 agentic-dev commitwatch
 
 cd ../milestone-reviewer
@@ -88,8 +82,8 @@ agentic-dev validateloop
 |---|---|---|
 | `go --directory D --model M --description DESC` | Does everything: bootstrap, plan, launch agents, build | Once, from anywhere |
 | `go --directory D --model M --spec-file F` | Same, but reads requirements from a markdown file | Once, from anywhere |
-| `go --directory D --model M ... --local` | Same, but uses a local bare git repo instead of GitHub | Once, from anywhere |
 | `go --directory D --model M ... --name N` | Same, but overrides the GitHub repo name (defaults to dirname) | Once, from anywhere |
+| `go --directory D --model M ... --org O` | Same, but creates the repo under a GitHub organization | Once, from anywhere |
 | `go --directory D --model M ... --builders N` | Same, but launches N parallel builders (default 1) | Once, from anywhere |
 | `go --directory D --model M --spec-file F` (existing) | Updates requirements, re-plans, launches agents, builds | From anywhere |
 | `go --directory D --model M` (existing) | Re-plans, launches agents, resumes building | From anywhere |
@@ -97,12 +91,11 @@ agentic-dev validateloop
 | `build` | Fixes bugs + reviews, then completes the current milestone | builder-1/, repeatedly |
 | `build --loop` | Loops through all milestones automatically (re-plans between each from backlog) | builder-1/, once |
 | `build --loop --builder-id N` | Same, but identifies this builder as builder N (for parallel builds) | builder-N/, once |
-| `commitwatch` | Polls for commits, reviews each one | reviewer/, once |
+| `build --loop --builder-id N --role issue` | Dedicated issue fixer — polls for bugs/findings, never claims stories | builder-N/, once |
+| `commitwatch` | Polls for commits on builder's feature branch, reviews each one | reviewer-N/, once |
 | `milestonewatch` | Watches for completed milestones, runs cross-cutting reviews | milestone-reviewer/, once |
 | `testloop` | Watches for completed milestones, runs scoped tests | tester/, once |
 | `validateloop` | Watches for completed milestones, builds containers, validates against spec | validator/, once |
-| `reviewoncommit` | Legacy: watches for commits, reviews code quality | reviewer/, once |
-| `testoncommit` | Legacy: watches for commits, runs tests, files bugs | tester/, once |
 | `status` | Shows spec, tasks, reviews, and bugs at a glance | Any clone, anytime |
 | `--version` / `-v` | Show version and build info, then exit | Anywhere |
 
@@ -112,28 +105,31 @@ The GitHub Copilot CLI `--yolo` flag auto-approves every action without asking f
 
 ## Logging
 
-Every agent invocation is logged to an append-only file in a `logs/` directory at the project root (sibling of `builder/`, `reviewer/`, `milestone-reviewer/`, `tester/`). All console output — including status messages, warnings, and GitHub Copilot output — is duplicated to the appropriate log file.
+Every agent invocation is logged to an append-only file in a `logs/` directory at the project root (sibling of `builder-1/`, `reviewer-1/`, `milestone-reviewer/`, `tester/`). All console output — including status messages, warnings, and GitHub Copilot output — is duplicated to the appropriate log file.
 
 ```
 myproject/
-  remote.git/    ← local bare repo (only with --local)
   builder-1/     ← git clone (primary builder)
-  reviewer/      ← git clone (commit watcher)
+  builder-N/     ← git clone (additional builders, if --builders N > 1)
+  reviewer-1/    ← git clone (branch-attached reviewer for builder-1)
+  reviewer-N/    ← git clone (branch-attached reviewer for builder-N)
   milestone-reviewer/ ← git clone (milestone reviewer)
   tester/        ← git clone
   validator/     ← git clone
   logs/          ← all agent logs + coordination signals
     bootstrap.log
     planner.log
-    builder.log
-    reviewer.log
+    builder-1.log          ← per-builder log
+    builder-N.log
+    reviewer-1.log         ← per-reviewer log
+    reviewer-N.log
     milestone-reviewer.log
     tester.log
     validator.log
     validation-*.txt       ← per-milestone PASS/FAIL test results
     orchestrator.log
-    builder.done           ← shutdown signal
-    reviewer.checkpoint    ← last reviewed commit SHA (commit watcher)
+    builder-N.done         ← per-builder shutdown signal
+    reviewer-N.branch-checkpoint ← last reviewed commit SHA
     milestones.log         ← milestone SHA boundaries (append-only)
     reviewer.milestone     ← milestones already reviewed (milestone reviewer)
     tester.milestone       ← milestones already tested

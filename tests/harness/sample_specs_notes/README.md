@@ -21,23 +21,23 @@ Run `agentic-dev go` yourself — you manage the project directory.
 **Path A — incremental (two sessions):**
 ```bash
 # Session 1: build the base app
-agentic-dev go --directory notes-app --spec-file tests/harness/sample_specs_notes/sample_spec_notes_1_base.md --local
+agentic-dev go --directory notes-app --spec-file tests/harness/sample_specs_notes/sample_spec_notes_1_base.md
 # Session 2: resume and add the delete feature
-agentic-dev go --directory notes-app --spec-file tests/harness/sample_specs_notes/sample_spec_notes_2_add_delete.md --local
+agentic-dev go --directory notes-app --spec-file tests/harness/sample_specs_notes/sample_spec_notes_2_add_delete.md
 # Session 3: resume and add timestamps
-agentic-dev go --directory notes-app --spec-file tests/harness/sample_specs_notes/sample_spec_notes_3_add_timestamps.md --local
+agentic-dev go --directory notes-app --spec-file tests/harness/sample_specs_notes/sample_spec_notes_3_add_timestamps.md
 ```
 
 **Path B — combined (single session):**
 ```bash
-agentic-dev go --directory notes-app --spec-file tests/harness/sample_specs_notes/sample_spec_notes_full.md --local
+agentic-dev go --directory notes-app --spec-file tests/harness/sample_specs_notes/sample_spec_notes_full.md
 ```
 
 ---
 
 ### Test Harness
 
-The harness creates a timestamped `runs/` directory, passes `--directory` automatically, and supports `--resume` to find and continue the latest run. On resume, the harness deletes agent clone directories (`builder-1/`, `reviewer/`, `tester/`, `validator/`) and lets `go` reconstitute them from the repo — simulating a fresh-machine resume.
+The harness creates a timestamped `runs/` directory, passes `--directory` automatically, and supports `--resume` to find and continue the latest run. On resume, the harness deletes agent clone directories (`builder-1/`, `reviewer-1/`, `tester/`, `validator/`) and lets `go` reconstitute them from the repo — simulating a fresh-machine resume.
 
 > `--name` here is the harness's flag (names the subdirectory inside `runs/<timestamp>/`), not the CLI's `--name`.
 

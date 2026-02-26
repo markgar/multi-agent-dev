@@ -60,8 +60,8 @@ When editing this codebase, keep this two-level structure in mind: the Python co
 - `src/agentic_dev/config.py` — Language/stack configurations and thresholds for tree-sitter code analysis.
 - `src/agentic_dev/backlog_checker.py` — Backlog quality gate: deterministic structural checks (A1-A4) and LLM quality review (C1-C7) on BACKLOG.md and milestone files. Also runs story ordering checks for parallel builder throughput.
 - `src/agentic_dev/code_analysis.py` — Tree-sitter code analysis for target projects: structural checks across Python, JS/TS, and C#. Invoked by the milestone reviewer during milestone reviews.
+- `src/agentic_dev/journeys.py` — Journey parsing, eligibility filtering, and greedy set-cover selection for JOURNEYS.md-based validation.
 - `src/agentic_dev/version.py` — Package version and git-based build info for the `--version` flag.
-- `src/agentic_dev/legacy_watchers.py` — Deprecated `reviewoncommit` and `testoncommit` commands (not used by `go`).
 
 ## Architecture
 
