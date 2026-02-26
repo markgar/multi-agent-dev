@@ -536,7 +536,7 @@ def _run_issue_builder_loop(
 
     while True:
         ensure_on_main(agent_name)
-        run_cmd(agent_name, "git pull --rebase")
+        run_cmd(["git", "pull", "--rebase"])
 
         bugs = count_open_bug_issues(agent_name)
         findings = count_open_finding_issues(agent_name)
