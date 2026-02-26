@@ -231,7 +231,7 @@ def parse_args() -> argparse.Namespace:
         description="Platform-agnostic test harness for end-to-end orchestration runs.",
     )
     parser.add_argument("--name", required=True, help="Project name (required)")
-    parser.add_argument("--model", default="claude-haiku-4.5", help="Copilot model (default: claude-haiku-4.5)")
+    parser.add_argument("--model", required=True, help="Copilot model (e.g. claude-haiku-4.5, claude-opus-4.6)")
     parser.add_argument("--spec-file", default=None, help="Path to spec markdown file")
     parser.add_argument("--resume", action="store_true", help="Resume the latest run for --name")
     parser.add_argument("--builders", type=int, default=1, help="Number of parallel builders (default 1)")
