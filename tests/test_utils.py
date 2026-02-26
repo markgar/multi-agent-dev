@@ -300,7 +300,8 @@ def test_detect_auth_failure_recognizes_expired_token(tmp_path):
         "  • Set the COPILOT_GITHUB_TOKEN, GH_TOKEN, or GITHUB_TOKEN "
         "environment variable\n"
         "  • Run 'gh auth login' to authenticate with the GitHub CLI\n"
-        "--- end (exit: 1) ---\n"
+        "--- end (exit: 1) ---\n",
+        encoding="utf-8",
     )
     assert _detect_auth_failure(str(log_file)) is True
 
@@ -310,7 +311,8 @@ def test_detect_auth_failure_ignores_normal_errors(tmp_path):
     log_file.write_text(
         "--- output ---\n"
         "Error: something went wrong with the build\n"
-        "--- end (exit: 1) ---\n"
+        "--- end (exit: 1) ---\n",
+        encoding="utf-8",
     )
     assert _detect_auth_failure(str(log_file)) is False
 
@@ -321,7 +323,7 @@ def test_detect_auth_failure_handles_missing_file():
 
 def test_detect_auth_failure_handles_empty_file(tmp_path):
     log_file = tmp_path / "builder.log"
-    log_file.write_text("")
+    log_file.write_text("", encoding="utf-8")
     assert _detect_auth_failure(str(log_file)) is False
 
 

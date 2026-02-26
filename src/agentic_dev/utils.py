@@ -168,7 +168,7 @@ def _detect_auth_failure(log_file: str) -> bool:
     Pure-ish function: only reads the file, no side effects.
     """
     try:
-        with open(log_file, "r", encoding="utf-8") as f:
+        with open(log_file, "r", encoding="utf-8", errors="replace") as f:
             # Read the last 2KB — auth errors appear at the very end
             f.seek(0, 2)
             size = f.tell()
