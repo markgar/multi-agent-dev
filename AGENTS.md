@@ -206,10 +206,7 @@ The reviewer polls for active feature branches matching its builder (`builder-N/
 
 1. **Checkout branch** — `git fetch origin && git checkout {branch_name}`
 2. **Review commits** — enumerates new commits since the last checkpoint, reviews them individually or as a batch (same severity-based filing as legacy mode)
-3. **Signal merge readiness** — writes the reviewed HEAD SHA to `logs/reviewer-N.branch-head` so the builder's merge gate knows the review is complete
-4. **Branch disappears** — when the builder merges and deletes the branch, the reviewer returns to main and waits for the next branch
-
-**Merge gate:** The builder waits (soft timeout, 5 minutes) for the reviewer to catch up before merging a milestone branch. The builder reads `logs/reviewer-N.branch-head` and compares its `(branch_name, sha)` tuple against the branch HEAD. If the reviewer has reviewed all commits, the merge proceeds immediately. On timeout, the merge proceeds anyway — the gate is advisory, not blocking.
+3. **Branch disappears** — when the builder merges and deletes the branch, the reviewer pulls main, finds any unreviewed commits via the milestone tag, and reviews the remainder. Then it waits for the next branch.
 
 **Persistent checkpoint:** Per-builder checkpoints are saved to `logs/reviewer-N.branch-checkpoint`. On restart, the reviewer resumes from the checkpoint.
 
@@ -234,7 +231,6 @@ When `commitwatch` is called without `--builder-id` (or with `--builder-id 0`), 
 **Trigger:** Polls every 10 seconds for new branch activity (branch mode) or new commits on main (legacy mode)  
 **Scope:** Per-commit diff for individual reviews; combined diff for batched reviews  
 **Checkpoint:** `logs/reviewer-N.branch-checkpoint` (branch mode) or `logs/reviewer.checkpoint` (legacy mode)  
-**Signal file:** `logs/reviewer-N.branch-head` — `branch_name sha` tuple read by the builder merge gate  
 **Skips:** Non-milestone merge commits, coordination-only commits (milestone files only)  
 **Runs from:** `reviewer-N/` clone (one per builder)  
 **Shutdown:** Checks for `logs/builder.done` each cycle; exits when builder is done  
@@ -365,7 +361,7 @@ The builder updates the project's copilot-instructions.md whenever project struc
 - **Commit message tagging:** Every agent prefixes its commit messages with its name in brackets — `[builder]`, `[reviewer]`, `[tester]`, `[validator]`, `[planner]`, `[bootstrap]`. This makes it easy to see who did what in `git log`.
 - The **Planner** runs on demand via `plan`. It assesses project state (fresh / continuing / evolving), manages BACKLOG.md (story queue with three-state tracking: `[ ]` unclaimed, `[N]` claimed by builder N, `[x]` completed), updates SPEC.md if new requirements are detected, then writes one milestone file per story in `milestones/`. It never writes application code.
 - The **Builder** runs in a claim loop. Each builder claims a story from BACKLOG.md (`[N]`), calls the planner to expand it into a milestone, completes all tasks, marks the story done (`[x]`), and loops. When no eligible stories remain, writes `logs/builder-N.done`.
-- The **Branch-Attached Reviewer** (one per builder, `reviewer-N/`) watches the builder's feature branch and reviews commits before they merge. The builder has a soft merge gate that waits for the reviewer to catch up. [bug]/[security] issues are filed as GitHub Issues with `--label finding` for the builder; [cleanup]/[robustness] issues are filed as GitHub Issues with `--label note` for the milestone reviewer to evaluate. Non-code issues ([doc]: stale docs, misleading comments) are fixed directly (except DEPLOY.md — that gets filed as a finding).
+- The **Branch-Attached Reviewer** (one per builder, `reviewer-N/`) watches the builder's feature branch and reviews commits in real time. When the branch is merged and deleted, the reviewer catches up on any missed commits from main via the milestone tag. The builder does not wait for the reviewer. [bug]/[security] issues are filed as GitHub Issues with `--label finding` for the builder; [cleanup]/[robustness] issues are filed as GitHub Issues with `--label note` for the milestone reviewer to evaluate. Non-code issues ([doc]: stale docs, misleading comments) are fixed directly (except DEPLOY.md — that gets filed as a finding).
 - The **Milestone Reviewer** runs cross-cutting reviews when a milestone completes. It reads accumulated `note`-labeled GitHub Issues, promotes recurring patterns to `finding` (via `gh issue edit --remove-label note --add-label finding`), and closes stale finding issues. It also updates REVIEW-THEMES.md.
 - The **Tester** runs scoped tests when a milestone completes, focusing on changed files. It runs the test suite only — it does not start the app or test live endpoints. Files bugs as GitHub Issues with `--label bug`. Exits when the builder finishes.
 - The **Validator** builds the app in a Docker container after each milestone, starts it, and tests it against SPEC.md acceptance criteria. Files bugs as GitHub Issues with `--label bug`. Persists deployment knowledge in DEPLOY.md. Exits when the builder finishes.

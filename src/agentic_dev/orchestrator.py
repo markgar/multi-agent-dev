@@ -24,7 +24,7 @@ from agentic_dev.utils import console, ensure_bug_label_exists, ensure_review_la
 # A value of "" means "use the default --model".
 AgentModels = dict[str, str]
 
-_AGENT_ROLES = ("builder", "reviewer", "milestone_reviewer", "tester", "validator", "planner")
+_AGENT_ROLES = ("builder", "reviewer", "milestone_reviewer", "tester", "validator", "planner", "backlog")
 
 
 def resolve_agent_models(
@@ -35,12 +35,18 @@ def resolve_agent_models(
     tester_model: str | None = None,
     validator_model: str | None = None,
     planner_model: str | None = None,
+    backlog_model: str | None = None,
 ) -> AgentModels:
     """Build the per-agent model dict, validating overrides and falling back
     to *default_model* for any role without an explicit override.
 
     Pure function: validates each override via validate_model() and returns a
     dict mapping role names to Copilot CLI model identifiers.
+
+    The 'backlog' role is special: it only applies to the initial backlog
+    creation prompt (PLANNER_INITIAL_PROMPT). All other planner passes
+    (completeness, quality, ordering, milestone planning) use the 'planner'
+    model. When backlog_model is not set, it falls back to the planner model.
     """
     overrides = {
         "builder": builder_model,
@@ -56,6 +62,11 @@ def resolve_agent_models(
             result[role] = validate_model(override)
         else:
             result[role] = default_model
+    # Backlog model falls back to planner model, not default_model
+    if backlog_model:
+        result["backlog"] = validate_model(backlog_model)
+    else:
+        result["backlog"] = result["planner"]
     return result
 
 def register(app: typer.Typer) -> None:
@@ -246,7 +257,11 @@ def _launch_agents_and_build(
     log("orchestrator", "======================================", style="bold magenta")
     log("orchestrator", f" {plan_label}", style="bold magenta")
     log("orchestrator", "======================================", style="bold magenta")
-    plan_ok = plan(requirements_changed=requirements_changed, model=agent_models.get("planner", ""))
+    plan_ok = plan(
+        requirements_changed=requirements_changed,
+        model=agent_models.get("planner", ""),
+        backlog_model=agent_models.get("backlog", ""),
+    )
     if not plan_ok:
         log("orchestrator", "")
         log("orchestrator", "Planner failed — aborting. Fix the issue and re-run.", style="bold red")
@@ -439,6 +454,7 @@ def go(
     tester_model: Annotated[str, typer.Option(help="Model override for the tester agent")] = None,
     validator_model: Annotated[str, typer.Option(help="Model override for the validator agent")] = None,
     planner_model: Annotated[str, typer.Option(help="Model override for the planner (initial plan + copilot-instructions)")] = None,
+    backlog_model: Annotated[str, typer.Option(help="Model override for initial backlog creation only (falls back to --planner-model)")] = None,
 ) -> None:
     """Start or continue a project. Detects whether the project already exists.
 
@@ -464,6 +480,7 @@ def go(
         tester_model=tester_model,
         validator_model=validator_model,
         planner_model=planner_model,
+        backlog_model=backlog_model,
     )
 
     console.print(f"Using model: {default_model}", style="bold green")

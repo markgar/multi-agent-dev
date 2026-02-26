@@ -1,8 +1,8 @@
 """Tests for branch-attached reviewer infrastructure.
 
-Covers: sentinel per-builder checkpoints, branch-review-head signals,
+Covers: sentinel per-builder checkpoints,
 git_helpers branch detection, utils reviewer-N dir recognition,
-builder merge gate, and watcher branch-mode routing.
+and watcher branch-mode routing.
 """
 
 import os
@@ -13,10 +13,7 @@ import pytest
 from agentic_dev.git_helpers import parse_ls_remote_output
 from agentic_dev.sentinel import (
     check_agent_idle,
-    clear_branch_review_head,
-    load_branch_review_head,
     load_reviewer_checkpoint,
-    save_branch_review_head,
     save_reviewer_checkpoint,
 )
 from agentic_dev.utils import find_project_root
@@ -51,59 +48,6 @@ def test_load_reviewer_checkpoint_missing_file(tmp_path, monkeypatch):
     """Returns empty string when no checkpoint file exists."""
     monkeypatch.setattr("agentic_dev.sentinel.resolve_logs_dir", lambda: str(tmp_path))
     assert load_reviewer_checkpoint(builder_id=5) == ""
-
-
-# ============================================
-# sentinel: branch-review-head signals
-# ============================================
-
-
-def test_save_load_branch_review_head(tmp_path, monkeypatch):
-    """Round-trip write/read of branch-review-head signal."""
-    monkeypatch.setattr("agentic_dev.sentinel.resolve_logs_dir", lambda: str(tmp_path))
-    save_branch_review_head(1, "builder-1/milestone-01", "abc123")
-    branch, sha = load_branch_review_head(1)
-    assert branch == "builder-1/milestone-01"
-    assert sha == "abc123"
-
-
-def test_load_branch_review_head_missing(tmp_path, monkeypatch):
-    """Returns empty tuple when no signal file exists."""
-    monkeypatch.setattr("agentic_dev.sentinel.resolve_logs_dir", lambda: str(tmp_path))
-    branch, sha = load_branch_review_head(99)
-    assert branch == ""
-    assert sha == ""
-
-
-def test_clear_branch_review_head(tmp_path, monkeypatch):
-    """Clearing removes the signal file."""
-    monkeypatch.setattr("agentic_dev.sentinel.resolve_logs_dir", lambda: str(tmp_path))
-    save_branch_review_head(1, "builder-1/milestone-01", "abc123")
-    assert os.path.exists(tmp_path / "reviewer-1.branch-head")
-    clear_branch_review_head(1)
-    assert not os.path.exists(tmp_path / "reviewer-1.branch-head")
-    branch, sha = load_branch_review_head(1)
-    assert branch == ""
-    assert sha == ""
-
-
-def test_clear_branch_review_head_no_file(tmp_path, monkeypatch):
-    """Clearing when no file exists does not raise."""
-    monkeypatch.setattr("agentic_dev.sentinel.resolve_logs_dir", lambda: str(tmp_path))
-    clear_branch_review_head(1)  # should not raise
-
-
-def test_branch_review_head_per_builder_isolation(tmp_path, monkeypatch):
-    """Each builder has its own independent signal file."""
-    monkeypatch.setattr("agentic_dev.sentinel.resolve_logs_dir", lambda: str(tmp_path))
-    save_branch_review_head(1, "builder-1/milestone-01", "sha1")
-    save_branch_review_head(2, "builder-2/milestone-02", "sha2")
-    b1_branch, b1_sha = load_branch_review_head(1)
-    b2_branch, b2_sha = load_branch_review_head(2)
-    assert b1_branch == "builder-1/milestone-01"
-    assert b1_sha == "sha1"
-    assert b2_branch == "builder-2/milestone-02"
-    assert b2_sha == "sha2"
 
 
 # ============================================
@@ -205,81 +149,6 @@ def test_are_agents_idle_false_when_reviewer_log_fresh(tmp_path, monkeypatch):
 
     from agentic_dev.sentinel import are_agents_idle
     assert are_agents_idle() is False
-
-
-# ============================================
-# builder: _wait_for_reviewer (pure logic test)
-# ============================================
-
-
-def test_wait_for_reviewer_returns_true_when_caught_up(tmp_path, monkeypatch):
-    """Merge gate passes immediately when reviewer has reviewed all commits."""
-    monkeypatch.setattr("agentic_dev.sentinel.resolve_logs_dir", lambda: str(tmp_path))
-    # Simulate reviewer has caught up
-    save_branch_review_head(1, "builder-1/milestone-01", "deadbeef")
-
-    # Mock run_cmd to return the branch HEAD
-    from unittest.mock import MagicMock
-    mock_result = MagicMock()
-    mock_result.returncode = 0
-    mock_result.stdout = "deadbeef\n"
-    monkeypatch.setattr("agentic_dev.builder.run_cmd", lambda *args, **kwargs: mock_result)
-    monkeypatch.setattr("agentic_dev.builder.log", lambda *args, **kwargs: None)
-
-    from agentic_dev.builder import _wait_for_reviewer
-    result = _wait_for_reviewer(1, "builder-1/milestone-01", "builder-1", timeout=5)
-    assert result is True
-
-
-def test_wait_for_reviewer_returns_false_on_timeout(tmp_path, monkeypatch):
-    """Merge gate times out when reviewer hasn't caught up."""
-    monkeypatch.setattr("agentic_dev.sentinel.resolve_logs_dir", lambda: str(tmp_path))
-    # Reviewer's signal is for a different SHA
-    save_branch_review_head(1, "builder-1/milestone-01", "oldsha")
-
-    from unittest.mock import MagicMock
-    mock_result = MagicMock()
-    mock_result.returncode = 0
-    mock_result.stdout = "newsha\n"
-    monkeypatch.setattr("agentic_dev.builder.run_cmd", lambda *args, **kwargs: mock_result)
-    monkeypatch.setattr("agentic_dev.builder.log", lambda *args, **kwargs: None)
-    monkeypatch.setattr("agentic_dev.builder._REVIEWER_MERGE_POLL_INTERVAL", 0.1)
-
-    from agentic_dev.builder import _wait_for_reviewer
-    result = _wait_for_reviewer(1, "builder-1/milestone-01", "builder-1", timeout=0.5)
-    assert result is False
-
-
-def test_wait_for_reviewer_skips_when_head_unknown(tmp_path, monkeypatch):
-    """Merge gate passes when HEAD can't be determined."""
-    from unittest.mock import MagicMock
-    mock_result = MagicMock()
-    mock_result.returncode = 1
-    mock_result.stdout = ""
-    monkeypatch.setattr("agentic_dev.builder.run_cmd", lambda *args, **kwargs: mock_result)
-    monkeypatch.setattr("agentic_dev.builder.log", lambda *args, **kwargs: None)
-
-    from agentic_dev.builder import _wait_for_reviewer
-    result = _wait_for_reviewer(1, "builder-1/milestone-01", "builder-1")
-    assert result is True
-
-
-def test_wait_for_reviewer_wrong_branch_does_not_match(tmp_path, monkeypatch):
-    """Merge gate does not match if reviewer signal is for a different branch."""
-    monkeypatch.setattr("agentic_dev.sentinel.resolve_logs_dir", lambda: str(tmp_path))
-    save_branch_review_head(1, "builder-1/milestone-00", "deadbeef")
-
-    from unittest.mock import MagicMock
-    mock_result = MagicMock()
-    mock_result.returncode = 0
-    mock_result.stdout = "deadbeef\n"
-    monkeypatch.setattr("agentic_dev.builder.run_cmd", lambda *args, **kwargs: mock_result)
-    monkeypatch.setattr("agentic_dev.builder.log", lambda *args, **kwargs: None)
-    monkeypatch.setattr("agentic_dev.builder._REVIEWER_MERGE_POLL_INTERVAL", 0.1)
-
-    from agentic_dev.builder import _wait_for_reviewer
-    result = _wait_for_reviewer(1, "builder-1/milestone-01", "builder-1", timeout=0.5)
-    assert result is False
 
 
 # ============================================

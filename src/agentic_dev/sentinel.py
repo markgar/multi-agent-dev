@@ -187,54 +187,6 @@ def load_reviewer_checkpoint(builder_id: int = 1) -> str:
     return ""
 
 
-def save_branch_review_head(builder_id: int, branch_name: str, reviewed_sha: str) -> None:
-    """Write the branch-review-head signal for a builder.
-
-    The builder reads this before merging to confirm the reviewer has caught up.
-    File format: two lines — branch name and last reviewed SHA.
-    """
-    try:
-        logs_dir = resolve_logs_dir()
-        path = os.path.join(logs_dir, f"reviewer-{builder_id}.branch-head")
-        with open(path, "w", encoding="utf-8") as f:
-            f.write(f"{branch_name}\n{reviewed_sha}\n")
-    except Exception:
-        pass
-
-
-def load_branch_review_head(builder_id: int) -> tuple[str, str]:
-    """Load the branch-review-head signal for a builder.
-
-    Returns (branch_name, reviewed_sha). Both empty if the file doesn't exist.
-    """
-    try:
-        logs_dir = resolve_logs_dir()
-        path = os.path.join(logs_dir, f"reviewer-{builder_id}.branch-head")
-        if os.path.exists(path):
-            with open(path, "r", encoding="utf-8") as f:
-                lines = f.read().strip().split("\n")
-            if len(lines) >= 2:
-                return lines[0].strip(), lines[1].strip()
-    except Exception:
-        pass
-    return "", ""
-
-
-def clear_branch_review_head(builder_id: int) -> None:
-    """Remove the branch-review-head signal for a builder.
-
-    Called when the builder starts a new milestone branch, so stale signals
-    from a previous branch don't confuse the merge gate.
-    """
-    try:
-        logs_dir = resolve_logs_dir()
-        path = os.path.join(logs_dir, f"reviewer-{builder_id}.branch-head")
-        if os.path.exists(path):
-            os.remove(path)
-    except Exception:
-        pass
-
-
 def check_agent_idle(log_exists: bool, log_age_seconds: float, idle_threshold: float) -> bool:
     """Determine if an agent is idle based on its log age.
 

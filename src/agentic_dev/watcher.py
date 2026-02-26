@@ -22,7 +22,6 @@ from agentic_dev.prompts import (
 from agentic_dev.sentinel import (
     is_builder_done,
     load_reviewer_checkpoint,
-    save_branch_review_head,
     save_reviewer_checkpoint,
 )
 from agentic_dev.utils import log, resolve_logs_dir, run_cmd, run_copilot
@@ -169,6 +168,51 @@ def _review_branch_commits(
     return last_reviewed
 
 
+def _review_remaining_after_merge(
+    last_sha: str, branch_name: str, builder_id: int,
+) -> None:
+    """Review any commits missed between the last reviewed SHA and the merge on main.
+
+    After the builder merges and deletes the branch, the commits are still
+    reachable on main. Find the milestone tag and review what we missed.
+    """
+    if not last_sha:
+        return
+
+    agent_name = f"reviewer-{builder_id}"
+    milestone_label = _extract_milestone_label(branch_name)
+
+    # Find the merge tag on main — the builder tags merge commits as milestone-NN
+    tag_result = run_cmd(
+        ["git", "rev-parse", f"refs/tags/{milestone_label}"],
+        capture=True,
+    )
+    if tag_result.returncode != 0:
+        log(agent_name, f"No tag found for {milestone_label}. Skipping post-merge review.", style="dim")
+        return
+
+    merge_sha = tag_result.stdout.strip()
+
+    # Check if there are commits we haven't reviewed
+    log_result = run_cmd(
+        ["git", "log", f"{last_sha}..{merge_sha}", "--format=%H", "--reverse"],
+        capture=True,
+    )
+    new_commits = [
+        sha.strip()
+        for sha in log_result.stdout.strip().split("\n")
+        if sha.strip()
+    ]
+
+    if not new_commits:
+        log(agent_name, "All branch commits already reviewed before merge.", style="green")
+        return
+
+    now = datetime.now().strftime("%H:%M:%S")
+    log(agent_name, f"[{now}] Reviewing {len(new_commits)} remaining commit(s) from merged branch", style="yellow")
+    _review_branch_commits(last_sha, merge_sha, branch_name, builder_id)
+
+
 def _watch_builder_branch(builder_id: int, branch_name: str) -> None:
     """Watch a builder's feature branch and review commits, staying on main.
 
@@ -223,16 +267,12 @@ def _watch_builder_branch(builder_id: int, branch_name: str) -> None:
 
         if current_head and current_head != last_sha and last_sha:
             last_sha = _review_branch_commits(last_sha, current_head, branch_name, builder_id)
-            # Signal merge readiness
-            save_branch_review_head(builder_id, branch_name, last_sha)
-        elif current_head and last_sha:
-            # No new commits — still signal that we've reviewed up to HEAD
-            save_branch_review_head(builder_id, branch_name, last_sha)
 
         time.sleep(10)
 
-    # Branch disappeared — pull main to pick up the merged code
+    # Branch disappeared — pull main and review any commits we missed
     run_cmd(["git", "pull", "--rebase", "-q"], quiet=True)
+    _review_remaining_after_merge(last_sha, branch_name, builder_id)
 
 
 def _branchwatch_loop(builder_id: int) -> None:

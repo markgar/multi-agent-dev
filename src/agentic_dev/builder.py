@@ -31,8 +31,6 @@ from agentic_dev.prompts import (
 )
 from agentic_dev.sentinel import (
     are_agents_idle,
-    clear_branch_review_head,
-    load_branch_review_head,
     write_builder_done,
 )
 from agentic_dev.utils import (
@@ -360,10 +358,6 @@ class BuildState:
 _MAX_FIX_ONLY_CYCLES = 4
 _AGENT_WAIT_INTERVAL = 15
 _AGENT_WAIT_MAX_CYCLES = 40  # 15s * 40 = 10 minutes max wait
-_REVIEWER_MERGE_TIMEOUT = 300  # 5 minutes max wait for reviewer before merge
-_REVIEWER_MERGE_POLL_INTERVAL = 5  # seconds between checks
-
-
 def classify_remaining_work(bugs: int, reviews: int, tasks: int, agents_idle: bool) -> str:
     """Decide the next action based on remaining work counts and agent status.
 
@@ -381,37 +375,6 @@ def classify_remaining_work(bugs: int, reviews: int, tasks: int, agents_idle: bo
     if agents_idle:
         return "done"
     return "waiting"
-
-
-def _wait_for_reviewer(
-    builder_id: int, branch_name: str, agent_name: str,
-    timeout: int = _REVIEWER_MERGE_TIMEOUT,
-) -> bool:
-    """Wait for the branch-attached reviewer to catch up before merging.
-
-    Polls the reviewer's branch-head checkpoint until the reviewed SHA matches
-    the current branch HEAD. Returns True if the reviewer caught up, False on
-    timeout. This is a soft gate — the caller should proceed with merge even
-    on timeout (the milestone reviewer will catch remaining issues).
-    """
-    head_result = run_cmd(["git", "rev-parse", "HEAD"], capture=True)
-    branch_head = head_result.stdout.strip() if head_result.returncode == 0 else ""
-    if not branch_head:
-        return True  # Can't determine HEAD, skip waiting
-
-    elapsed = 0
-    while elapsed < timeout:
-        reviewed_branch, reviewed_sha = load_branch_review_head(builder_id)
-        if reviewed_branch == branch_name and reviewed_sha == branch_head:
-            log(agent_name, "Reviewer has caught up. Proceeding to merge.", style="green")
-            return True
-        if elapsed == 0:
-            log(agent_name, "Waiting for reviewer to catch up...", style="yellow")
-        time.sleep(_REVIEWER_MERGE_POLL_INTERVAL)
-        elapsed += _REVIEWER_MERGE_POLL_INTERVAL
-
-    log(agent_name, f"Reviewer did not catch up within {timeout}s. Proceeding to merge.", style="yellow")
-    return False
 
 
 def _record_completed_milestone(
@@ -782,9 +745,6 @@ def build(
                 build_failed = True
                 break
 
-            # Clear stale reviewer signal from previous branch
-            clear_branch_review_head(builder_id)
-
             log(agent_name, "")
             log(agent_name, f"[Builder] Starting work on {milestone_file}...", style="green")
             log(agent_name, "")
@@ -803,9 +763,6 @@ def build(
                 ensure_on_main(agent_name)
                 build_failed = True
                 break
-
-            # Wait for branch-attached reviewer to catch up (soft gate)
-            _wait_for_reviewer(builder_id, branch_name, agent_name)
 
             # Merge feature branch back to main
             merge_sha = merge_milestone_to_main(branch_name, milestone_basename, agent_name)

@@ -23,7 +23,8 @@ def register(app: typer.Typer) -> None:
     app.command()(plan)
 
 
-def plan(requirements_changed: bool = False, story_name: str = "", model: str = "") -> bool:
+def plan(requirements_changed: bool = False, story_name: str = "", model: str = "",
+         backlog_model: str = "") -> bool:
     """Run the planner to create or update milestones based on SPEC.md.
 
     When story_name is provided, it is interpolated into the PLANNER_PROMPT
@@ -31,6 +32,10 @@ def plan(requirements_changed: bool = False, story_name: str = "", model: str = 
 
     When *model* is provided it is forwarded to every ``run_copilot`` call,
     overriding the COPILOT_MODEL environment variable.
+
+    When *backlog_model* is provided it is used ONLY for the initial backlog
+    creation (PLANNER_INITIAL_PROMPT). All other planner passes use *model*.
+    This allows using a different model for story decomposition vs review.
 
     Returns True if planning succeeded, False if it failed.
     """
@@ -43,10 +48,15 @@ def plan(requirements_changed: bool = False, story_name: str = "", model: str = 
 
     is_fresh = not os.path.exists("BACKLOG.md")
 
+    # Use backlog_model for initial creation, fall back to model
+    creation_model = backlog_model or model
+
     if is_fresh:
         # Case A: fresh project — create backlog, validate, then plan first milestone
+        if creation_model != model:
+            log("planner", f"[Backlog Planner] Using {creation_model} for backlog creation", style="cyan")
         log("planner", "[Backlog Planner] Fresh project — creating backlog...", style="magenta")
-        exit_code = run_copilot("planner", PLANNER_INITIAL_PROMPT, model=model)
+        exit_code = run_copilot("planner", PLANNER_INITIAL_PROMPT, model=creation_model)
         if exit_code != 0:
             log("planner", "")
             log("planner", "======================================", style="bold red")
@@ -66,7 +76,7 @@ def plan(requirements_changed: bool = False, story_name: str = "", model: str = 
         if not quality_ok:
             log("planner", "[Backlog Planner] Structural issues detected — re-running initial planner...", style="yellow")
             try:
-                exit_code = run_copilot("planner", PLANNER_INITIAL_PROMPT, model=model)
+                exit_code = run_copilot("planner", PLANNER_INITIAL_PROMPT, model=creation_model)
             except Exception as e:
                 log("planner", f"[Backlog Planner] Re-plan crashed: {e}", style="bold red")
                 log("planner", "")
